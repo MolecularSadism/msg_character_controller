@@ -9,7 +9,7 @@ use bevy_rapier2d::prelude::*;
 
 use crate::backend::CharacterPhysicsBackend;
 use crate::config::{CharacterController, CharacterOrientation, ControllerConfig, StairConfig};
-use crate::detection::{GroundInfo, SensorCast, WallInfo};
+use crate::detection::SensorCast;
 
 /// Rapier2D physics backend for the character controller.
 ///
@@ -23,20 +23,6 @@ use crate::detection::{GroundInfo, SensorCast, WallInfo};
 /// rather than through the generic backend trait. The `shapecast` method returns
 /// a miss and should not be used directly - use the component-based detection
 /// results instead.
-///
-/// # Usage
-///
-/// ```rust,no_run
-/// use bevy::prelude::*;
-/// use bevy_rapier2d::prelude::*;
-/// use msg_character_controller::prelude::*;
-///
-/// App::new()
-///     .add_plugins(DefaultPlugins)
-///     .add_plugins(RapierPhysicsPlugin::<NoUserData>::default())
-///     .add_plugins(CharacterControllerPlugin::<Rapier2dBackend>::default())
-///     .run();
-/// ```
 pub struct Rapier2dBackend;
 
 impl CharacterPhysicsBackend for Rapier2dBackend {
@@ -55,8 +41,6 @@ impl CharacterPhysicsBackend for Rapier2dBackend {
         _exclude_entity: Entity,
     ) -> SensorCast {
         // Shapecasting is handled by Rapier-specific systems that use ReadRapierContext.
-        // This method is not used for the Rapier backend - detection is done via
-        // rapier_ground_detection and rapier_wall_detection systems.
         SensorCast::miss()
     }
 
@@ -129,16 +113,8 @@ impl CharacterPhysicsBackend for Rapier2dBackend {
             .unwrap_or(0.0)
     }
 
-    fn get_gravity(world: &World, entity: Entity) -> Vec2 {
-        // Check for per-entity gravity scale
-        let gravity_scale = world
-            .get::<GravityScale>(entity)
-            .map(|gs| gs.0)
-            .unwrap_or(1.0);
-
-        // Since GravityScale is 0 for manually controlled gravity,
-        // this function returns zero gravity, which is correct
-        // The actual gravity is stored in CharacterGravity component
+    fn get_gravity(_world: &World, _entity: Entity) -> Vec2 {
+        // Gravity is stored in CharacterController.gravity
         Vec2::ZERO
     }
 
@@ -172,7 +148,11 @@ impl Plugin for Rapier2dBackendPlugin {
         // These run BEFORE the generic controller systems
         app.add_systems(
             FixedUpdate,
-            (rapier_ground_detection, rapier_wall_detection)
+            (
+                rapier_ground_detection,
+                rapier_wall_detection,
+                rapier_ceiling_detection,
+            )
                 .chain()
                 .before(crate::systems::apply_floating_spring::<Rapier2dBackend>),
         );
@@ -185,7 +165,9 @@ impl Plugin for Rapier2dBackendPlugin {
     }
 }
 
+
 /// Rapier-specific ground detection system using shapecast.
+/// Inherits collision layers from the parent entity's collider.
 fn rapier_ground_detection(
     rapier_context: ReadRapierContext,
     mut q_controllers: Query<
@@ -196,11 +178,10 @@ fn rapier_ground_detection(
             Option<&CharacterOrientation>,
             Option<&StairConfig>,
             &Velocity,
-            Option<&mut GroundInfo>,
+            &mut CharacterController,
+            Option<&CollisionGroups>,
         ),
-        With<CharacterController>,
     >,
-    mut commands: Commands,
     time: Res<Time<Fixed>>,
 ) {
     let Ok(context) = rapier_context.single() else {
@@ -208,8 +189,9 @@ fn rapier_ground_detection(
     };
 
     let default_orientation = CharacterOrientation::default();
+    let dt = time.delta_secs();
 
-    for (entity, transform, config, orientation_opt, stair_config, velocity, ground_info_opt) in
+    for (entity, transform, config, orientation_opt, stair_config, velocity, mut controller, collision_groups) in
         &mut q_controllers
     {
         let position = transform.translation().xy();
@@ -219,13 +201,18 @@ fn rapier_ground_detection(
         let down = orientation.down();
         let right = orientation.right();
 
-        // Build query filter
+        // Inherit collision groups from parent's collider
+        let (memberships, filters) = collision_groups
+            .map(|cg| (cg.memberships, cg.filters))
+            .unwrap_or((Group::ALL, Group::ALL));
+
+        // Build query filter that inherits collision layers
         let filter = QueryFilter::default()
             .exclude_rigid_body(entity)
-            .exclude_sensors();
+            .exclude_sensors()
+            .groups(CollisionGroups::new(memberships, filters));
 
         // Create a flat horizontal segment for ground detection
-        // The segment is perpendicular to the cast direction (horizontal in local space)
         let half_width = config.ground_cast_width / 2.0;
         let segment_a = right * -half_width;
         let segment_b = right * half_width;
@@ -234,73 +221,69 @@ fn rapier_ground_detection(
         // Compute rotation angle for the shape to align with character orientation
         let shape_rotation = orientation.angle() - std::f32::consts::FRAC_PI_2;
 
-        // Perform shapecast - single wide cast replaces multiple raycasts
+        // Perform shapecast - use derived ground cast length
         let shape_result = context.cast_shape(
             position,
             shape_rotation,
             down,
             &shape,
             ShapeCastOptions {
-                max_time_of_impact: config.ground_cast_length,
+                max_time_of_impact: config.ground_cast_length(),
                 stop_at_penetration: false,
                 ..default()
             },
             filter,
         );
 
-        // Compute ground info from shapecast
-        let mut new_ground_info = if let Some((hit_entity, hit)) = shape_result {
-            // Get normal from hit details (if available) or use character's up direction
+        // Store previous time_since_grounded
+        let prev_time_since_grounded = controller.time_since_grounded;
+
+        // Reset ground detection state
+        controller.reset_detection_state();
+
+        // Update from shapecast result
+        if let Some((hit_entity, hit)) = shape_result {
             let normal = hit.details.map(|d| d.normal1).unwrap_or(orientation.up());
             let up = orientation.up();
             let dot = normal.dot(up).clamp(-1.0, 1.0);
             let slope_angle = dot.acos();
+
+            controller.ground_detected = true;
+            controller.ground_distance = hit.time_of_impact;
+            controller.ground_normal = normal;
+            controller.ground_contact_point = position + down * hit.time_of_impact;
+            controller.slope_angle = slope_angle;
+            controller.ground_entity = Some(hit_entity);
+
+            // Check for stairs if enabled
             let is_walkable = slope_angle <= config.max_slope_angle;
-
-            GroundInfo {
-                detected: true,
-                distance: hit.time_of_impact,
-                normal,
-                contact_point: position + down * hit.time_of_impact,
-                slope_angle,
-                is_walkable,
-                step_detected: false,
-                step_height: 0.0,
-                time_since_grounded: 0.0,
-                ground_entity: Some(hit_entity),
-            }
-        } else {
-            GroundInfo::default()
-        };
-
-        // Check for stairs if enabled
-        if let Some(stair) = stair_config {
-            if stair.enabled && !new_ground_info.is_walkable && shape_result.is_some() {
-                if let Some(step_height) = check_stair_step(
-                    &context,
-                    entity,
-                    position,
-                    velocity.linvel,
-                    orientation,
-                    stair,
-                ) {
-                    new_ground_info.step_detected = true;
-                    new_ground_info.step_height = step_height;
+            if let Some(stair) = stair_config {
+                if stair.enabled && !is_walkable {
+                    if let Some(step_height) = check_stair_step(
+                        &context,
+                        entity,
+                        position,
+                        velocity.linvel,
+                        orientation,
+                        stair,
+                        (memberships, filters),
+                    ) {
+                        controller.step_detected = true;
+                        controller.step_height = step_height;
+                    }
                 }
             }
         }
 
+        // Update grounded state
+        controller.is_grounded = controller.ground_detected
+            && controller.ground_distance <= config.float_height + config.cling_distance;
+
         // Update time since grounded
-        let dt = time.delta_secs();
-        if let Some(mut existing) = ground_info_opt {
-            if new_ground_info.is_grounded(config.float_height, config.cling_distance) {
-                new_ground_info.time_since_grounded = 0.0;
-            } else {
-                new_ground_info.time_since_grounded = existing.time_since_grounded + dt;
-            }
-            *existing = new_ground_info;
+        if controller.is_grounded {
+            controller.time_since_grounded = 0.0;
         } else {
-            commands.entity(entity).insert(new_ground_info);
+            controller.time_since_grounded = prev_time_since_grounded + dt;
         }
     }
 }
@@ -312,6 +295,7 @@ fn check_stair_step(
     velocity: Vec2,
     orientation: &CharacterOrientation,
     config: &StairConfig,
+    collision_groups: (Group, Group),
 ) -> Option<f32> {
     let down = orientation.down();
     let right = orientation.right();
@@ -326,7 +310,8 @@ fn check_stair_step(
 
     let filter = QueryFilter::default()
         .exclude_rigid_body(entity)
-        .exclude_sensors();
+        .exclude_sensors()
+        .groups(CollisionGroups::new(collision_groups.0, collision_groups.1));
 
     // Cast forward at step height (elevated in the "up" direction)
     let step_origin = position - down * config.max_step_height;
@@ -358,19 +343,17 @@ fn check_stair_step(
 }
 
 /// Rapier-specific wall detection system using shapecast.
+/// Inherits collision layers from the parent entity's collider.
 fn rapier_wall_detection(
     rapier_context: ReadRapierContext,
-    mut q_controllers: Query<
-        (
-            Entity,
-            &GlobalTransform,
-            &ControllerConfig,
-            Option<&CharacterOrientation>,
-            Option<&mut WallInfo>,
-        ),
-        With<CharacterController>,
-    >,
-    mut commands: Commands,
+    mut q_controllers: Query<(
+        Entity,
+        &GlobalTransform,
+        &ControllerConfig,
+        Option<&CharacterOrientation>,
+        &mut CharacterController,
+        Option<&CollisionGroups>,
+    )>,
 ) {
     let Ok(context) = rapier_context.single() else {
         return;
@@ -378,7 +361,9 @@ fn rapier_wall_detection(
 
     let default_orientation = CharacterOrientation::default();
 
-    for (entity, transform, config, orientation_opt, wall_info_opt) in &mut q_controllers {
+    for (entity, transform, config, orientation_opt, mut controller, collision_groups) in
+        &mut q_controllers
+    {
         let position = transform.translation().xy();
 
         // Get orientation (use default if component not present)
@@ -387,12 +372,18 @@ fn rapier_wall_detection(
         let right = orientation.right();
         let up = orientation.up();
 
+        // Inherit collision groups from parent's collider
+        let (memberships, filters) = collision_groups
+            .map(|cg| (cg.memberships, cg.filters))
+            .unwrap_or((Group::ALL, Group::ALL));
+
         let filter = QueryFilter::default()
             .exclude_rigid_body(entity)
-            .exclude_sensors();
+            .exclude_sensors()
+            .groups(CollisionGroups::new(memberships, filters));
 
         // Create a vertical segment for wall detection (aligned with up direction)
-        let half_height = config.wall_cast_width / 2.0;
+        let half_height = config.wall_cast_height / 2.0;
         let segment_a = up * -half_height;
         let segment_b = up * half_height;
         let shape = Segment::new(segment_a.into(), segment_b.into());
@@ -400,45 +391,93 @@ fn rapier_wall_detection(
         // Compute rotation angle for the shape
         let shape_rotation = orientation.angle();
 
+        // Use derived wall cast length
         let shape_opts = ShapeCastOptions {
-            max_time_of_impact: config.wall_cast_length,
+            max_time_of_impact: config.wall_cast_length(),
             stop_at_penetration: false,
             ..default()
         };
 
-        // Shapecast left
-        let left_hit =
-            context.cast_shape(position, shape_rotation, left, &shape, shape_opts, filter);
+        // Shapecast left - touching when within wall cast length
+        if let Some((_, hit)) =
+            context.cast_shape(position, shape_rotation, left, &shape, shape_opts, filter)
+        {
+            controller.touching_left_wall = true;
+            controller.left_wall_normal = hit.details.map(|d| d.normal1).unwrap_or(right);
+        }
 
-        // Shapecast right
-        let right_hit =
-            context.cast_shape(position, shape_rotation, right, &shape, shape_opts, filter);
+        // Shapecast right - touching when within wall cast length
+        if let Some((_, hit)) =
+            context.cast_shape(position, shape_rotation, right, &shape, shape_opts, filter)
+        {
+            controller.touching_right_wall = true;
+            controller.right_wall_normal = hit.details.map(|d| d.normal1).unwrap_or(left);
+        }
+    }
+}
 
-        let new_wall_info = WallInfo {
-            left_detected: left_hit.is_some(),
-            left_distance: left_hit
-                .as_ref()
-                .map(|(_, h)| h.time_of_impact)
-                .unwrap_or(f32::MAX),
-            left_normal: left_hit
-                .as_ref()
-                .and_then(|(_, h)| h.details.map(|d| d.normal1))
-                .unwrap_or(right), // Default normal points away from wall
-            right_detected: right_hit.is_some(),
-            right_distance: right_hit
-                .as_ref()
-                .map(|(_, h)| h.time_of_impact)
-                .unwrap_or(f32::MAX),
-            right_normal: right_hit
-                .as_ref()
-                .and_then(|(_, h)| h.details.map(|d| d.normal1))
-                .unwrap_or(left), // Default normal points away from wall
-        };
+/// Rapier-specific ceiling detection system using shapecast.
+/// Inherits collision layers from the parent entity's collider.
+fn rapier_ceiling_detection(
+    rapier_context: ReadRapierContext,
+    mut q_controllers: Query<(
+        Entity,
+        &GlobalTransform,
+        &ControllerConfig,
+        Option<&CharacterOrientation>,
+        &mut CharacterController,
+        Option<&CollisionGroups>,
+    )>,
+) {
+    let Ok(context) = rapier_context.single() else {
+        return;
+    };
 
-        if let Some(mut existing) = wall_info_opt {
-            *existing = new_wall_info;
-        } else {
-            commands.entity(entity).insert(new_wall_info);
+    let default_orientation = CharacterOrientation::default();
+
+    for (entity, transform, config, orientation_opt, mut controller, collision_groups) in
+        &mut q_controllers
+    {
+        let position = transform.translation().xy();
+
+        // Get orientation
+        let orientation = orientation_opt.unwrap_or(&default_orientation);
+        let up = orientation.up();
+        let right = orientation.right();
+
+        // Inherit collision groups from parent's collider
+        let (memberships, filters) = collision_groups
+            .map(|cg| (cg.memberships, cg.filters))
+            .unwrap_or((Group::ALL, Group::ALL));
+
+        let filter = QueryFilter::default()
+            .exclude_rigid_body(entity)
+            .exclude_sensors()
+            .groups(CollisionGroups::new(memberships, filters));
+
+        // Create a horizontal segment for ceiling detection
+        let half_width = config.ceiling_cast_width / 2.0;
+        let segment_a = right * -half_width;
+        let segment_b = right * half_width;
+        let shape = Segment::new(segment_a.into(), segment_b.into());
+
+        let shape_rotation = orientation.angle() - std::f32::consts::FRAC_PI_2;
+
+        // Shapecast upward - use derived ceiling cast length
+        if let Some((_, hit)) = context.cast_shape(
+            position,
+            shape_rotation,
+            up,
+            &shape,
+            ShapeCastOptions {
+                max_time_of_impact: config.ceiling_cast_length(),
+                stop_at_penetration: false,
+                ..default()
+            },
+            filter,
+        ) {
+            controller.touching_ceiling = true;
+            controller.ceiling_normal = hit.details.map(|d| d.normal1).unwrap_or(orientation.down());
         }
     }
 }
@@ -479,9 +518,6 @@ impl Rapier2dCharacterBundle {
     }
 
     /// Create a character bundle with rotation locked.
-    ///
-    /// Use this when the character's rotation is controlled by other systems
-    /// (e.g., KeepUpright) or when upright torque is disabled.
     pub fn rotation_locked() -> Self {
         Self {
             locked_axes: LockedAxes::ROTATION_LOCKED,
@@ -502,7 +538,6 @@ impl Rapier2dCharacterBundle {
         self
     }
 
-    /// Builder: set locked axes.
     pub fn with_locked_axes(mut self, axes: LockedAxes) -> Self {
         self.locked_axes = axes;
         self
