@@ -80,9 +80,9 @@ fn main() {
         .add_systems(Startup, setup)
         .add_systems(
             FixedUpdate,
-            (update_player_orientation, apply_planetary_gravity).before(
-                msg_character_controller::systems::update_ground_detection::<Rapier2dBackend>,
-            ),
+            // Run orientation and gravity updates before controller systems
+            (update_player_orientation, apply_planetary_gravity)
+                .before(msg_character_controller::systems::apply_floating_spring::<Rapier2dBackend>),
         )
         .add_systems(
             Update,

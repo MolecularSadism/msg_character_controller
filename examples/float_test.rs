@@ -62,45 +62,22 @@ struct DebugText;
 
 fn setup(mut commands: Commands) {
     // Camera
-    commands.spawn(Camera2dBundle {
-        transform: Transform::from_xyz(0.0, 0.0, 1000.0),
-        ..default()
-    });
+    commands.spawn((Camera2d, Transform::from_xyz(0.0, 0.0, 1000.0)));
 
     // Debug text
     commands.spawn((
-        TextBundle::from_sections([
-            TextSection::new(
-                "FLOAT TEST\n",
-                TextStyle {
-                    font_size: 24.0,
-                    color: Color::WHITE,
-                    ..default()
-                },
-            ),
-            TextSection::new(
-                "Spawning character 200 units above platform...\n",
-                TextStyle {
-                    font_size: 18.0,
-                    color: Color::YELLOW,
-                    ..default()
-                },
-            ),
-            TextSection::new(
-                "",
-                TextStyle {
-                    font_size: 16.0,
-                    color: Color::GREEN,
-                    ..default()
-                },
-            ),
-        ])
-        .with_style(Style {
+        Text::new("FLOAT TEST\nSpawning character 200 units above platform...\n"),
+        TextFont {
+            font_size: 20.0,
+            ..default()
+        },
+        TextColor(Color::WHITE),
+        Node {
             position_type: PositionType::Absolute,
             top: Val::Px(10.0),
             left: Val::Px(10.0),
             ..default()
-        }),
+        },
         DebugText,
     ));
 
@@ -110,12 +87,9 @@ fn setup(mut commands: Commands) {
         GlobalTransform::default(),
         RigidBody::Fixed,
         Collider::cuboid(400.0, 20.0),
-        SpriteBundle {
-            sprite: Sprite {
-                color: Color::rgb(0.3, 0.3, 0.3),
-                custom_size: Some(Vec2::new(800.0, 40.0)),
-                ..default()
-            },
+        Sprite {
+            color: Color::srgb(0.3, 0.3, 0.3),
+            custom_size: Some(Vec2::new(800.0, 40.0)),
             ..default()
         },
     ));
@@ -124,7 +98,6 @@ fn setup(mut commands: Commands) {
     let spawn_pos = Vec2::new(0.0, 200.0); // 400 units above platform!
 
     // Calculate expected float position
-    let capsule_half_height = PLAYER_HALF_HEIGHT / 2.0 + PLAYER_RADIUS; // 4 + 6 = 10
     let float_height = 15.0; // From config
     let expected_hover_y = -200.0 + 20.0 + float_height; // Platform top + float height
 
@@ -133,31 +106,25 @@ fn setup(mut commands: Commands) {
     println!("Platform top at Y: {}", -180.0);
     println!("Expected float Y: {}", expected_hover_y);
     println!("Float height config: {}", float_height);
-    println!("Capsule half-height: {}", capsule_half_height);
 
     commands
         .spawn((
             Player,
             AffectedByGravity,
-            TransformBundle::from_transform(
-                Transform::from_translation(spawn_pos.extend(1.0))
-            ),
-            SpriteBundle {
-                sprite: Sprite {
-                    color: Color::rgb(0.2, 0.6, 0.9),
-                    custom_size: Some(Vec2::new(PLAYER_RADIUS * 2.0, PLAYER_HALF_HEIGHT * 2.0)),
-                    ..default()
-                },
+            Transform::from_translation(spawn_pos.extend(1.0)),
+            GlobalTransform::default(),
+            Sprite {
+                color: Color::srgb(0.2, 0.6, 0.9),
+                custom_size: Some(Vec2::new(PLAYER_RADIUS * 2.0, PLAYER_HALF_HEIGHT * 2.0)),
                 ..default()
             },
         ))
         .insert((
-            // Character controller with explicit float height
-            CharacterController::walking(),
+            // Character controller with explicit float height and gravity
+            CharacterController::walking_with_gravity(Vec2::new(0.0, -980.0)),
             ControllerConfig::player()
                 .with_float_height(15.0) // Should float 15 units above ground
-                .with_spring_strength(20000.0) // VERY strong spring
-                .with_spring_damping(500.0)
+                .with_spring(20000.0, 500.0) // VERY strong spring
                 .with_ground_cast_width(PLAYER_RADIUS),
             WalkIntent::default(),
             JumpRequest::default(),
@@ -192,11 +159,11 @@ fn handle_input(
         if keyboard.pressed(KeyCode::KeyD) || keyboard.pressed(KeyCode::ArrowRight) {
             direction += 1.0;
         }
-        walk_intent.set_direction(direction);
+        walk_intent.set(direction);
 
         // Jump
         if keyboard.just_pressed(KeyCode::Space) {
-            jump_request.request(time.elapsed_seconds());
+            jump_request.request(time.elapsed_secs());
         }
     }
 }
@@ -206,7 +173,7 @@ fn apply_gravity(
     time: Res<Time>,
     mut query: Query<(&mut Velocity, Option<&Grounded>), With<AffectedByGravity>>,
 ) {
-    let dt = time.delta_seconds();
+    let dt = time.delta_secs();
 
     for (mut velocity, grounded) in &mut query {
         // Only apply gravity when not grounded
@@ -217,14 +184,14 @@ fn apply_gravity(
 }
 
 fn debug_floating(
-    mut text_query: Query<&mut Text, With<DebugText>>,
-    player_query: Query<(&Transform, &Velocity, &GroundInfo, Option<&Grounded>), With<Player>>,
+    mut text_query: Query<(&mut Text, &mut TextColor), With<DebugText>>,
+    player_query: Query<(&Transform, &Velocity, &CharacterController, Option<&Grounded>), With<Player>>,
 ) {
-    let Ok((transform, velocity, ground_info, grounded)) = player_query.get_single() else {
+    let Ok((transform, velocity, controller, grounded)) = player_query.single() else {
         return;
     };
 
-    let Ok(mut text) = text_query.get_single_mut() else {
+    let Ok((mut text, mut color)) = text_query.single_mut() else {
         return;
     };
 
@@ -232,8 +199,9 @@ fn debug_floating(
     let platform_top_y = -180.0;
     let distance_from_platform = transform.translation.y - platform_top_y;
 
-    text.sections[2].value = format!(
-        "Player Y: {:.1}\n\
+    **text = format!(
+        "FLOAT TEST\n\
+         Player Y: {:.1}\n\
          Velocity Y: {:.1}\n\
          Distance from platform: {:.1}\n\
          Ground detected: {}\n\
@@ -245,31 +213,31 @@ fn debug_floating(
         transform.translation.y,
         velocity.linvel.y,
         distance_from_platform,
-        ground_info.detected,
-        ground_info.distance,
+        controller.ground_detected(),
+        controller.ground_distance(),
         grounded_str,
         distance_from_platform
     );
 
     // Color based on floating state
     if distance_from_platform > 10.0 && distance_from_platform < 20.0 && velocity.linvel.y.abs() < 50.0 {
-        text.sections[2].style.color = Color::GREEN;
-    } else if ground_info.detected {
-        text.sections[2].style.color = Color::YELLOW;
+        color.0 = Color::srgb(0.2, 0.8, 0.2); // Green
+    } else if controller.ground_detected() {
+        color.0 = Color::srgb(0.9, 0.9, 0.2); // Yellow
     } else {
-        text.sections[2].style.color = Color::RED;
+        color.0 = Color::srgb(0.9, 0.3, 0.3); // Red
     }
 }
 
 fn camera_follow(
-    player_query: Query<&Transform, With<Player>>,
-    mut camera_query: Query<&mut Transform, (With<Camera2d>, Without<Player>)>,
+    player_query: Query<&Transform, (With<Player>, Without<Camera2d>)>,
+    mut camera_query: Query<&mut Transform, With<Camera2d>>,
 ) {
-    let Ok(player_transform) = player_query.get_single() else {
+    let Ok(player_transform) = player_query.single() else {
         return;
     };
 
-    let Ok(mut camera_transform) = camera_query.get_single_mut() else {
+    let Ok(mut camera_transform) = camera_query.single_mut() else {
         return;
     };
 
