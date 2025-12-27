@@ -7,6 +7,8 @@ use bevy::prelude::*;
 use bevy::time::Virtual;
 use bevy_rapier2d::prelude::*;
 use msg_character_controller::prelude::*;
+
+#[cfg(feature = "rapier2d")]
 use msg_character_controller::rapier::{Rapier2dBackend, Rapier2dCharacterBundle};
 
 /// Create a minimal test app with physics and character controller.
@@ -49,7 +51,7 @@ fn spawn_character_with_config(app: &mut App, position: Vec2, config: Controller
         .spawn((
             transform,
             GlobalTransform::from(transform),
-            CharacterController::walking(),
+            CharacterController::new(),
             config,
             WalkIntent::default(),
             JumpRequest::default(),
@@ -71,7 +73,7 @@ fn spawn_oriented_character(
         .spawn((
             transform,
             GlobalTransform::from(transform),
-            CharacterController::walking(),
+            CharacterController::new(),
             ControllerConfig::default(),
             orientation,
             WalkIntent::default(),
@@ -90,8 +92,7 @@ fn tick(app: &mut App) {
         .resource_mut::<Time<Virtual>>()
         .advance_by(timestep);
     app.update();
-    app.world_mut()
-        .run_schedule(bevy::prelude::FixedUpdate);
+    app.world_mut().run_schedule(bevy::prelude::FixedUpdate);
     app.update();
 }
 
@@ -137,7 +138,10 @@ mod ground_detection {
         let controller = app.world().get::<CharacterController>(character).unwrap();
 
         // PROOF: ground_detected should be true (raycast hit)
-        assert!(controller.ground_detected(), "Ground should be detected by raycast");
+        assert!(
+            controller.ground_detected(),
+            "Ground should be detected by raycast"
+        );
 
         // PROOF: ground_distance should be approximately 20 - 5 = 15 (from capsule center to ground)
         // Capsule has half-height 8 and radius 4, so bottom is at y=20-12=8
@@ -150,7 +154,9 @@ mod ground_detection {
 
         println!(
             "PROOF: ground_detected={}, ground_distance={}, ground_normal={:?}",
-            controller.ground_detected(), controller.ground_distance(), controller.ground_normal
+            controller.ground_detected(),
+            controller.ground_distance(),
+            controller.ground_normal
         );
     }
 
@@ -200,7 +206,9 @@ mod ground_detection {
 
         println!(
             "PROOF: is_grounded={}, ground_detected={}, ground_distance={}",
-            controller.is_grounded, controller.ground_detected(), controller.ground_distance()
+            controller.is_grounded,
+            controller.ground_detected(),
+            controller.ground_distance()
         );
 
         // PROOF: is_grounded should be false when far from ground
@@ -226,7 +234,8 @@ mod ground_detection {
 
         println!(
             "PROOF: ground_detected={}, is_grounded={}",
-            controller.ground_detected(), controller.is_grounded
+            controller.ground_detected(),
+            controller.is_grounded
         );
 
         // PROOF: ground_detected should be false when over empty space
@@ -265,7 +274,9 @@ mod float_height {
 
         println!(
             "PROOF: Character position.y={}, ground_distance={}, float_height={}",
-            transform.translation.y, controller.ground_distance(), float_height
+            transform.translation.y,
+            controller.ground_distance(),
+            float_height
         );
 
         // PROOF: ground_distance should be close to float_height after settling
@@ -550,7 +561,10 @@ mod movement {
 
         let vel_after = app.world().get::<Velocity>(character).unwrap().linvel;
 
-        println!("PROOF: vel_before={:?}, vel_after={:?}", vel_before, vel_after);
+        println!(
+            "PROOF: vel_before={:?}, vel_after={:?}",
+            vel_before, vel_after
+        );
 
         // PROOF: Velocity should increase in the X direction
         assert!(
@@ -579,7 +593,10 @@ mod movement {
 
         let vel_after = app.world().get::<Velocity>(character).unwrap().linvel;
 
-        println!("PROOF: vel_before.y={}, vel_after.y={}", vel_before.y, vel_after.y);
+        println!(
+            "PROOF: vel_before.y={}, vel_after.y={}",
+            vel_before.y, vel_after.y
+        );
 
         // PROOF: Jump should apply positive Y velocity
         assert!(
@@ -601,7 +618,7 @@ mod upright_torque {
             .spawn((
                 transform,
                 GlobalTransform::from(transform),
-                CharacterController::walking(),
+                CharacterController::new(),
                 ControllerConfig::default()
                     .with_upright_torque(500.0, 50.0)
                     .with_upright_target_angle(0.0),
@@ -691,7 +708,10 @@ mod gravity {
 
         let vel_after = app.world().get::<Velocity>(character).unwrap().linvel;
 
-        println!("PROOF: vel_before.y={}, vel_after.y={}", vel_before.y, vel_after.y);
+        println!(
+            "PROOF: vel_before.y={}, vel_after.y={}",
+            vel_before.y, vel_after.y
+        );
 
         // PROOF: Internal gravity should decrease Y velocity (make it more negative)
         assert!(
@@ -710,7 +730,7 @@ mod gravity {
                 .spawn((
                     transform,
                     GlobalTransform::from(transform),
-                    CharacterController::walking_with_gravity(Vec2::new(0.0, -500.0)), // Custom gravity
+                    CharacterController::with_gravity(Vec2::new(0.0, -500.0)), // Custom gravity
                     ControllerConfig::default(),
                     WalkIntent::default(),
                     JumpRequest::default(),
@@ -811,7 +831,7 @@ mod collision_layers {
                 .spawn((
                     transform,
                     GlobalTransform::from(transform),
-                    CharacterController::walking(),
+                    CharacterController::new(),
                     ControllerConfig::default(),
                     WalkIntent::default(),
                     JumpRequest::default(),
@@ -830,7 +850,7 @@ mod collision_layers {
                 .spawn((
                     transform,
                     GlobalTransform::from(transform),
-                    CharacterController::walking(),
+                    CharacterController::new(),
                     ControllerConfig::default(),
                     WalkIntent::default(),
                     JumpRequest::default(),
@@ -844,12 +864,19 @@ mod collision_layers {
 
         tick(&mut app);
 
-        let ctrl1 = app.world().get::<CharacterController>(char_in_group).unwrap();
-        let ctrl2 = app.world().get::<CharacterController>(char_not_in_group).unwrap();
+        let ctrl1 = app
+            .world()
+            .get::<CharacterController>(char_in_group)
+            .unwrap();
+        let ctrl2 = app
+            .world()
+            .get::<CharacterController>(char_not_in_group)
+            .unwrap();
 
         println!(
             "PROOF: GROUP_1 char ground_detected={}, GROUP_2 char ground_detected={}",
-            ctrl1.ground_detected(), ctrl2.ground_detected()
+            ctrl1.ground_detected(),
+            ctrl2.ground_detected()
         );
 
         // PROOF: Sensors should inherit collision groups
