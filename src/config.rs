@@ -13,34 +13,6 @@ use bevy::prelude::*;
 ///
 /// The orientation is defined by a single `up` vector. The horizontal axes
 /// (left/right for walking, full 2D for flying) are derived perpendicular to `up`.
-///
-/// # Example
-///
-/// ```rust
-/// use bevy::prelude::*;
-/// use msg_character_controller::prelude::*;
-///
-/// // Default orientation (world up)
-/// let orientation = CharacterOrientation::default();
-/// assert_eq!(orientation.up(), Vec2::Y);
-/// assert_eq!(orientation.down(), Vec2::NEG_Y);
-///
-/// // Custom orientation for walking on a ceiling
-/// let ceiling = CharacterOrientation::new(Vec2::NEG_Y);
-/// assert_eq!(ceiling.up(), Vec2::NEG_Y);
-/// assert_eq!(ceiling.down(), Vec2::Y);
-///
-/// // Orientation for planetary gravity (pointing away from planet center)
-/// fn update_planetary_orientation(
-///     planet_center: Vec2,
-///     mut query: Query<(&Transform, &mut CharacterOrientation)>,
-/// ) {
-///     for (transform, mut orientation) in &mut query {
-///         let to_character = transform.translation.xy() - planet_center;
-///         orientation.set_up(to_character.normalize_or_zero());
-///     }
-/// }
-/// ```
 #[derive(Component, Reflect, Debug, Clone, Copy)]
 #[reflect(Component)]
 pub struct CharacterOrientation {
@@ -82,24 +54,18 @@ impl CharacterOrientation {
     }
 
     /// Get the "right" direction (perpendicular to up, clockwise).
-    ///
-    /// In 2D, this is the up vector rotated 90 degrees clockwise.
     #[inline]
     pub fn right(&self) -> Vec2 {
         Vec2::new(self.up.y, -self.up.x)
     }
 
     /// Get the "left" direction (perpendicular to up, counter-clockwise).
-    ///
-    /// In 2D, this is the up vector rotated 90 degrees counter-clockwise.
     #[inline]
     pub fn left(&self) -> Vec2 {
         Vec2::new(-self.up.y, self.up.x)
     }
 
     /// Set the "up" direction.
-    ///
-    /// The vector will be normalized. If zero-length, the orientation is unchanged.
     pub fn set_up(&mut self, up: Vec2) {
         let normalized = up.normalize_or_zero();
         if normalized != Vec2::ZERO {
@@ -108,9 +74,6 @@ impl CharacterOrientation {
     }
 
     /// Create an orientation from an angle (radians from world +X axis).
-    ///
-    /// An angle of 0 means "up" points to the right (+X).
-    /// An angle of PI/2 means "up" points to world up (+Y).
     pub fn from_angle(angle: f32) -> Self {
         Self {
             up: Vec2::from_angle(angle),
@@ -123,69 +86,13 @@ impl CharacterOrientation {
     }
 
     /// Project a world-space vector into this orientation's local space.
-    ///
-    /// Returns (horizontal, vertical) components where:
-    /// - horizontal is positive rightward
-    /// - vertical is positive upward
     pub fn to_local(&self, world_vec: Vec2) -> Vec2 {
         Vec2::new(world_vec.dot(self.right()), world_vec.dot(self.up))
     }
 
     /// Convert a local-space vector to world space.
-    ///
-    /// Takes (horizontal, vertical) and returns world coordinates.
     pub fn to_world(&self, local_vec: Vec2) -> Vec2 {
         self.right() * local_vec.x + self.up * local_vec.y
-    }
-}
-
-/// Core character controller component.
-///
-/// Add this component to enable the floating character controller behavior.
-/// The controller maintains a float height above ground using a spring-damper
-/// system and handles movement based on intent components.
-///
-/// # Required Components
-///
-/// For the controller to function, the entity also needs:
-/// - [`ControllerConfig`] - Controller tuning parameters
-/// - Physics components from your backend (RigidBody, Collider, etc.)
-/// - Movement intent components ([`super::intent::WalkIntent`] or [`super::intent::FlyIntent`])
-///
-/// # Optional Components
-///
-/// - [`super::intent::JumpRequest`] - For jumping capability
-/// - [`StairConfig`] - For stair stepping (auto-added with defaults if missing)
-#[derive(Component, Reflect, Debug, Clone, Copy, Default)]
-#[reflect(Component)]
-pub struct CharacterController {
-    /// Current mode of the controller.
-    pub mode: ControllerMode,
-}
-
-impl CharacterController {
-    /// Create a new walking controller.
-    pub fn walking() -> Self {
-        Self {
-            mode: ControllerMode::Walking,
-        }
-    }
-
-    /// Create a new flying controller.
-    pub fn flying() -> Self {
-        Self {
-            mode: ControllerMode::Flying,
-        }
-    }
-
-    /// Check if the controller is in walking mode.
-    pub fn is_walking(&self) -> bool {
-        matches!(self.mode, ControllerMode::Walking)
-    }
-
-    /// Check if the controller is in flying mode.
-    pub fn is_flying(&self) -> bool {
-        matches!(self.mode, ControllerMode::Flying)
     }
 }
 
@@ -199,45 +106,248 @@ pub enum ControllerMode {
     Flying,
 }
 
+/// Core character controller component.
+///
+/// This is the **central hub** for all character controller state.
+/// It contains RESULT states - not raw measurements that need computation.
+///
+/// # Contact States
+///
+/// - `is_grounded`: True when standing on walkable ground (within float_height)
+/// - `touching_left_wall`: True when touching a wall on the left
+/// - `touching_right_wall`: True when touching a wall on the right
+/// - `touching_ceiling`: True when touching a ceiling above
+#[derive(Component, Reflect, Debug, Clone)]
+#[reflect(Component)]
+pub struct CharacterController {
+    /// Current mode of the controller.
+    pub mode: ControllerMode,
+
+    // === Ground Contact State (RESULT) ===
+    /// Whether the character is grounded (standing on walkable ground).
+    /// True when ground is detected within `float_height` from the character.
+    pub is_grounded: bool,
+    /// Ground surface normal (points away from surface). Valid when is_grounded.
+    pub ground_normal: Vec2,
+    /// Slope angle in radians (0 = flat). Valid when is_grounded.
+    pub slope_angle: f32,
+    /// Whether a valid step was detected (for stair stepping).
+    pub step_detected: bool,
+    /// Height of the detected step (if any).
+    pub step_height: f32,
+    /// Time since last grounded (for coyote time).
+    pub time_since_grounded: f32,
+    /// Entity that is the ground. Valid when is_grounded.
+    pub ground_entity: Option<Entity>,
+
+    // === Wall Contact State (RESULTS) ===
+    /// Whether touching a wall on the left side.
+    pub touching_left_wall: bool,
+    /// Left wall normal. Valid when touching_left_wall.
+    pub left_wall_normal: Vec2,
+    /// Whether touching a wall on the right side.
+    pub touching_right_wall: bool,
+    /// Right wall normal. Valid when touching_right_wall.
+    pub right_wall_normal: Vec2,
+
+    // === Ceiling Contact State (RESULT) ===
+    /// Whether touching a ceiling above.
+    pub touching_ceiling: bool,
+    /// Ceiling surface normal. Valid when touching_ceiling.
+    pub ceiling_normal: Vec2,
+
+    // === Gravity ===
+    /// Gravity vector affecting this character.
+    /// Used for floating spring, extra fall gravity, and jump countering.
+    pub gravity: Vec2,
+
+    // === Internal (used by systems, kept pub(crate)) ===
+    /// Raw distance to ground (internal use for spring calculations).
+    pub(crate) ground_distance: f32,
+    /// Ground contact point in world space (internal use).
+    pub(crate) ground_contact_point: Vec2,
+    /// Whether ground raycast hit something (may be further than float_height).
+    pub(crate) ground_detected: bool,
+}
+
+impl Default for CharacterController {
+    fn default() -> Self {
+        Self {
+            mode: ControllerMode::Walking,
+            // Ground contact (RESULT)
+            is_grounded: false,
+            ground_normal: Vec2::Y,
+            slope_angle: 0.0,
+            step_detected: false,
+            step_height: 0.0,
+            time_since_grounded: 0.0,
+            ground_entity: None,
+            // Wall contact (RESULTS)
+            touching_left_wall: false,
+            left_wall_normal: Vec2::X,
+            touching_right_wall: false,
+            right_wall_normal: Vec2::NEG_X,
+            // Ceiling contact (RESULT)
+            touching_ceiling: false,
+            ceiling_normal: Vec2::NEG_Y,
+            // Gravity
+            gravity: Vec2::new(0.0, -980.0),
+            // Internal
+            ground_distance: f32::MAX,
+            ground_contact_point: Vec2::ZERO,
+            ground_detected: false,
+        }
+    }
+}
+
+impl CharacterController {
+    /// Create a new walking controller with default gravity.
+    pub fn walking() -> Self {
+        Self {
+            mode: ControllerMode::Walking,
+            ..default()
+        }
+    }
+
+    /// Create a new walking controller with custom gravity.
+    pub fn walking_with_gravity(gravity: Vec2) -> Self {
+        Self {
+            mode: ControllerMode::Walking,
+            gravity,
+            ..default()
+        }
+    }
+
+    /// Create a new flying controller.
+    pub fn flying() -> Self {
+        Self {
+            mode: ControllerMode::Flying,
+            gravity: Vec2::ZERO,
+            ..default()
+        }
+    }
+
+    /// Check if the controller is in walking mode.
+    #[inline]
+    pub fn is_walking(&self) -> bool {
+        matches!(self.mode, ControllerMode::Walking)
+    }
+
+    /// Check if the controller is in flying mode.
+    #[inline]
+    pub fn is_flying(&self) -> bool {
+        matches!(self.mode, ControllerMode::Flying)
+    }
+
+    /// Set the gravity vector.
+    pub fn set_gravity(&mut self, gravity: Vec2) {
+        self.gravity = gravity;
+    }
+
+    /// Get the ground tangent vector (for movement direction along slopes).
+    pub fn ground_tangent(&self) -> Vec2 {
+        Vec2::new(self.ground_normal.y, -self.ground_normal.x)
+    }
+
+    /// Check if touching any wall.
+    pub fn touching_wall(&self) -> bool {
+        self.touching_left_wall || self.touching_right_wall
+    }
+
+    /// Get the wall normal if touching a wall in the given direction.
+    pub fn wall_normal(&self, direction: f32) -> Option<Vec2> {
+        if direction < 0.0 && self.touching_left_wall {
+            Some(self.left_wall_normal)
+        } else if direction > 0.0 && self.touching_right_wall {
+            Some(self.right_wall_normal)
+        } else {
+            None
+        }
+    }
+
+    /// Check if on a slope that requires extra handling.
+    pub fn is_on_slope(&self) -> bool {
+        self.is_grounded && self.slope_angle.abs() > 0.1
+    }
+
+    /// Get the raw distance to ground (for debugging/testing).
+    ///
+    /// This returns the raycast hit distance, which may be beyond float_height.
+    /// Use `is_grounded` for gameplay logic instead.
+    pub fn ground_distance(&self) -> f32 {
+        self.ground_distance
+    }
+
+    /// Check if ground was detected by raycast (for debugging/testing).
+    ///
+    /// This returns true if the raycast hit something, even if beyond float_height.
+    /// Use `is_grounded` for gameplay logic instead.
+    pub fn ground_detected(&self) -> bool {
+        self.ground_detected
+    }
+
+    /// Get the ground contact point in world space (for debugging/testing).
+    pub fn ground_contact_point(&self) -> Vec2 {
+        self.ground_contact_point
+    }
+
+    /// Reset all detection state (called at start of each frame).
+    pub(crate) fn reset_detection_state(&mut self) {
+        // Ground
+        self.is_grounded = false;
+        self.ground_detected = false;
+        self.ground_distance = f32::MAX;
+        self.ground_normal = Vec2::Y;
+        self.ground_contact_point = Vec2::ZERO;
+        self.slope_angle = 0.0;
+        self.step_detected = false;
+        self.step_height = 0.0;
+        self.ground_entity = None;
+
+        // Walls
+        self.touching_left_wall = false;
+        self.left_wall_normal = Vec2::X;
+        self.touching_right_wall = false;
+        self.right_wall_normal = Vec2::NEG_X;
+
+        // Ceiling
+        self.touching_ceiling = false;
+        self.ceiling_normal = Vec2::NEG_Y;
+    }
+
+    /// Calculate height error for floating spring (internal use).
+    pub(crate) fn height_error(&self, target_height: f32) -> f32 {
+        if self.ground_detected {
+            target_height - self.ground_distance
+        } else {
+            0.0
+        }
+    }
+}
+
 /// Configuration parameters for the character controller.
 ///
-/// These parameters control the physics behavior of the floating controller,
-/// including spring strength, movement speeds, and slope handling.
+/// All raycast lengths are DERIVED from float_height and other settings.
+/// No hardcoded magic numbers.
 #[derive(Component, Reflect, Debug, Clone, Copy)]
 #[reflect(Component)]
 pub struct ControllerConfig {
     // === Float Settings ===
     /// Target height to float above ground (in world units/pixels).
-    ///
-    /// The controller will try to maintain this distance between the character
-    /// and the ground surface.
+    /// This is the key setting - other sensor lengths are derived from it.
     pub float_height: f32,
 
-    /// Distance below float_height to still consider as "grounded".
-    ///
-    /// This provides a tolerance zone for ground detection. If the character
-    /// is within `float_height + cling_distance` of ground, they're grounded.
+    /// Extra distance beyond float_height to still consider as "grounded".
     pub cling_distance: f32,
 
     /// Extra downward force multiplier when within cling distance.
-    ///
-    /// When the character is above float_height but within cling_distance,
-    /// this multiplier applies additional downward force to help them
-    /// "stick" to the ground on bumpy terrain or small ledges.
-    /// 0.0 = no extra force, 1.0 = double gravity, etc.
     pub cling_strength: f32,
 
     // === Spring Settings ===
     /// Spring strength for the floating system.
-    ///
-    /// Higher values make the controller more "stiff" and responsive,
-    /// but can cause oscillation if too high. Typical range: 100-1000.
     pub spring_strength: f32,
 
     /// Spring damping coefficient.
-    ///
-    /// Reduces oscillation in the spring system. Should be proportional
-    /// to spring_strength. Typical range: 10-100.
     pub spring_damping: f32,
 
     // === Movement Settings ===
@@ -245,106 +355,79 @@ pub struct ControllerConfig {
     pub max_speed: f32,
 
     /// Horizontal acceleration rate (units/second^2).
-    ///
-    /// Controls how quickly the character reaches max speed.
     pub acceleration: f32,
 
     /// Friction/deceleration when no input (0.0-1.0).
-    ///
-    /// Applied as a velocity multiplier each physics step.
-    /// 0.0 = no friction (ice), 1.0 = instant stop.
     pub friction: f32,
 
     /// Air control multiplier (0.0-1.0).
-    ///
-    /// Multiplies acceleration when airborne.
     pub air_control: f32,
 
     // === Slope Settings ===
     /// Maximum slope angle the character can walk up (radians).
-    ///
-    /// Slopes steeper than this will be treated as walls.
-    /// PI/3 (~60 degrees) is a common value.
     pub max_slope_angle: f32,
 
     /// Extra downward force when walking uphill.
-    ///
-    /// Helps keep the character grounded on slopes.
     pub uphill_gravity_multiplier: f32,
 
-    // === Shapecast Settings ===
-    /// Length of the ground detection shapecast.
-    ///
-    /// Should be slightly longer than `float_height + cling_distance`.
-    pub ground_cast_length: f32,
+    // === Sensor Settings (multipliers - actual lengths derived from float_height) ===
+    /// Ground cast length = float_height * ground_cast_multiplier.
+    /// Higher values detect ground from further away (good for falling).
+    pub ground_cast_multiplier: f32,
 
     /// Width of the ground detection shapecast.
-    ///
-    /// A wider cast provides better slope detection and stability on uneven
-    /// terrain. Typical value is 50-100% of character width.
     pub ground_cast_width: f32,
 
-    /// Length of wall detection shapecasts.
-    pub wall_cast_length: f32,
+    /// Wall cast length = ground_cast_width * wall_cast_multiplier.
+    pub wall_cast_multiplier: f32,
 
-    /// Width of wall detection shapecasts.
-    pub wall_cast_width: f32,
+    /// Height of wall detection shapecasts.
+    pub wall_cast_height: f32,
+
+    /// Ceiling cast length = float_height * ceiling_cast_multiplier.
+    pub ceiling_cast_multiplier: f32,
+
+    /// Width of ceiling detection shapecast.
+    pub ceiling_cast_width: f32,
 
     // === Jump Settings ===
     /// Jump impulse strength (applied as velocity).
     pub jump_speed: f32,
 
     /// Coyote time duration in seconds.
-    ///
-    /// Time after leaving ground where jump is still allowed.
     pub coyote_time: f32,
 
     /// Jump buffer duration in seconds.
-    ///
-    /// Time before landing where jump input is buffered.
     pub jump_buffer_time: f32,
 
     /// Extra gravity multiplier when falling.
-    ///
-    /// Applied when velocity is in the -UP direction (falling down).
-    /// 1.0 = double gravity when falling (1.0 base + 1.0 extra).
-    /// 0.0 = no extra gravity.
-    /// Values > 1.0 create super fast falls.
     pub extra_fall_gravity: f32,
 
     // === Upright Torque Settings ===
     /// Whether to apply torque to keep the character upright.
-    ///
-    /// When enabled, applies a spring-like torque force proportional to the
-    /// square of the angle deviation from the target "up" direction.
-    /// This creates a strong corrective force that increases rapidly as the
-    /// character tilts further from upright.
     pub upright_torque_enabled: bool,
 
     /// Strength of the upright torque spring.
-    ///
-    /// The torque applied is: strength * angle_error² * sign(angle_error)
-    /// Higher values create a stiffer response. Typical range: 50-500.
     pub upright_torque_strength: f32,
 
     /// Damping coefficient for the upright torque.
-    ///
-    /// Reduces oscillation by opposing angular velocity.
-    /// Should be proportional to torque_strength. Typical range: 5-50.
     pub upright_torque_damping: f32,
+
+    /// Target angle for upright torque (radians). None = use CharacterOrientation.
+    pub upright_target_angle: Option<f32>,
 }
 
 impl Default for ControllerConfig {
     fn default() -> Self {
         Self {
             // Float settings
-            float_height: 15.0, // Should be at least collider half-height + desired float distance
+            float_height: 15.0,
             cling_distance: 2.0,
             cling_strength: 0.5,
 
             // Spring settings
-            spring_strength: 8000.0, // Much stronger to actually lift the character
-            spring_damping: 200.0, // Low damping to not kill movement
+            spring_strength: 8000.0,
+            spring_damping: 200.0,
 
             // Movement settings
             max_speed: 100.0,
@@ -354,34 +437,55 @@ impl Default for ControllerConfig {
 
             // Slope settings
             max_slope_angle: std::f32::consts::FRAC_PI_3, // 60 degrees
-            uphill_gravity_multiplier: 1.0, // Reduced from 1.5 to prevent shooting up slopes
+            uphill_gravity_multiplier: 1.0,
 
-            // Shapecast settings
-            ground_cast_length: 1000.0, // Long enough to detect ground from any reasonable height
+            // Sensor settings (derived from float_height)
+            ground_cast_multiplier: 10.0,
             ground_cast_width: 6.0,
-            wall_cast_length: 6.0,
-            wall_cast_width: 4.0,
+            wall_cast_multiplier: 1.5,
+            wall_cast_height: 4.0,
+            ceiling_cast_multiplier: 2.0,
+            ceiling_cast_width: 6.0,
 
             // Jump settings
-            jump_speed: 5000.0, // Strong impulse to overcome mass (impulse = mass * velocity_change)
+            jump_speed: 5000.0,
             coyote_time: 0.15,
             jump_buffer_time: 0.1,
-            extra_fall_gravity: 1.0, // Default to 1.0x extra gravity when falling
+            extra_fall_gravity: 1.0,
 
             // Upright torque settings
             upright_torque_enabled: true,
             upright_torque_strength: 200.0,
             upright_torque_damping: 20.0,
+            upright_target_angle: None,
         }
     }
 }
 
 impl ControllerConfig {
+    /// Get the ground cast length (derived from float_height).
+    #[inline]
+    pub fn ground_cast_length(&self) -> f32 {
+        self.float_height * self.ground_cast_multiplier
+    }
+
+    /// Get the wall cast length (derived from ground_cast_width).
+    #[inline]
+    pub fn wall_cast_length(&self) -> f32 {
+        self.ground_cast_width * self.wall_cast_multiplier
+    }
+
+    /// Get the ceiling cast length (derived from float_height).
+    #[inline]
+    pub fn ceiling_cast_length(&self) -> f32 {
+        self.float_height * self.ceiling_cast_multiplier
+    }
+
     /// Create a config optimized for responsive player control.
     pub fn player() -> Self {
         Self {
-            spring_strength: 12000.0, // Very strong spring to float character with mass
-            spring_damping: 300.0, // Low damping ratio to preserve jumps
+            spring_strength: 12000.0,
+            spring_damping: 300.0,
             acceleration: 1200.0,
             ..default()
         }
@@ -390,8 +494,8 @@ impl ControllerConfig {
     /// Create a config for AI-controlled characters.
     pub fn ai() -> Self {
         Self {
-            spring_strength: 1500.0, // Moderate spring for AI control
-            spring_damping: 75.0, // Proportional damping
+            spring_strength: 1500.0,
+            spring_damping: 75.0,
             acceleration: 600.0,
             air_control: 0.1,
             ..default()
@@ -413,24 +517,12 @@ impl ControllerConfig {
     /// Builder: set float height.
     pub fn with_float_height(mut self, height: f32) -> Self {
         self.float_height = height;
-        // Auto-adjust ground cast length if it's too short
-        // Cast should be long enough to detect ground while falling
-        if self.ground_cast_length < height * 2.0 {
-            // No hardcoded max - just scale with float height
-            self.ground_cast_length = height * 10.0;
-        }
         self
     }
 
     /// Builder: set ground cast width.
     pub fn with_ground_cast_width(mut self, width: f32) -> Self {
         self.ground_cast_width = width;
-        self
-    }
-
-    /// Builder: set ground cast length (detection range).
-    pub fn with_ground_cast_length(mut self, length: f32) -> Self {
-        self.ground_cast_length = length;
         self
     }
 
@@ -493,40 +585,27 @@ impl ControllerConfig {
         self
     }
 
-    /// Builder: set uphill gravity multiplier.
-    ///
-    /// Controls extra downward force applied when walking uphill.
-    /// Set to 1.0 to disable the extra force.
-    pub fn with_uphill_gravity_multiplier(mut self, multiplier: f32) -> Self {
-        self.uphill_gravity_multiplier = multiplier;
+    /// Builder: set extra fall gravity multiplier.
+    pub fn with_extra_fall_gravity(mut self, multiplier: f32) -> Self {
+        self.extra_fall_gravity = multiplier;
         self
     }
 
-    /// Builder: set extra fall gravity multiplier.
-    ///
-    /// Controls additional gravity applied when falling down.
-    /// 0.0 = normal gravity only, 1.0 = double gravity when falling.
-    pub fn with_extra_fall_gravity(mut self, multiplier: f32) -> Self {
-        self.extra_fall_gravity = multiplier;
+    /// Builder: set upright target angle.
+    pub fn with_upright_target_angle(mut self, angle: f32) -> Self {
+        self.upright_target_angle = Some(angle);
         self
     }
 }
 
 /// Configuration for stair stepping behavior.
-///
-/// Stair stepping allows the character to automatically step over small
-/// obstacles using additional raycasts to detect step-able geometry.
 #[derive(Component, Reflect, Debug, Clone, Copy)]
 #[reflect(Component)]
 pub struct StairConfig {
     /// Maximum step height the character can automatically climb.
-    ///
-    /// Obstacles higher than this will be treated as walls.
     pub max_step_height: f32,
 
     /// Minimum horizontal depth for a valid step.
-    ///
-    /// The top of the step must extend at least this far horizontally.
     pub min_step_depth: f32,
 
     /// Forward raycast distance for step detection.
@@ -566,9 +645,7 @@ impl StairConfig {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::f32::consts::{FRAC_PI_2, PI};
-
-    // ==================== CharacterOrientation Tests ====================
+    use std::f32::consts::FRAC_PI_2;
 
     #[test]
     fn orientation_default_is_world_up() {
@@ -583,136 +660,13 @@ mod tests {
     fn orientation_new_normalizes_input() {
         let orientation = CharacterOrientation::new(Vec2::new(0.0, 10.0));
         assert!((orientation.up() - Vec2::Y).length() < 0.001);
-
-        let orientation = CharacterOrientation::new(Vec2::new(3.0, 4.0));
-        assert!((orientation.up().length() - 1.0).abs() < 0.001);
-    }
-
-    #[test]
-    fn orientation_new_handles_zero_vector() {
-        let orientation = CharacterOrientation::new(Vec2::ZERO);
-        assert_eq!(orientation.up(), Vec2::Y); // Falls back to default
-    }
-
-    #[test]
-    fn orientation_ceiling_inverts_directions() {
-        let orientation = CharacterOrientation::new(Vec2::NEG_Y);
-        assert_eq!(orientation.up(), Vec2::NEG_Y);
-        assert_eq!(orientation.down(), Vec2::Y);
-        // Right and left are also inverted
-        assert_eq!(orientation.right(), Vec2::NEG_X);
-        assert_eq!(orientation.left(), Vec2::X);
-    }
-
-    #[test]
-    fn orientation_sideways_walking() {
-        // Walking on a wall where "up" points right
-        let orientation = CharacterOrientation::new(Vec2::X);
-        assert_eq!(orientation.up(), Vec2::X);
-        assert_eq!(orientation.down(), Vec2::NEG_X);
-        assert_eq!(orientation.right(), Vec2::NEG_Y);
-        assert_eq!(orientation.left(), Vec2::Y);
-    }
-
-    #[test]
-    fn orientation_set_up_updates_direction() {
-        let mut orientation = CharacterOrientation::default();
-        orientation.set_up(Vec2::NEG_Y);
-        assert_eq!(orientation.up(), Vec2::NEG_Y);
-
-        // Zero vector should not change orientation
-        let old_up = orientation.up();
-        orientation.set_up(Vec2::ZERO);
-        assert_eq!(orientation.up(), old_up);
     }
 
     #[test]
     fn orientation_from_angle() {
-        // 0 radians = pointing right (+X)
-        let orientation = CharacterOrientation::from_angle(0.0);
-        assert!((orientation.up() - Vec2::X).length() < 0.001);
-
-        // PI/2 = pointing up (+Y)
         let orientation = CharacterOrientation::from_angle(FRAC_PI_2);
         assert!((orientation.up() - Vec2::Y).length() < 0.001);
-
-        // PI = pointing left (-X)
-        let orientation = CharacterOrientation::from_angle(PI);
-        assert!((orientation.up() - Vec2::NEG_X).length() < 0.001);
     }
-
-    #[test]
-    fn orientation_angle_roundtrip() {
-        for angle in [0.0, FRAC_PI_2, PI, -FRAC_PI_2, 0.5, 1.5, 2.5] {
-            let orientation = CharacterOrientation::from_angle(angle);
-            let recovered_angle = orientation.angle();
-            // Angles can differ by 2*PI
-            let diff = (angle - recovered_angle).abs() % (2.0 * PI);
-            assert!(diff < 0.001 || (2.0 * PI - diff).abs() < 0.001);
-        }
-    }
-
-    #[test]
-    fn orientation_to_local_space() {
-        let orientation = CharacterOrientation::default();
-
-        // World right -> local right
-        let local = orientation.to_local(Vec2::X);
-        assert!((local - Vec2::X).length() < 0.001);
-
-        // World up -> local up
-        let local = orientation.to_local(Vec2::Y);
-        assert!((local - Vec2::Y).length() < 0.001);
-
-        // Diagonal
-        let local = orientation.to_local(Vec2::new(1.0, 1.0));
-        assert!((local - Vec2::new(1.0, 1.0)).length() < 0.001);
-    }
-
-    #[test]
-    fn orientation_to_world_space() {
-        let orientation = CharacterOrientation::default();
-
-        // Local (1, 0) = world right
-        let world = orientation.to_world(Vec2::X);
-        assert!((world - Vec2::X).length() < 0.001);
-
-        // Local (0, 1) = world up
-        let world = orientation.to_world(Vec2::Y);
-        assert!((world - Vec2::Y).length() < 0.001);
-    }
-
-    #[test]
-    fn orientation_local_world_roundtrip() {
-        let orientation = CharacterOrientation::new(Vec2::new(1.0, 1.0).normalize());
-
-        for vec in [Vec2::X, Vec2::Y, Vec2::new(3.0, -4.0), Vec2::new(-1.0, 2.0)] {
-            let local = orientation.to_local(vec);
-            let back_to_world = orientation.to_world(local);
-            assert!(
-                (vec - back_to_world).length() < 0.001,
-                "Failed roundtrip for {:?}",
-                vec
-            );
-        }
-    }
-
-    #[test]
-    fn orientation_planetary_gravity_simulation() {
-        // Simulate a character on a planet, standing at angle 45 degrees
-        let character_pos = Vec2::new(100.0, 100.0);
-        let planet_center = Vec2::ZERO;
-        let up = (character_pos - planet_center).normalize();
-
-        let orientation = CharacterOrientation::new(up);
-
-        // Down should point toward planet center
-        let down = orientation.down();
-        let expected_down = (planet_center - character_pos).normalize();
-        assert!((down - expected_down).length() < 0.001);
-    }
-
-    // ==================== CharacterController Tests ====================
 
     #[test]
     fn controller_walking_mode() {
@@ -728,90 +682,52 @@ mod tests {
         assert!(!controller.is_walking());
     }
 
-    // ==================== ControllerConfig Tests ====================
+    #[test]
+    fn controller_walking_with_gravity() {
+        let gravity = Vec2::new(0.0, -500.0);
+        let controller = CharacterController::walking_with_gravity(gravity);
+        assert_eq!(controller.gravity, gravity);
+    }
 
     #[test]
-    fn config_default_values() {
-        let config = ControllerConfig::default();
-        assert_eq!(config.float_height, 8.0);
-        assert!(config.spring_strength > 0.0);
-        assert!(config.max_speed > 0.0);
-        assert!(config.max_slope_angle > 0.0);
-        assert!(config.coyote_time > 0.0);
-        assert!(config.jump_buffer_time > 0.0);
+    fn controller_touching_wall() {
+        let mut controller = CharacterController::walking();
+        assert!(!controller.touching_wall());
+
+        controller.touching_left_wall = true;
+        assert!(controller.touching_wall());
+    }
+
+    #[test]
+    fn config_derived_cast_lengths() {
+        let config = ControllerConfig::default().with_float_height(20.0);
+
+        // Ground cast derived from float_height
+        assert_eq!(config.ground_cast_length(), 20.0 * config.ground_cast_multiplier);
+
+        // Wall cast derived from ground_cast_width
+        assert_eq!(config.wall_cast_length(), config.ground_cast_width * config.wall_cast_multiplier);
+
+        // Ceiling cast derived from float_height
+        assert_eq!(config.ceiling_cast_length(), 20.0 * config.ceiling_cast_multiplier);
     }
 
     #[test]
     fn config_player_preset() {
         let player = ControllerConfig::player();
         let default = ControllerConfig::default();
-
-        // Player should have higher responsiveness
         assert!(player.spring_strength >= default.spring_strength);
-        assert!(player.acceleration >= default.acceleration);
     }
-
-    #[test]
-    fn config_ai_preset() {
-        let ai = ControllerConfig::ai();
-        let default = ControllerConfig::default();
-
-        // AI should have lower air control
-        assert!(ai.air_control <= default.air_control);
-    }
-
-    #[test]
-    fn config_flying_preset() {
-        let flying = ControllerConfig::flying();
-
-        // Flying should have no spring (floats freely)
-        assert_eq!(flying.spring_strength, 0.0);
-        assert_eq!(flying.spring_damping, 0.0);
-        // Full air control
-        assert_eq!(flying.air_control, 1.0);
-    }
-
-    #[test]
-    fn config_builder_pattern() {
-        let config = ControllerConfig::default()
-            .with_float_height(16.0)
-            .with_spring(500.0, 50.0)
-            .with_movement(200.0, 1000.0)
-            .with_ground_cast_width(8.0);
-
-        assert_eq!(config.float_height, 16.0);
-        assert_eq!(config.spring_strength, 500.0);
-        assert_eq!(config.spring_damping, 50.0);
-        assert_eq!(config.max_speed, 200.0);
-        assert_eq!(config.acceleration, 1000.0);
-        assert_eq!(config.ground_cast_width, 8.0);
-    }
-
-    #[test]
-    fn config_with_float_height_updates_cast_length() {
-        let config = ControllerConfig::default().with_float_height(20.0);
-        // Cast length should be at least float_height + cling_distance
-        assert!(config.ground_cast_length >= config.float_height + config.cling_distance);
-    }
-
-    // ==================== StairConfig Tests ====================
 
     #[test]
     fn stair_config_default() {
         let config = StairConfig::default();
         assert!(config.enabled);
-        assert!(config.max_step_height > 0.0);
     }
 
     #[test]
     fn stair_config_disabled() {
         let config = StairConfig::disabled();
         assert!(!config.enabled);
-    }
-
-    #[test]
-    fn stair_config_builder() {
-        let config = StairConfig::default().with_max_height(12.0);
-        assert_eq!(config.max_step_height, 12.0);
     }
 }

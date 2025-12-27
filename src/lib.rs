@@ -41,24 +41,6 @@ pub mod intent;
 pub mod state;
 pub mod systems;
 
-/// Per-entity gravity vector component.
-///
-/// Attach this to your character to specify the gravity affecting it.
-/// This is essential for the floating spring system to work correctly.
-///
-/// # Example
-/// ```
-/// // For standard downward gravity
-/// commands.entity(player).insert(CharacterGravity(Vec2::new(0.0, -980.0)));
-///
-/// // For spherical planet (gravity towards center)
-/// let to_center = (planet_center - player_pos).normalize();
-/// commands.entity(player).insert(CharacterGravity(to_center * 980.0));
-/// ```
-#[derive(Component, Reflect, Debug, Clone, Copy, Default)]
-#[reflect(Component)]
-pub struct CharacterGravity(pub Vec2);
-
 #[cfg(feature = "rapier2d")]
 pub mod rapier;
 
@@ -67,16 +49,33 @@ pub mod prelude {
 
     pub use crate::backend::CharacterPhysicsBackend;
     pub use crate::config::{
-        CharacterController, CharacterOrientation, ControllerConfig, StairConfig,
+        CharacterController, CharacterOrientation, ControllerConfig, ControllerMode, StairConfig,
     };
-    pub use crate::detection::{GroundInfo, SensorCast, WallInfo};
+    pub use crate::detection::SensorCast;
     pub use crate::intent::{FlyIntent, JumpRequest, WalkIntent};
-    pub use crate::state::{Airborne, Grounded, TouchingWall};
+    pub use crate::state::{Airborne, Grounded, TouchingCeiling, TouchingWall};
     pub use crate::CharacterControllerPlugin;
-    pub use crate::CharacterGravity;
+    pub use crate::GravityMode;
 
     #[cfg(feature = "rapier2d")]
     pub use crate::rapier::Rapier2dBackend;
+}
+
+/// Configuration for how gravity is handled by the character controller.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum GravityMode {
+    /// The plugin applies gravity internally using the CharacterController.gravity field.
+    /// Gravity is applied as a force each physics frame when the character is walking
+    /// and not grounded.
+    #[default]
+    Internal,
+    /// Gravity is applied externally by the user.
+    /// The plugin will NOT apply gravity forces, but will still use the
+    /// CharacterController.gravity field for:
+    /// - Extra fall gravity calculation
+    /// - Jump counter force
+    /// - Cling force calculation
+    External,
 }
 
 /// Main plugin for the character controller system.
@@ -87,9 +86,12 @@ pub mod prelude {
 /// # Type Parameters
 /// - `B`: The physics backend implementation (e.g., `Rapier2dBackend`)
 ///
+/// # Configuration
+/// - `gravity_mode`: Whether gravity is applied internally or externally
+///
 /// # Examples
 ///
-/// With Rapier2D backend:
+/// With Rapier2D backend (internal gravity):
 /// ```rust,no_run
 /// use bevy::prelude::*;
 /// use bevy_rapier2d::prelude::*;
@@ -101,14 +103,55 @@ pub mod prelude {
 ///     .add_plugins(CharacterControllerPlugin::<Rapier2dBackend>::default())
 ///     .run();
 /// ```
+///
+/// With external gravity:
+/// ```rust,no_run
+/// use bevy::prelude::*;
+/// use bevy_rapier2d::prelude::*;
+/// use msg_character_controller::prelude::*;
+///
+/// App::new()
+///     .add_plugins(DefaultPlugins)
+///     .add_plugins(RapierPhysicsPlugin::<NoUserData>::default())
+///     .add_plugins(CharacterControllerPlugin::<Rapier2dBackend>::with_external_gravity())
+///     .run();
+/// ```
 pub struct CharacterControllerPlugin<B: backend::CharacterPhysicsBackend> {
     _marker: std::marker::PhantomData<B>,
+    gravity_mode: GravityMode,
 }
 
 impl<B: backend::CharacterPhysicsBackend> Default for CharacterControllerPlugin<B> {
     fn default() -> Self {
         Self {
             _marker: std::marker::PhantomData,
+            gravity_mode: GravityMode::Internal,
+        }
+    }
+}
+
+impl<B: backend::CharacterPhysicsBackend> CharacterControllerPlugin<B> {
+    /// Create a plugin with internal gravity (default).
+    /// The plugin will apply gravity forces to walking characters.
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Create a plugin with external gravity.
+    /// The user is responsible for applying gravity; the plugin will use
+    /// CharacterController.gravity for calculations only.
+    pub fn with_external_gravity() -> Self {
+        Self {
+            _marker: std::marker::PhantomData,
+            gravity_mode: GravityMode::External,
+        }
+    }
+
+    /// Create a plugin with the specified gravity mode.
+    pub fn with_gravity_mode(gravity_mode: GravityMode) -> Self {
+        Self {
+            _marker: std::marker::PhantomData,
+            gravity_mode,
         }
     }
 }
@@ -126,9 +169,10 @@ impl<B: backend::CharacterPhysicsBackend> Plugin for CharacterControllerPlugin<B
         app.register_type::<state::Grounded>();
         app.register_type::<state::Airborne>();
         app.register_type::<state::TouchingWall>();
-        app.register_type::<detection::GroundInfo>();
-        app.register_type::<detection::WallInfo>();
-        app.register_type::<CharacterGravity>();
+        app.register_type::<state::TouchingCeiling>();
+
+        // Insert gravity mode as a resource
+        app.insert_resource(GravityModeResource(self.gravity_mode));
 
         // Add the physics backend plugin
         app.add_plugins(B::plugin());
@@ -137,9 +181,8 @@ impl<B: backend::CharacterPhysicsBackend> Plugin for CharacterControllerPlugin<B
         app.add_systems(
             FixedUpdate,
             (
-                systems::update_ground_detection::<B>,
-                systems::update_wall_detection::<B>,
                 systems::apply_floating_spring::<B>,
+                systems::apply_internal_gravity::<B>,
                 systems::apply_upright_torque::<B>,
                 systems::apply_walk_movement::<B>,
                 systems::apply_fly_movement::<B>,
@@ -153,3 +196,7 @@ impl<B: backend::CharacterPhysicsBackend> Plugin for CharacterControllerPlugin<B
         app.add_systems(FixedPostUpdate, systems::reset_jump_requests);
     }
 }
+
+/// Resource to store the gravity mode configuration.
+#[derive(Resource, Debug, Clone, Copy)]
+pub struct GravityModeResource(pub GravityMode);
