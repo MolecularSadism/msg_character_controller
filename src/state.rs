@@ -12,18 +12,6 @@ use bevy::prelude::*;
 /// within the cling distance. Removed when the character becomes airborne.
 ///
 /// This is a marker component - it has no data, just indicates state.
-///
-/// # Example
-///
-/// ```rust
-/// use bevy::prelude::*;
-/// use msg_character_controller::prelude::*;
-///
-/// // Grounded is a marker component - just use it in queries
-/// fn check_grounded(grounded: Option<&Grounded>) -> bool {
-///     grounded.is_some()
-/// }
-/// ```
 #[derive(Component, Reflect, Debug, Clone, Copy, Default)]
 #[reflect(Component)]
 pub struct Grounded;
@@ -77,6 +65,35 @@ impl TouchingWall {
     }
 }
 
+/// Marker component indicating the character is touching a ceiling.
+///
+/// Added when ceiling detection raycasts find a surface above the character
+/// within range.
+#[derive(Component, Reflect, Debug, Clone, Copy)]
+#[reflect(Component)]
+pub struct TouchingCeiling {
+    /// Distance to the ceiling.
+    pub distance: f32,
+    /// Normal of the ceiling surface.
+    pub normal: Vec2,
+}
+
+impl Default for TouchingCeiling {
+    fn default() -> Self {
+        Self {
+            distance: 0.0,
+            normal: Vec2::NEG_Y,
+        }
+    }
+}
+
+impl TouchingCeiling {
+    /// Create a new ceiling touch state.
+    pub fn new(distance: f32, normal: Vec2) -> Self {
+        Self { distance, normal }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -84,7 +101,6 @@ mod tests {
     #[test]
     fn grounded_is_default() {
         let grounded = Grounded::default();
-        // Marker component, just verify it can be created
         let _ = grounded;
     }
 
@@ -117,9 +133,15 @@ mod tests {
 
     #[test]
     fn touching_wall_diagonal() {
-        // Diagonal wall contact
         let wall = TouchingWall::new(Vec2::new(-1.0, 0.5), Vec2::new(0.7, -0.7));
-        assert!(wall.is_left()); // x < 0
+        assert!(wall.is_left());
         assert!(!wall.is_right());
+    }
+
+    #[test]
+    fn touching_ceiling_new() {
+        let ceiling = TouchingCeiling::new(5.0, Vec2::NEG_Y);
+        assert_eq!(ceiling.distance, 5.0);
+        assert_eq!(ceiling.normal, Vec2::NEG_Y);
     }
 }

@@ -226,14 +226,13 @@ fn spawn_player(commands: &mut Commands) {
             },
         ))
         .insert((
-            // Character controller
-            CharacterController::walking(),
+            // Character controller with gravity
+            CharacterController::walking_with_gravity(Vec2::new(0.0, -980.0)),
             ControllerConfig::player()
                 // Capsule total half-height = half_length + radius = 4 + 6 = 10
                 // We want to float 5 units above ground, so total = 10 + 5 = 15
                 .with_float_height(15.0)
                 .with_ground_cast_width(PLAYER_RADIUS),
-            CharacterGravity(Vec2::new(0.0, -980.0)), // Set gravity for this character
             WalkIntent::default(),
             FlyIntent::default(),
             JumpRequest::default(),
@@ -328,16 +327,16 @@ fn toggle_mode(
 fn apply_gravity(
     time: Res<Time<Fixed>>,
     mut query: Query<
-        (&CharacterController, &CharacterGravity, &mut Velocity, Option<&Grounded>),
+        (&CharacterController, &mut Velocity, Option<&Grounded>),
         With<AffectedByGravity>,
     >,
 ) {
     let dt = time.delta_secs();
 
-    for (controller, gravity, mut velocity, grounded) in &mut query {
+    for (controller, mut velocity, grounded) in &mut query {
         // Only apply gravity in walking mode and when not grounded
         if controller.is_walking() && grounded.is_none() {
-            velocity.linvel += gravity.0 * dt;
+            velocity.linvel += controller.gravity * dt;
         }
     }
 }
