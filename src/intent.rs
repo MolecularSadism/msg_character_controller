@@ -5,10 +5,11 @@
 
 use bevy::prelude::*;
 
-/// Walking movement intent (1D horizontal axis).
+/// Unified movement intent for walking and flying.
 ///
-/// For ground-based characters, this controls horizontal movement along
-/// the ground plane. The value should be in the range -1.0 to 1.0.
+/// This component combines horizontal walking and vertical propulsion into
+/// a single intent. The controller systems use this to apply appropriate
+/// movement physics based on character state.
 ///
 /// # Example
 ///
@@ -16,147 +17,129 @@ use bevy::prelude::*;
 /// use msg_character_controller::prelude::*;
 ///
 /// // Create intent moving right
-/// let mut intent = WalkIntent::new(1.0);
-/// assert!(intent.is_active());
-/// assert_eq!(intent.effective(), 1.0);
+/// let mut intent = MovementIntent::new();
+/// intent.set_walk(1.0);
+/// assert!(intent.is_walking());
 ///
-/// // Apply half speed
-/// intent.set_speed(0.5);
-/// assert_eq!(intent.effective(), 0.5);
+/// // Add upward propulsion
+/// intent.set_fly(1.0);
+/// assert!(intent.is_flying_up());
 ///
-/// // Clear to stop
+/// // Clear everything
 /// intent.clear();
-/// assert!(!intent.is_active());
+/// assert!(!intent.is_walking());
+/// assert!(!intent.is_flying());
 /// ```
 #[derive(Component, Reflect, Debug, Clone, Copy)]
 #[reflect(Component)]
-pub struct WalkIntent {
+pub struct MovementIntent {
     /// Horizontal movement intent (-1.0 = left, 1.0 = right).
-    pub direction: f32,
-    /// Speed multiplier (0.0 to 1.0).
-    pub speed_multiplier: f32,
-}
-
-impl Default for WalkIntent {
-    fn default() -> Self {
-        Self {
-            direction: 0.0,
-            speed_multiplier: 1.0, // Default to full speed so set() works immediately
-        }
-    }
-}
-
-impl WalkIntent {
-    /// Create a new walk intent with the given direction.
-    pub fn new(direction: f32) -> Self {
-        Self {
-            direction: direction.clamp(-1.0, 1.0),
-            speed_multiplier: 1.0,
-        }
-    }
-
-    /// Set the movement direction.
-    pub fn set(&mut self, direction: f32) {
-        self.direction = direction.clamp(-1.0, 1.0);
-    }
-
-    /// Set the speed multiplier (for walk vs run).
-    pub fn set_speed(&mut self, multiplier: f32) {
-        self.speed_multiplier = multiplier.clamp(0.0, 1.0);
-    }
-
-    /// Clear the intent (stop moving).
-    pub fn clear(&mut self) {
-        self.direction = 0.0;
-    }
-
-    /// Check if there is active input.
-    pub fn is_active(&self) -> bool {
-        self.direction.abs() > 0.001
-    }
-
-    /// Get the effective direction with speed multiplier applied.
-    pub fn effective(&self) -> f32 {
-        self.direction * self.speed_multiplier
-    }
-}
-
-/// Vertical propulsion intent (for jetpacks, thrusters, etc.).
-///
-/// This controls vertical propulsion independently from walking.
-/// Positive values thrust upward, negative values thrust downward.
-/// When thrusting upward, the propulsion is automatically strengthened
-/// by the magnitude of gravity to help counteract it.
-///
-/// # Example
-///
-/// ```rust
-/// use msg_character_controller::prelude::*;
-///
-/// // Create intent thrusting upward
-/// let mut intent = PropulsionIntent::new(1.0);
-/// assert!(intent.is_active());
-///
-/// // Thrust downward
-/// intent.set(-1.0);
-/// assert_eq!(intent.direction, -1.0);
-///
-/// // Clear to stop
-/// intent.clear();
-/// assert!(!intent.is_active());
-/// ```
-#[derive(Component, Reflect, Debug, Clone, Copy)]
-#[reflect(Component)]
-pub struct PropulsionIntent {
+    pub walk: f32,
     /// Vertical propulsion intent (-1.0 = down, 1.0 = up).
-    pub direction: f32,
-    /// Speed multiplier (0.0 to 1.0).
-    pub speed_multiplier: f32,
+    pub fly: f32,
+    /// Speed multiplier for walking (0.0 to 1.0).
+    pub walk_speed: f32,
+    /// Speed multiplier for flying (0.0 to 1.0).
+    pub fly_speed: f32,
 }
 
-impl Default for PropulsionIntent {
+impl Default for MovementIntent {
     fn default() -> Self {
         Self {
-            direction: 0.0,
-            speed_multiplier: 1.0,
+            walk: 0.0,
+            fly: 0.0,
+            walk_speed: 1.0,
+            fly_speed: 1.0,
         }
     }
 }
 
-impl PropulsionIntent {
-    /// Create a new propulsion intent with the given direction.
-    pub fn new(direction: f32) -> Self {
-        Self {
-            direction: direction.clamp(-1.0, 1.0),
-            speed_multiplier: 1.0,
-        }
+impl MovementIntent {
+    /// Create a new empty movement intent.
+    pub fn new() -> Self {
+        Self::default()
     }
 
-    /// Set the propulsion direction (-1.0 = down, 1.0 = up).
-    pub fn set(&mut self, direction: f32) {
-        self.direction = direction.clamp(-1.0, 1.0);
+    /// Set the walking direction (-1.0 = left, 1.0 = right).
+    pub fn set_walk(&mut self, direction: f32) {
+        self.walk = direction.clamp(-1.0, 1.0);
     }
 
-    /// Set the speed multiplier.
-    pub fn set_speed(&mut self, multiplier: f32) {
-        self.speed_multiplier = multiplier.clamp(0.0, 1.0);
+    /// Set the flying direction (-1.0 = down, 1.0 = up).
+    pub fn set_fly(&mut self, direction: f32) {
+        self.fly = direction.clamp(-1.0, 1.0);
     }
 
-    /// Clear the intent (stop propulsion).
+    /// Set the walk speed multiplier (0.0 to 1.0).
+    pub fn set_walk_speed(&mut self, multiplier: f32) {
+        self.walk_speed = multiplier.clamp(0.0, 1.0);
+    }
+
+    /// Set the fly speed multiplier (0.0 to 1.0).
+    pub fn set_fly_speed(&mut self, multiplier: f32) {
+        self.fly_speed = multiplier.clamp(0.0, 1.0);
+    }
+
+    /// Clear all movement intents.
     pub fn clear(&mut self) {
-        self.direction = 0.0;
+        self.walk = 0.0;
+        self.fly = 0.0;
     }
 
-    /// Check if there is active input.
-    pub fn is_active(&self) -> bool {
-        self.direction.abs() > 0.001
+    /// Clear only walking intent.
+    pub fn clear_walk(&mut self) {
+        self.walk = 0.0;
     }
 
-    /// Get the effective direction with speed multiplier applied.
-    pub fn effective(&self) -> f32 {
-        self.direction * self.speed_multiplier
+    /// Clear only flying intent.
+    pub fn clear_fly(&mut self) {
+        self.fly = 0.0;
+    }
+
+    /// Check if there is active walking input.
+    pub fn is_walking(&self) -> bool {
+        self.walk.abs() > 0.001
+    }
+
+    /// Check if there is active flying input.
+    pub fn is_flying(&self) -> bool {
+        self.fly.abs() > 0.001
+    }
+
+    /// Check if flying upward.
+    pub fn is_flying_up(&self) -> bool {
+        self.fly > 0.001
+    }
+
+    /// Check if flying downward.
+    pub fn is_flying_down(&self) -> bool {
+        self.fly < -0.001
+    }
+
+    /// Get the effective walking direction with speed multiplier applied.
+    pub fn effective_walk(&self) -> f32 {
+        self.walk * self.walk_speed
+    }
+
+    /// Get the effective flying direction with speed multiplier applied.
+    pub fn effective_fly(&self) -> f32 {
+        self.fly * self.fly_speed
     }
 }
+
+// === Legacy type aliases for backwards compatibility ===
+
+/// Walking movement intent (1D horizontal axis).
+///
+/// **Deprecated**: Use `MovementIntent` instead.
+#[deprecated(since = "0.2.0", note = "Use MovementIntent instead")]
+pub type WalkIntent = MovementIntent;
+
+/// Vertical propulsion intent.
+///
+/// **Deprecated**: Use `MovementIntent` instead.
+#[deprecated(since = "0.2.0", note = "Use MovementIntent instead")]
+pub type PropulsionIntent = MovementIntent;
 
 /// Jump request component.
 ///
@@ -205,132 +188,123 @@ impl JumpRequest {
 mod tests {
     use super::*;
 
-    // ==================== WalkIntent Tests ====================
+    // ==================== MovementIntent Tests ====================
 
     #[test]
-    fn walk_intent_new() {
-        let intent = WalkIntent::new(0.5);
-        assert_eq!(intent.direction, 0.5);
-        assert_eq!(intent.speed_multiplier, 1.0);
+    fn movement_intent_new() {
+        let intent = MovementIntent::new();
+        assert_eq!(intent.walk, 0.0);
+        assert_eq!(intent.fly, 0.0);
+        assert_eq!(intent.walk_speed, 1.0);
+        assert_eq!(intent.fly_speed, 1.0);
     }
 
     #[test]
-    fn walk_intent_clamps_direction() {
-        let intent = WalkIntent::new(5.0);
-        assert_eq!(intent.direction, 1.0);
-
-        let intent = WalkIntent::new(-5.0);
-        assert_eq!(intent.direction, -1.0);
-    }
-
-    #[test]
-    fn walk_intent_set() {
-        let mut intent = WalkIntent::default();
-        intent.set(0.75);
-        assert_eq!(intent.direction, 0.75);
-
-        intent.set(2.0);
-        assert_eq!(intent.direction, 1.0);
-    }
-
-    #[test]
-    fn walk_intent_speed_multiplier() {
-        let mut intent = WalkIntent::new(1.0);
-        intent.set_speed(0.5);
-        assert_eq!(intent.effective(), 0.5);
+    fn movement_intent_set_walk() {
+        let mut intent = MovementIntent::new();
+        intent.set_walk(0.5);
+        assert_eq!(intent.walk, 0.5);
 
         // Clamps to valid range
-        intent.set_speed(2.0);
-        assert_eq!(intent.speed_multiplier, 1.0);
+        intent.set_walk(5.0);
+        assert_eq!(intent.walk, 1.0);
 
-        intent.set_speed(-1.0);
-        assert_eq!(intent.speed_multiplier, 0.0);
+        intent.set_walk(-5.0);
+        assert_eq!(intent.walk, -1.0);
     }
 
     #[test]
-    fn walk_intent_is_active() {
-        let mut intent = WalkIntent::default();
-        assert!(!intent.is_active());
+    fn movement_intent_set_fly() {
+        let mut intent = MovementIntent::new();
+        intent.set_fly(0.8);
+        assert_eq!(intent.fly, 0.8);
 
-        intent.set(0.5);
-        assert!(intent.is_active());
-
-        intent.set(0.0001); // Below threshold
-        assert!(!intent.is_active());
+        intent.set_fly(-0.6);
+        assert_eq!(intent.fly, -0.6);
     }
 
     #[test]
-    fn walk_intent_clear() {
-        let mut intent = WalkIntent::new(1.0);
-        assert!(intent.is_active());
+    fn movement_intent_speed_multipliers() {
+        let mut intent = MovementIntent::new();
+        intent.set_walk(1.0);
+        intent.set_walk_speed(0.5);
+        assert_eq!(intent.effective_walk(), 0.5);
+
+        intent.set_fly(-1.0);
+        intent.set_fly_speed(0.5);
+        assert_eq!(intent.effective_fly(), -0.5);
+
+        // Clamps to valid range
+        intent.set_walk_speed(2.0);
+        assert_eq!(intent.walk_speed, 1.0);
+
+        intent.set_fly_speed(-1.0);
+        assert_eq!(intent.fly_speed, 0.0);
+    }
+
+    #[test]
+    fn movement_intent_is_walking() {
+        let mut intent = MovementIntent::new();
+        assert!(!intent.is_walking());
+
+        intent.set_walk(0.5);
+        assert!(intent.is_walking());
+
+        intent.set_walk(0.0001); // Below threshold
+        assert!(!intent.is_walking());
+    }
+
+    #[test]
+    fn movement_intent_is_flying() {
+        let mut intent = MovementIntent::new();
+        assert!(!intent.is_flying());
+        assert!(!intent.is_flying_up());
+        assert!(!intent.is_flying_down());
+
+        intent.set_fly(0.5);
+        assert!(intent.is_flying());
+        assert!(intent.is_flying_up());
+        assert!(!intent.is_flying_down());
+
+        intent.set_fly(-0.5);
+        assert!(intent.is_flying());
+        assert!(!intent.is_flying_up());
+        assert!(intent.is_flying_down());
+    }
+
+    #[test]
+    fn movement_intent_clear() {
+        let mut intent = MovementIntent::new();
+        intent.set_walk(1.0);
+        intent.set_fly(1.0);
 
         intent.clear();
-        assert!(!intent.is_active());
-        assert_eq!(intent.direction, 0.0);
+        assert!(!intent.is_walking());
+        assert!(!intent.is_flying());
+        assert_eq!(intent.walk, 0.0);
+        assert_eq!(intent.fly, 0.0);
     }
 
     #[test]
-    fn walk_intent_effective() {
-        let mut intent = WalkIntent::new(-1.0);
-        intent.set_speed(0.5);
-        assert_eq!(intent.effective(), -0.5);
-    }
+    fn movement_intent_clear_walk() {
+        let mut intent = MovementIntent::new();
+        intent.set_walk(1.0);
+        intent.set_fly(1.0);
 
-    // ==================== PropulsionIntent Tests ====================
-
-    #[test]
-    fn propulsion_intent_new() {
-        let intent = PropulsionIntent::new(0.5);
-        assert_eq!(intent.direction, 0.5);
-        assert_eq!(intent.speed_multiplier, 1.0);
+        intent.clear_walk();
+        assert!(!intent.is_walking());
+        assert!(intent.is_flying());
     }
 
     #[test]
-    fn propulsion_intent_clamps_direction() {
-        let intent = PropulsionIntent::new(5.0);
-        assert_eq!(intent.direction, 1.0);
+    fn movement_intent_clear_fly() {
+        let mut intent = MovementIntent::new();
+        intent.set_walk(1.0);
+        intent.set_fly(1.0);
 
-        let intent = PropulsionIntent::new(-5.0);
-        assert_eq!(intent.direction, -1.0);
-    }
-
-    #[test]
-    fn propulsion_intent_set() {
-        let mut intent = PropulsionIntent::default();
-        intent.set(0.8);
-        assert_eq!(intent.direction, 0.8);
-
-        intent.set(-0.6);
-        assert_eq!(intent.direction, -0.6);
-    }
-
-    #[test]
-    fn propulsion_intent_is_active() {
-        let mut intent = PropulsionIntent::default();
-        assert!(!intent.is_active());
-
-        intent.set(0.5);
-        assert!(intent.is_active());
-
-        intent.set(0.0001); // Below threshold
-        assert!(!intent.is_active());
-    }
-
-    #[test]
-    fn propulsion_intent_clear() {
-        let mut intent = PropulsionIntent::new(1.0);
-        assert!(intent.is_active());
-
-        intent.clear();
-        assert!(!intent.is_active());
-        assert_eq!(intent.direction, 0.0);
-    }
-
-    #[test]
-    fn propulsion_intent_effective() {
-        let mut intent = PropulsionIntent::new(-1.0);
-        intent.set_speed(0.5);
-        assert_eq!(intent.effective(), -0.5);
+        intent.clear_fly();
+        assert!(intent.is_walking());
+        assert!(!intent.is_flying());
     }
 
     // ==================== JumpRequest Tests ====================
