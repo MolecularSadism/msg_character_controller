@@ -508,9 +508,9 @@ pub fn reset_jump_requests(mut q: Query<&mut JumpRequest>) {
 
 /// Apply upright torque to keep characters oriented correctly.
 ///
-/// Uses a spring-damper system with quadratic spring behavior for strong correction.
-/// The torque is proportional to the square of the angle error, creating a force
-/// that increases rapidly as the character tilts further from upright.
+/// Uses a spring-damper system to orient the character to the target rotation.
+/// The torque formula is: `(angle_error * spring_strength) - (angular_velocity * damping)`
+/// This creates smooth, stable rotation correction similar to Unity's joint spring system.
 pub fn apply_upright_torque<B: CharacterPhysicsBackend>(world: &mut World) {
     let entities: Vec<(Entity, ControllerConfig, CharacterOrientation)> = world
         .query::<(
@@ -535,7 +535,7 @@ pub fn apply_upright_torque<B: CharacterPhysicsBackend>(world: &mut World) {
             .upright_target_angle
             .unwrap_or_else(|| orientation.angle() - consts::FRAC_PI_2);
 
-        // Calculate angle error, normalized to [-PI, PI]
+        // Calculate angle error (shortest rotation to goal), normalized to [-PI, PI]
         let mut angle_error = target_angle - current_rotation;
         while angle_error > consts::PI {
             angle_error -= consts::TAU;
@@ -544,15 +544,12 @@ pub fn apply_upright_torque<B: CharacterPhysicsBackend>(world: &mut World) {
             angle_error += consts::TAU;
         }
 
-        // Apply quadratic spring force: F = strength * error² * sign(error)
-        // This creates a stronger corrective force the further from upright
-        let spring_torque =
-            config.upright_torque_strength * angle_error * angle_error * angle_error.signum();
+        // Apply linear spring-damper torque: T = (error * strength) - (velocity * damping)
+        // This matches the dampened spring formula from Unity physics joints
+        let spring_torque = angle_error * config.upright_torque_strength;
+        let damping_torque = angular_velocity * config.upright_torque_damping;
 
-        // Apply damping to reduce oscillation
-        let damping_torque = -config.upright_torque_damping * angular_velocity;
-
-        let total_torque = spring_torque + damping_torque;
+        let total_torque = spring_torque - damping_torque;
         B::apply_torque(world, entity, total_torque);
     }
 }
