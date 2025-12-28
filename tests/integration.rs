@@ -53,7 +53,7 @@ fn spawn_character_with_config(app: &mut App, position: Vec2, config: Controller
             GlobalTransform::from(transform),
             CharacterController::new(),
             config,
-            WalkIntent::default(),
+            MovementIntent::default(),
             JumpRequest::default(),
             Rapier2dCharacterBundle::rotation_locked(),
             Collider::capsule_y(8.0, 4.0),
@@ -76,7 +76,7 @@ fn spawn_oriented_character(
             CharacterController::new(),
             ControllerConfig::default(),
             orientation,
-            WalkIntent::default(),
+            MovementIntent::default(),
             JumpRequest::default(),
             Rapier2dCharacterBundle::rotation_locked(),
             Collider::capsule_y(8.0, 4.0),
@@ -156,7 +156,7 @@ mod ground_detection {
             "PROOF: ground_detected={}, ground_distance={}, ground_normal={:?}",
             controller.ground_detected(),
             controller.ground_distance(),
-            controller.ground_normal
+            controller.ground_normal()
         );
     }
 
@@ -177,17 +177,18 @@ mod ground_detection {
         tick(&mut app);
 
         let controller = app.world().get::<CharacterController>(character).unwrap();
+        let cfg = app.world().get::<ControllerConfig>(character).unwrap();
 
         println!(
-            "PROOF: is_grounded={}, ground_distance={}, float_height+cling={}",
-            controller.is_grounded,
+            "PROOF: is_grounded={}, ground_distance={}, riding_height+tolerance={}",
+            controller.is_grounded(cfg),
             controller.ground_distance(),
-            15.0 + 2.0 // float_height + cling_distance
+            controller.riding_height(cfg) + cfg.ground_tolerance
         );
 
-        // PROOF: is_grounded should be true when within float_height + cling_distance
+        // PROOF: is_grounded should be true when within riding_height + ground_tolerance
         assert!(
-            controller.is_grounded,
+            controller.is_grounded(cfg),
             "Character should be grounded at float_height"
         );
     }
@@ -203,17 +204,18 @@ mod ground_detection {
         tick(&mut app);
 
         let controller = app.world().get::<CharacterController>(character).unwrap();
+        let config = app.world().get::<ControllerConfig>(character).unwrap();
 
         println!(
             "PROOF: is_grounded={}, ground_detected={}, ground_distance={}",
-            controller.is_grounded,
+            controller.is_grounded(config),
             controller.ground_detected(),
             controller.ground_distance()
         );
 
         // PROOF: is_grounded should be false when far from ground
         assert!(
-            !controller.is_grounded,
+            !controller.is_grounded(config),
             "Character should NOT be grounded when high above"
         );
     }
@@ -231,11 +233,12 @@ mod ground_detection {
         tick(&mut app);
 
         let controller = app.world().get::<CharacterController>(character).unwrap();
+        let config = app.world().get::<ControllerConfig>(character).unwrap();
 
         println!(
             "PROOF: ground_detected={}, is_grounded={}",
             controller.ground_detected(),
-            controller.is_grounded
+            controller.is_grounded(config)
         );
 
         // PROOF: ground_detected should be false when over empty space
@@ -270,34 +273,32 @@ mod float_height {
         run_frames(&mut app, 120);
 
         let controller = app.world().get::<CharacterController>(character).unwrap();
+        let cfg = app.world().get::<ControllerConfig>(character).unwrap();
         let transform = app.world().get::<Transform>(character).unwrap();
 
-        // Capsule is created with capsule_y(8.0, 4.0), so collider_bottom_offset = 8 + 4 = 12
-        let collider_bottom_offset = 12.0;
-        // The effective float height (from center) = float_height + collider_bottom_offset
-        let effective_float_height = float_height + collider_bottom_offset;
+        // The riding height = float_height + collider_bottom_offset
+        let riding_height = controller.riding_height(cfg);
 
         println!(
-            "PROOF: Character position.y={}, ground_distance={}, effective_float_height={}",
+            "PROOF: Character position.y={}, ground_distance={}, riding_height={}",
             transform.translation.y,
             controller.ground_distance(),
-            effective_float_height
+            riding_height
         );
 
-        // PROOF: ground_distance should be close to effective_float_height after settling
-        // (ground_distance is measured from center, so it includes the collider offset)
+        // PROOF: ground_distance should be close to riding_height after settling
         // Allow tolerance for spring oscillation
         let tolerance = 5.0;
         assert!(
-            (controller.ground_distance() - effective_float_height).abs() < tolerance,
-            "Ground distance {} should be close to effective_float_height {}",
+            (controller.ground_distance() - riding_height).abs() < tolerance,
+            "Ground distance {} should be close to riding_height {}",
             controller.ground_distance(),
-            effective_float_height
+            riding_height
         );
 
         // PROOF: Character should NOT be touching the ground (position should be elevated)
         // Capsule bottom is at position.y - collider_bottom_offset
-        let capsule_bottom = transform.translation.y - collider_bottom_offset;
+        let capsule_bottom = transform.translation.y - controller.capsule_half_height();
         let ground_surface = 5.0; // Ground half-height
         assert!(
             capsule_bottom > ground_surface,
@@ -366,13 +367,13 @@ mod wall_detection {
         let controller = app.world().get::<CharacterController>(character).unwrap();
 
         println!(
-            "PROOF: touching_left_wall={}, left_wall_normal={:?}",
-            controller.touching_left_wall, controller.left_wall_normal
+            "PROOF: touching_left_wall={}, left_wall={:?}",
+            controller.touching_left_wall(), controller.left_wall
         );
 
         // PROOF: touching_left_wall should be true
         assert!(
-            controller.touching_left_wall,
+            controller.touching_left_wall(),
             "Wall on left should be detected"
         );
     }
@@ -392,13 +393,13 @@ mod wall_detection {
         let controller = app.world().get::<CharacterController>(character).unwrap();
 
         println!(
-            "PROOF: touching_right_wall={}, right_wall_normal={:?}",
-            controller.touching_right_wall, controller.right_wall_normal
+            "PROOF: touching_right_wall={}, right_wall={:?}",
+            controller.touching_right_wall(), controller.right_wall
         );
 
         // PROOF: touching_right_wall should be true
         assert!(
-            controller.touching_right_wall,
+            controller.touching_right_wall(),
             "Wall on right should be detected"
         );
     }
@@ -420,16 +421,16 @@ mod wall_detection {
 
         println!(
             "PROOF: touching_left_wall={}, touching_right_wall={}",
-            controller.touching_left_wall, controller.touching_right_wall
+            controller.touching_left_wall(), controller.touching_right_wall()
         );
 
         // PROOF: No walls should be detected when far
         assert!(
-            !controller.touching_left_wall,
+            !controller.touching_left_wall(),
             "Far wall should NOT be detected"
         );
         assert!(
-            !controller.touching_right_wall,
+            !controller.touching_right_wall(),
             "Far wall should NOT be detected"
         );
     }
@@ -445,8 +446,11 @@ mod ceiling_detection {
         let mut app = create_test_app();
 
         spawn_ground(&mut app, Vec2::new(0.0, 0.0), Vec2::new(100.0, 5.0));
-        // Ceiling above character (close enough to detect)
-        spawn_ground(&mut app, Vec2::new(0.0, 50.0), Vec2::new(100.0, 5.0));
+        // Ceiling above character (within cling_distance + capsule_half_height)
+        // Character at y=25, capsule_half_height=12, cling_distance=2
+        // Cast length = 2 + 12 + 1 = 15, so ceiling bottom must be within 15 units
+        // Ceiling bottom at y=25+14=39, so center at y=39+5=44
+        spawn_ground(&mut app, Vec2::new(0.0, 39.0), Vec2::new(100.0, 5.0));
 
         let character = spawn_character(&mut app, Vec2::new(0.0, 25.0));
 
@@ -455,13 +459,13 @@ mod ceiling_detection {
         let controller = app.world().get::<CharacterController>(character).unwrap();
 
         println!(
-            "PROOF: touching_ceiling={}, ceiling_normal={:?}",
-            controller.touching_ceiling, controller.ceiling_normal
+            "PROOF: touching_ceiling={}, ceiling={:?}",
+            controller.touching_ceiling(), controller.ceiling
         );
 
         // PROOF: touching_ceiling should be true
         assert!(
-            controller.touching_ceiling,
+            controller.touching_ceiling(),
             "Ceiling above should be detected"
         );
     }
@@ -480,11 +484,11 @@ mod ceiling_detection {
 
         let controller = app.world().get::<CharacterController>(character).unwrap();
 
-        println!("PROOF: touching_ceiling={}", controller.touching_ceiling);
+        println!("PROOF: touching_ceiling={}", controller.touching_ceiling());
 
         // PROOF: No ceiling should be detected when far
         assert!(
-            !controller.touching_ceiling,
+            !controller.touching_ceiling(),
             "Far ceiling should NOT be detected"
         );
     }
@@ -559,8 +563,8 @@ mod movement {
         let vel_before = app.world().get::<Velocity>(character).unwrap().linvel;
 
         // Set walk intent to move right
-        if let Some(mut intent) = app.world_mut().get_mut::<WalkIntent>(character) {
-            intent.set(1.0);
+        if let Some(mut intent) = app.world_mut().get_mut::<MovementIntent>(character) {
+            intent.set_walk(1.0);
         }
 
         run_frames(&mut app, 10);
@@ -590,7 +594,8 @@ mod movement {
 
         // Verify grounded
         let controller = app.world().get::<CharacterController>(character).unwrap();
-        assert!(controller.is_grounded, "Must be grounded to jump");
+        let config = app.world().get::<ControllerConfig>(character).unwrap();
+        assert!(controller.is_grounded(config), "Must be grounded to jump");
 
         let vel_before = app.world().get::<Velocity>(character).unwrap().linvel;
 
@@ -628,7 +633,7 @@ mod upright_torque {
                 ControllerConfig::default()
                     .with_upright_torque(500.0, 50.0)
                     .with_upright_target_angle(0.0),
-                WalkIntent::default(),
+                MovementIntent::default(),
                 JumpRequest::default(),
                 Rapier2dCharacterBundle::new(), // Not rotation locked
                 Collider::capsule_y(8.0, 4.0),
@@ -738,7 +743,7 @@ mod gravity {
                     GlobalTransform::from(transform),
                     CharacterController::with_gravity(Vec2::new(0.0, -500.0)), // Custom gravity
                     ControllerConfig::default(),
-                    WalkIntent::default(),
+                    MovementIntent::default(),
                     JumpRequest::default(),
                     Rapier2dCharacterBundle::rotation_locked(),
                     Collider::capsule_y(8.0, 4.0),
@@ -774,10 +779,11 @@ mod coyote_time {
         run_frames(&mut app, 5);
 
         let controller = app.world().get::<CharacterController>(character).unwrap();
+        let config = app.world().get::<ControllerConfig>(character).unwrap();
 
         println!(
             "PROOF: is_grounded={}, time_since_grounded={}",
-            controller.is_grounded, controller.time_since_grounded
+            controller.is_grounded(config), controller.time_since_grounded
         );
 
         // PROOF: time_since_grounded should be zero when grounded
@@ -797,10 +803,11 @@ mod coyote_time {
         run_frames(&mut app, 30);
 
         let controller = app.world().get::<CharacterController>(character).unwrap();
+        let config = app.world().get::<ControllerConfig>(character).unwrap();
 
         println!(
             "PROOF: is_grounded={}, time_since_grounded={}",
-            controller.is_grounded, controller.time_since_grounded
+            controller.is_grounded(config), controller.time_since_grounded
         );
 
         // PROOF: time_since_grounded should accumulate (30 frames at 60Hz = 0.5s)
@@ -839,7 +846,7 @@ mod collision_layers {
                     GlobalTransform::from(transform),
                     CharacterController::new(),
                     ControllerConfig::default(),
-                    WalkIntent::default(),
+                    MovementIntent::default(),
                     JumpRequest::default(),
                     Rapier2dCharacterBundle::rotation_locked(),
                     Collider::capsule_y(8.0, 4.0),
@@ -858,7 +865,7 @@ mod collision_layers {
                     GlobalTransform::from(transform),
                     CharacterController::new(),
                     ControllerConfig::default(),
-                    WalkIntent::default(),
+                    MovementIntent::default(),
                     JumpRequest::default(),
                     Rapier2dCharacterBundle::rotation_locked(),
                     Collider::capsule_y(8.0, 4.0),

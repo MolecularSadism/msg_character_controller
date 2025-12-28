@@ -18,9 +18,8 @@
 //! 1. A dynamic rigidbody handles collisions normally
 //! 2. Raycasts detect ground and compute desired float height
 //! 3. A spring-damper system applies forces to maintain float height
-//! 4. Horizontal movement is controlled via WalkIntent
-//! 5. Vertical propulsion is controlled via PropulsionIntent (with gravity boost for upward)
-//! 6. Jumping is an impulse-based action that requires being grounded
+//! 4. Horizontal movement and vertical propulsion is controlled via MovementIntent
+//! 5. Jumping is an impulse-based action that requires being grounded
 //!
 //! ## Usage
 //!
@@ -31,8 +30,7 @@
 //! // Create controller components
 //! let controller = CharacterController::new();
 //! let config = ControllerConfig::player();
-//! let walk_intent = WalkIntent::default();
-//! let propulsion = PropulsionIntent::default();
+//! let movement = MovementIntent::default();
 //!
 //! // These can be spawned as a bundle with physics components
 //! ```
@@ -59,7 +57,7 @@ pub mod prelude {
     pub use crate::config::{
         CharacterController, CharacterOrientation, ControllerConfig, StairConfig,
     };
-    pub use crate::intent::{JumpRequest, PropulsionIntent, WalkIntent};
+    pub use crate::intent::{JumpRequest, MovementIntent};
     pub use crate::state::{Airborne, Grounded, TouchingCeiling, TouchingWall};
 
     #[cfg(feature = "rapier2d")]
@@ -168,8 +166,7 @@ impl<B: backend::CharacterPhysicsBackend> Plugin for CharacterControllerPlugin<B
         app.register_type::<config::CharacterOrientation>();
         app.register_type::<config::ControllerConfig>();
         app.register_type::<config::StairConfig>();
-        app.register_type::<intent::WalkIntent>();
-        app.register_type::<intent::PropulsionIntent>();
+        app.register_type::<intent::MovementIntent>();
         app.register_type::<intent::JumpRequest>();
         app.register_type::<state::Grounded>();
         app.register_type::<state::Airborne>();
@@ -189,8 +186,7 @@ impl<B: backend::CharacterPhysicsBackend> Plugin for CharacterControllerPlugin<B
                 systems::apply_floating_spring::<B>,
                 systems::apply_internal_gravity::<B>,
                 systems::apply_upright_torque::<B>,
-                systems::apply_walk_movement::<B>,
-                systems::apply_propulsion::<B>,
+                systems::apply_movement::<B>,
                 systems::apply_jump::<B>,
                 systems::sync_state_markers,
             )

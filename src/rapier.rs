@@ -305,6 +305,9 @@ fn rapier_raycast(
 }
 
 /// Rapier-specific ground detection system using shapecast.
+///
+/// Floor raycast covers: riding_height + ground_tolerance
+/// (which is float_height + capsule_half_height + ground_tolerance)
 fn rapier_ground_detection(
     rapier_context: ReadRapierContext,
     mut q_controllers: Query<(
@@ -345,9 +348,11 @@ fn rapier_ground_detection(
         let collision_groups_tuple = collision_groups
             .map(|cg| (cg.memberships, cg.filters));
 
-        // Calculate effective float height (from center) and ground cast length
-        let effective_height = controller.effective_float_height(config);
-        let ground_cast_length = effective_height * config.ground_cast_multiplier;
+        // Calculate ground cast length:
+        // riding_height + ground_tolerance = float_height + capsule_half_height + ground_tolerance
+        // Add a small buffer (1.0) to avoid edge cases with floating point precision
+        let riding_height = controller.riding_height(config);
+        let ground_cast_length = riding_height + config.ground_tolerance + 1.0;
 
         // Compute rotation angle for the shape to align with character orientation
         let shape_rotation = orientation.angle() - std::f32::consts::FRAC_PI_2;
@@ -355,10 +360,10 @@ fn rapier_ground_detection(
         // Store previous time_since_grounded
         let prev_time_since_grounded = controller.time_since_grounded;
 
-        // Reset ground detection state
+        // Reset detection state
         controller.reset_detection_state();
 
-        // Perform shapecast for ground detection using the trait-like helper
+        // Perform shapecast for ground detection
         if let Some(ground_hit) = rapier_shapecast(
             &context,
             position,
@@ -375,12 +380,9 @@ fn rapier_ground_detection(
             let dot = normal.dot(up).clamp(-1.0, 1.0);
             let slope_angle = dot.acos();
 
-            controller.ground_detected = true;
-            controller.ground_distance = ground_hit.distance;
-            controller.ground_normal = normal;
-            controller.ground_contact_point = ground_hit.point;
+            // Store floor collision data
+            controller.floor = Some(ground_hit);
             controller.slope_angle = slope_angle;
-            controller.ground_entity = ground_hit.entity;
 
             // Check for stairs if enabled
             let is_walkable = slope_angle <= config.max_slope_angle;
@@ -402,12 +404,9 @@ fn rapier_ground_detection(
             }
         }
 
-        // Update grounded state using effective float height
-        controller.is_grounded = controller.ground_detected
-            && controller.ground_distance <= effective_height + config.cling_distance;
-
         // Update time since grounded
-        if controller.is_grounded {
+        let is_grounded = controller.is_grounded(config);
+        if is_grounded {
             controller.time_since_grounded = 0.0;
         } else {
             controller.time_since_grounded = prev_time_since_grounded + dt;
@@ -466,7 +465,23 @@ fn check_stair_step(
     None
 }
 
+/// Get the capsule radius from a collider.
+fn get_collider_radius(collider: &Collider) -> f32 {
+    if let Some(capsule) = collider.as_capsule() {
+        capsule.radius()
+    } else if let Some(ball) = collider.as_ball() {
+        ball.radius()
+    } else if let Some(cuboid) = collider.as_cuboid() {
+        // Use half the width as an approximation
+        cuboid.half_extents().x
+    } else {
+        0.0
+    }
+}
+
 /// Rapier-specific wall detection system using shapecast.
+///
+/// Wall cast length: cling_distance + radius
 fn rapier_wall_detection(
     rapier_context: ReadRapierContext,
     mut q_controllers: Query<(
@@ -476,6 +491,7 @@ fn rapier_wall_detection(
         Option<&CharacterOrientation>,
         &mut CharacterController,
         Option<&CollisionGroups>,
+        Option<&Collider>,
     )>,
 ) {
     let Ok(context) = rapier_context.single() else {
@@ -484,7 +500,7 @@ fn rapier_wall_detection(
 
     let default_orientation = CharacterOrientation::default();
 
-    for (entity, transform, config, orientation_opt, mut controller, collision_groups) in
+    for (entity, transform, config, orientation_opt, mut controller, collision_groups, collider) in
         &mut q_controllers
     {
         let position = transform.translation().xy();
@@ -501,8 +517,9 @@ fn rapier_wall_detection(
         // Compute rotation angle for the shape
         let shape_rotation = orientation.angle();
 
-        // Use derived wall cast length
-        let wall_cast_length = config.wall_cast_length();
+        // Wall cast length: cling_distance + radius + small buffer for precision
+        let radius = collider.map(get_collider_radius).unwrap_or(0.0);
+        let wall_cast_length = config.cling_distance + radius + 1.0;
 
         // Shapecast left
         if let Some(left_hit) = rapier_shapecast(
@@ -516,8 +533,7 @@ fn rapier_wall_detection(
             entity,
             collision_groups_tuple,
         ) {
-            controller.touching_left_wall = true;
-            controller.left_wall_normal = left_hit.normal;
+            controller.left_wall = Some(left_hit);
         }
 
         // Shapecast right
@@ -532,13 +548,14 @@ fn rapier_wall_detection(
             entity,
             collision_groups_tuple,
         ) {
-            controller.touching_right_wall = true;
-            controller.right_wall_normal = right_hit.normal;
+            controller.right_wall = Some(right_hit);
         }
     }
 }
 
 /// Rapier-specific ceiling detection system using shapecast.
+///
+/// Ceiling cast length: cling_distance + capsule_half_height
 fn rapier_ceiling_detection(
     rapier_context: ReadRapierContext,
     mut q_controllers: Query<(
@@ -571,9 +588,8 @@ fn rapier_ceiling_detection(
 
         let shape_rotation = orientation.angle() - std::f32::consts::FRAC_PI_2;
 
-        // Calculate ceiling cast length using effective float height
-        let effective_height = controller.effective_float_height(config);
-        let ceiling_cast_length = effective_height * config.ceiling_cast_multiplier;
+        // Ceiling cast length: cling_distance + capsule_half_height + small buffer for precision
+        let ceiling_cast_length = config.cling_distance + controller.capsule_half_height() + 1.0;
 
         // Shapecast upward
         if let Some(ceiling_hit) = rapier_shapecast(
@@ -587,8 +603,7 @@ fn rapier_ceiling_detection(
             entity,
             collision_groups_tuple,
         ) {
-            controller.touching_ceiling = true;
-            controller.ceiling_normal = ceiling_hit.normal;
+            controller.ceiling = Some(ceiling_hit);
         }
     }
 }

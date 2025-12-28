@@ -5,6 +5,8 @@
 
 use bevy::prelude::*;
 
+use crate::collision::CollisionData;
+
 /// Defines the local coordinate system for a character controller.
 ///
 /// This component allows characters to orient themselves relative to arbitrary
@@ -103,20 +105,34 @@ impl CharacterOrientation {
 ///
 /// # Contact States
 ///
-/// - `is_grounded`: True when standing on walkable ground (within float_height)
-/// - `touching_left_wall`: True when touching a wall on the left
-/// - `touching_right_wall`: True when touching a wall on the right
-/// - `touching_ceiling`: True when touching a ceiling above
+/// Each direction stores `Option<CollisionData>` with full collision information.
+/// - `floor`: Ground collision data (when detected within raycast range)
+/// - `ceiling`: Ceiling collision data (when detected)
+/// - `left_wall`: Left wall collision data (when detected)
+/// - `right_wall`: Right wall collision data (when detected)
 #[derive(Component, Reflect, Debug, Clone)]
 #[reflect(Component)]
 pub struct CharacterController {
-    // === Ground Contact State (RESULT) ===
-    /// Whether the character is grounded (standing on walkable ground).
-    /// True when ground is detected within `float_height` from the character.
-    pub is_grounded: bool,
-    /// Ground surface normal (points away from surface). Valid when is_grounded.
-    pub ground_normal: Vec2,
-    /// Slope angle in radians (0 = flat). Valid when is_grounded.
+    // === Collision Data (Option<CollisionData> for each direction) ===
+    /// Floor collision data. Contains distance, normal, point, and entity.
+    /// None if no floor detected within raycast range.
+    #[reflect(ignore)]
+    pub floor: Option<CollisionData>,
+    /// Ceiling collision data. Contains distance, normal, point, and entity.
+    /// None if no ceiling detected within range.
+    #[reflect(ignore)]
+    pub ceiling: Option<CollisionData>,
+    /// Left wall collision data. Contains distance, normal, point, and entity.
+    /// None if no left wall detected within range.
+    #[reflect(ignore)]
+    pub left_wall: Option<CollisionData>,
+    /// Right wall collision data. Contains distance, normal, point, and entity.
+    /// None if no right wall detected within range.
+    #[reflect(ignore)]
+    pub right_wall: Option<CollisionData>,
+
+    // === Derived Ground State ===
+    /// Slope angle in radians (0 = flat). Valid when floor is Some.
     pub slope_angle: f32,
     /// Whether a valid step was detected (for stair stepping).
     pub step_detected: bool,
@@ -124,37 +140,18 @@ pub struct CharacterController {
     pub step_height: f32,
     /// Time since last grounded (for coyote time).
     pub time_since_grounded: f32,
-    /// Entity that is the ground. Valid when is_grounded.
-    pub ground_entity: Option<Entity>,
-
-    // === Wall Contact State (RESULTS) ===
-    /// Whether touching a wall on the left side.
-    pub touching_left_wall: bool,
-    /// Left wall normal. Valid when touching_left_wall.
-    pub left_wall_normal: Vec2,
-    /// Whether touching a wall on the right side.
-    pub touching_right_wall: bool,
-    /// Right wall normal. Valid when touching_right_wall.
-    pub right_wall_normal: Vec2,
-
-    // === Ceiling Contact State (RESULT) ===
-    /// Whether touching a ceiling above.
-    pub touching_ceiling: bool,
-    /// Ceiling surface normal. Valid when touching_ceiling.
-    pub ceiling_normal: Vec2,
 
     // === Gravity ===
     /// Gravity vector affecting this character.
     /// Used for floating spring, extra fall gravity, and jump countering.
     pub gravity: Vec2,
 
+    // === Spring State ===
+    /// Whether the character left the spring range after a jump (for spring exception).
+    /// Reset when entering spring range again from above.
+    pub(crate) left_spring_range_after_jump: bool,
+
     // === Internal (used by systems, kept pub(crate)) ===
-    /// Raw distance to ground (internal use for spring calculations).
-    pub(crate) ground_distance: f32,
-    /// Ground contact point in world space (internal use).
-    pub(crate) ground_contact_point: Vec2,
-    /// Whether ground raycast hit something (may be further than float_height).
-    pub(crate) ground_detected: bool,
     /// Distance from collider center to bottom (auto-detected from Collider).
     /// For a capsule, this is half_height + radius.
     pub(crate) collider_bottom_offset: f32,
@@ -163,28 +160,21 @@ pub struct CharacterController {
 impl Default for CharacterController {
     fn default() -> Self {
         Self {
-            // Ground contact (RESULT)
-            is_grounded: false,
-            ground_normal: Vec2::Y,
+            // Collision data (None = not detected)
+            floor: None,
+            ceiling: None,
+            left_wall: None,
+            right_wall: None,
+            // Derived ground state
             slope_angle: 0.0,
             step_detected: false,
             step_height: 0.0,
             time_since_grounded: 0.0,
-            ground_entity: None,
-            // Wall contact (RESULTS)
-            touching_left_wall: false,
-            left_wall_normal: Vec2::X,
-            touching_right_wall: false,
-            right_wall_normal: Vec2::NEG_X,
-            // Ceiling contact (RESULT)
-            touching_ceiling: false,
-            ceiling_normal: Vec2::NEG_Y,
             // Gravity
             gravity: Vec2::new(0.0, -980.0),
+            // Spring state
+            left_spring_range_after_jump: false,
             // Internal
-            ground_distance: f32::MAX,
-            ground_contact_point: Vec2::ZERO,
-            ground_detected: false,
             collider_bottom_offset: 0.0,
         }
     }
@@ -206,93 +196,134 @@ impl CharacterController {
         self.gravity = gravity;
     }
 
+    /// Check if grounded (floor detected within float_height + ground_tolerance).
+    pub fn is_grounded(&self, config: &ControllerConfig) -> bool {
+        if let Some(ref floor) = self.floor {
+            let riding_height = self.riding_height(config);
+            floor.distance <= riding_height + config.ground_tolerance
+        } else {
+            false
+        }
+    }
+
+    /// Get the ground normal if floor is detected.
+    pub fn ground_normal(&self) -> Vec2 {
+        self.floor.as_ref().map(|f| f.normal).unwrap_or(Vec2::Y)
+    }
+
+    /// Get the ground entity if floor is detected.
+    pub fn ground_entity(&self) -> Option<Entity> {
+        self.floor.as_ref().and_then(|f| f.entity)
+    }
+
     /// Get the ground tangent vector (for movement direction along slopes).
     pub fn ground_tangent(&self) -> Vec2 {
-        Vec2::new(self.ground_normal.y, -self.ground_normal.x)
+        let normal = self.ground_normal();
+        Vec2::new(normal.y, -normal.x)
     }
 
     /// Check if touching any wall.
     pub fn touching_wall(&self) -> bool {
-        self.touching_left_wall || self.touching_right_wall
+        self.left_wall.is_some() || self.right_wall.is_some()
+    }
+
+    /// Check if touching left wall.
+    pub fn touching_left_wall(&self) -> bool {
+        self.left_wall.is_some()
+    }
+
+    /// Check if touching right wall.
+    pub fn touching_right_wall(&self) -> bool {
+        self.right_wall.is_some()
+    }
+
+    /// Check if touching ceiling.
+    pub fn touching_ceiling(&self) -> bool {
+        self.ceiling.is_some()
     }
 
     /// Get the wall normal if touching a wall in the given direction.
     pub fn wall_normal(&self, direction: f32) -> Option<Vec2> {
-        if direction < 0.0 && self.touching_left_wall {
-            Some(self.left_wall_normal)
-        } else if direction > 0.0 && self.touching_right_wall {
-            Some(self.right_wall_normal)
+        if direction < 0.0 {
+            self.left_wall.as_ref().map(|w| w.normal)
+        } else if direction > 0.0 {
+            self.right_wall.as_ref().map(|w| w.normal)
         } else {
             None
         }
     }
 
     /// Check if on a slope that requires extra handling.
-    pub fn is_on_slope(&self) -> bool {
-        self.is_grounded && self.slope_angle.abs() > 0.1
+    pub fn is_on_slope(&self, config: &ControllerConfig) -> bool {
+        self.is_grounded(config) && self.slope_angle.abs() > 0.1
     }
 
     /// Get the raw distance to ground (for debugging/testing).
-    ///
-    /// This returns the raycast hit distance, which may be beyond float_height.
-    /// Use `is_grounded` for gameplay logic instead.
     pub fn ground_distance(&self) -> f32 {
-        self.ground_distance
+        self.floor.as_ref().map(|f| f.distance).unwrap_or(f32::MAX)
     }
 
     /// Check if ground was detected by raycast (for debugging/testing).
-    ///
-    /// This returns true if the raycast hit something, even if beyond float_height.
-    /// Use `is_grounded` for gameplay logic instead.
     pub fn ground_detected(&self) -> bool {
-        self.ground_detected
+        self.floor.is_some()
     }
 
     /// Get the ground contact point in world space (for debugging/testing).
     pub fn ground_contact_point(&self) -> Vec2 {
-        self.ground_contact_point
+        self.floor.as_ref().map(|f| f.point).unwrap_or(Vec2::ZERO)
     }
 
     /// Reset all detection state (called at start of each frame).
     pub(crate) fn reset_detection_state(&mut self) {
-        // Ground
-        self.is_grounded = false;
-        self.ground_detected = false;
-        self.ground_distance = f32::MAX;
-        self.ground_normal = Vec2::Y;
-        self.ground_contact_point = Vec2::ZERO;
+        // Reset all collision data
+        self.floor = None;
+        self.ceiling = None;
+        self.left_wall = None;
+        self.right_wall = None;
+
+        // Reset derived state
         self.slope_angle = 0.0;
         self.step_detected = false;
         self.step_height = 0.0;
-        self.ground_entity = None;
-
-        // Walls
-        self.touching_left_wall = false;
-        self.left_wall_normal = Vec2::X;
-        self.touching_right_wall = false;
-        self.right_wall_normal = Vec2::NEG_X;
-
-        // Ceiling
-        self.touching_ceiling = false;
-        self.ceiling_normal = Vec2::NEG_Y;
     }
 
-    /// Calculate height error for floating spring (internal use).
-    pub(crate) fn height_error(&self, target_height: f32) -> f32 {
-        if self.ground_detected {
-            target_height - self.ground_distance
+    /// Get the riding height (desired height from ground to collider center).
+    /// This is float_height + collider_bottom_offset (half_height + radius for capsule).
+    #[inline]
+    pub fn riding_height(&self, config: &ControllerConfig) -> f32 {
+        config.float_height + self.collider_bottom_offset
+    }
+
+    /// Get the capsule half height (half_height + radius for capsule).
+    /// This is the collider_bottom_offset.
+    #[inline]
+    pub fn capsule_half_height(&self) -> f32 {
+        self.collider_bottom_offset
+    }
+
+    /// Check if within spring active range.
+    /// Active when:
+    /// - Distance <= float_height + ground_tolerance (riding range)
+    /// - Distance > capsule_half_height - EPSILON (physics collision threshold)
+    pub fn in_spring_range(&self, config: &ControllerConfig) -> bool {
+        if let Some(ref floor) = self.floor {
+            let riding_height = self.riding_height(config);
+            let max_range = riding_height + config.ground_tolerance;
+            let min_range = self.collider_bottom_offset - f32::EPSILON;
+            floor.distance <= max_range && floor.distance > min_range
         } else {
-            0.0
+            false
         }
     }
 
-    /// Get the effective float height from the collider's CENTER.
-    ///
-    /// This is float_height + collider_bottom_offset, ensuring the BOTTOM
-    /// of the collider floats at the configured float_height above ground.
-    #[inline]
-    pub(crate) fn effective_float_height(&self, config: &ControllerConfig) -> f32 {
-        config.float_height + self.collider_bottom_offset
+    /// Check if physics collision should take over (very close to ground).
+    /// True when floor distance < capsule_half_height - EPSILON.
+    pub fn physics_collision_active(&self) -> bool {
+        if let Some(ref floor) = self.floor {
+            floor.distance < self.collider_bottom_offset - f32::EPSILON
+        } else {
+            false
+        }
     }
 }
 
@@ -313,7 +344,12 @@ pub struct ControllerConfig {
     /// 1 pixel above the ground.
     pub float_height: f32,
 
-    /// Extra distance beyond float_height to still consider as "grounded".
+    /// Tolerance below float_height where the spring is still active.
+    /// The spring will restore riding_height when within this range.
+    /// Total grounded range is: riding_height + ground_tolerance.
+    pub ground_tolerance: f32,
+
+    /// Distance for wall and ceiling detection (extends from collider surface).
     pub cling_distance: f32,
 
     /// Extra downward force multiplier when within cling distance.
@@ -398,7 +434,8 @@ impl Default for ControllerConfig {
         Self {
             // Float settings
             float_height: 1.0, // 1 pixel gap between collider bottom and ground
-            cling_distance: 2.0,
+            ground_tolerance: 2.0, // tolerance for spring activation
+            cling_distance: 2.0, // distance for wall/ceiling detection
             cling_strength: 0.5,
 
             // Spring settings
@@ -548,6 +585,18 @@ impl ControllerConfig {
         self.upright_target_angle = Some(angle);
         self
     }
+
+    /// Builder: set ground tolerance.
+    pub fn with_ground_tolerance(mut self, tolerance: f32) -> Self {
+        self.ground_tolerance = tolerance;
+        self
+    }
+
+    /// Builder: set cling distance.
+    pub fn with_cling_distance(mut self, distance: f32) -> Self {
+        self.cling_distance = distance;
+        self
+    }
 }
 
 /// Configuration for stair stepping behavior.
@@ -623,7 +672,8 @@ mod tests {
     #[test]
     fn controller_new() {
         let controller = CharacterController::new();
-        assert!(!controller.is_grounded);
+        let config = ControllerConfig::default();
+        assert!(!controller.is_grounded(&config));
         assert_eq!(controller.gravity, Vec2::new(0.0, -980.0));
     }
 
@@ -639,8 +689,48 @@ mod tests {
         let mut controller = CharacterController::new();
         assert!(!controller.touching_wall());
 
-        controller.touching_left_wall = true;
+        controller.left_wall = Some(CollisionData::new(1.0, Vec2::X, Vec2::ZERO, None));
         assert!(controller.touching_wall());
+    }
+
+    #[test]
+    fn controller_is_grounded() {
+        let config = ControllerConfig::default();
+        let mut controller = CharacterController::new();
+        controller.collider_bottom_offset = 10.0; // Simulate a capsule
+
+        // No floor detected
+        assert!(!controller.is_grounded(&config));
+
+        // Floor detected within range
+        let riding_height = config.float_height + controller.collider_bottom_offset;
+        controller.floor = Some(CollisionData::new(riding_height, Vec2::Y, Vec2::ZERO, None));
+        assert!(controller.is_grounded(&config));
+
+        // Floor detected at edge of tolerance
+        controller.floor = Some(CollisionData::new(riding_height + config.ground_tolerance, Vec2::Y, Vec2::ZERO, None));
+        assert!(controller.is_grounded(&config));
+
+        // Floor detected beyond tolerance
+        controller.floor = Some(CollisionData::new(riding_height + config.ground_tolerance + 1.0, Vec2::Y, Vec2::ZERO, None));
+        assert!(!controller.is_grounded(&config));
+    }
+
+    #[test]
+    fn controller_in_spring_range() {
+        let config = ControllerConfig::default();
+        let mut controller = CharacterController::new();
+        controller.collider_bottom_offset = 10.0;
+
+        let riding_height = controller.riding_height(&config);
+
+        // Floor at riding height - should be in range
+        controller.floor = Some(CollisionData::new(riding_height, Vec2::Y, Vec2::ZERO, None));
+        assert!(controller.in_spring_range(&config));
+
+        // Floor below capsule half height - physics takes over
+        controller.floor = Some(CollisionData::new(controller.collider_bottom_offset - 1.0, Vec2::Y, Vec2::ZERO, None));
+        assert!(!controller.in_spring_range(&config));
     }
 
     #[test]
