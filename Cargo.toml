@@ -11,16 +11,14 @@ repository = "https://github.com/ffmulks/msg_character_controller"
 bevy = { version = "0.16", default-features = false, features = ["bevy_render", "bevy_asset"] }
 
 [dev-dependencies]
-# Minimal bevy for integration tests (MinimalPlugins only)
 bevy_rapier2d = { version = "0.31.0", features = ["simd-stable", "debug-render-2d"] }
 bevy_egui = "0.36"
 
 [features]
-default = []
+default = ["rapier2d"]
 rapier2d = ["dep:bevy_rapier2d"]
 # Feature for running examples (requires platform windowing libs)
 examples = [
-    "rapier2d",
     "bevy/bevy_core_pipeline",
     "bevy/bevy_sprite",
     "bevy/bevy_text",
@@ -38,7 +36,6 @@ features = ["simd-stable", "debug-render-2d"]
 optional = true
 
 # Examples - run with: cargo run --example platform_box --features examples
-# Note: On Linux, examples require system libraries for windowing (x11 or wayland)
 [[example]]
 name = "platform_box"
 path = "examples/platform_box.rs"
