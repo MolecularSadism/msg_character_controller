@@ -17,29 +17,33 @@ use crate::intent::MovementIntent;
 /// Simple spring-damper: F = k * displacement - c * velocity
 /// - displacement = target_height - current_height (positive = below target)
 /// - velocity = vertical velocity (positive = moving up)
+///
+/// After jump/upward propulsion, downward spring forces are temporarily filtered
+/// to avoid counteracting the desired upward movement. Upward spring forces remain active.
 pub fn apply_floating_spring<B: CharacterPhysicsBackend>(world: &mut World) {
-    let entities: Vec<(
-        Entity,
-        ControllerConfig,
-        CharacterOrientation,
-        CharacterController,
-    )> = world
-        .query::<(
-            Entity,
-            &ControllerConfig,
-            Option<&CharacterOrientation>,
-            &CharacterController,
-        )>()
-        .iter(world)
-        .map(|(e, config, orientation, controller)| {
-            (
-                e,
-                *config,
-                orientation.copied().unwrap_or_default(),
-                controller.clone(),
-            )
-        })
-        .collect();
+    let time = world
+        .get_resource::<Time>()
+        .map(|t| t.elapsed_secs())
+        .unwrap_or(0.0);
+
+    let entities: Vec<(Entity, ControllerConfig, CharacterOrientation, CharacterController)> =
+        world
+            .query::<(
+                Entity,
+                &ControllerConfig,
+                Option<&CharacterOrientation>,
+                &CharacterController,
+            )>()
+            .iter(world)
+            .map(|(e, config, orientation, controller)| {
+                (
+                    e,
+                    *config,
+                    orientation.copied().unwrap_or_default(),
+                    controller.clone(),
+                )
+            })
+            .collect();
 
     for (entity, config, orientation, controller) in entities {
         let Some(ref floor) = controller.floor else {
@@ -54,10 +58,20 @@ pub fn apply_floating_spring<B: CharacterPhysicsBackend>(world: &mut World) {
         let target_height = controller.riding_height(&config);
         let current_height = floor.distance;
 
-        // Only apply spring within active range
+        // Check if in jump spring filter window (after recent jump/upward propulsion)
+        let in_filter_window =
+            controller.in_jump_spring_filter_window(time, config.jump_spring_filter_duration);
+
+        // Only apply spring within active range, unless in filter window
+        // During filter window, we still process the spring but filter downward forces
         let max_range = target_height + config.ground_tolerance;
         let min_range = controller.capsule_half_height();
-        if current_height > max_range || current_height < min_range {
+        if current_height < min_range {
+            // Below minimum range (physics collision zone) - skip spring
+            continue;
+        }
+        if current_height > max_range && !in_filter_window {
+            // Above max range and not in filter window - skip spring entirely
             continue;
         }
 
@@ -99,8 +113,18 @@ pub fn apply_floating_spring<B: CharacterPhysicsBackend>(world: &mut World) {
             });
         let clamped_spring_force = spring_force.clamp(-max_spring_force, max_spring_force);
 
+        // During filter window after jump/propulsion, reject downward spring forces
+        // (negative force would push character down, counteracting the jump)
+        // Upward spring forces remain active
+        let final_spring_force = if in_filter_window && clamped_spring_force < 0.0 {
+            // Filter out downward force during jump window
+            0.0
+        } else {
+            clamped_spring_force
+        };
+
         // Apply force along up direction
-        let force = up * clamped_spring_force;
+        let force = up * final_spring_force;
         B::apply_force(world, entity, force);
     }
 }
@@ -139,6 +163,11 @@ pub fn apply_gravity<B: CharacterPhysicsBackend>(world: &mut World) {
 /// This unified system handles both horizontal walking and vertical propulsion.
 /// Flying downwards is disabled while grounded.
 pub fn apply_movement<B: CharacterPhysicsBackend>(world: &mut World) {
+    let time = world
+        .get_resource::<Time>()
+        .map(|t| t.elapsed_secs())
+        .unwrap_or(0.0);
+
     let entities: Vec<(
         Entity,
         ControllerConfig,
@@ -245,6 +274,13 @@ pub fn apply_movement<B: CharacterPhysicsBackend>(world: &mut World) {
             let change = velocity_diff.clamp(-max_change, max_change);
             let new_vertical = current_vertical + change;
 
+            // Record upward propulsion time when actively flying up
+            if fly_direction > 0.0 && change > 0.0 {
+                if let Some(mut controller) = world.get_mut::<CharacterController>(entity) {
+                    controller.record_upward_propulsion(time);
+                }
+            }
+
             let horizontal_velocity = new_velocity.dot(right);
             right * horizontal_velocity + up * new_vertical
         } else {
@@ -319,6 +355,11 @@ pub fn apply_jump<B: CharacterPhysicsBackend>(world: &mut World) {
         let mass = B::get_mass(world, entity);
         let impulse = up * config.jump_speed * mass;
         B::apply_impulse(world, entity, impulse);
+
+        // Record upward propulsion time for spring force filtering
+        if let Some(mut controller) = world.get_mut::<CharacterController>(entity) {
+            controller.record_upward_propulsion(time);
+        }
     }
 }
 

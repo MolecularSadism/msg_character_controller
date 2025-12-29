@@ -155,6 +155,9 @@ pub struct CharacterController {
     /// Time since last grounded (for coyote time).
     pub time_since_grounded: f32,
 
+    /// Time of last upward propulsion (jump or fly up) for spring force filtering.
+    pub last_upward_propulsion_time: f32,
+
     // === Gravity ===
     /// Gravity vector affecting this character.
     /// Used for floating spring, extra fall gravity, and jump countering.
@@ -193,6 +196,7 @@ impl Default for CharacterController {
             step_detected: false,
             step_height: 0.0,
             time_since_grounded: 0.0,
+            last_upward_propulsion_time: f32::NEG_INFINITY,
             // Gravity
             gravity: Vec2::new(0.0, -980.0),
             // Force accumulation (internal)
@@ -355,6 +359,21 @@ impl CharacterController {
         }
     }
 
+    /// Record an upward propulsion event (jump or fly up).
+    /// This enables temporary filtering of downward spring forces.
+    pub fn record_upward_propulsion(&mut self, time: f32) {
+        self.last_upward_propulsion_time = time;
+    }
+
+    /// Check if within the jump spring filter window.
+    /// Returns true if downward spring forces should be filtered.
+    pub fn in_jump_spring_filter_window(&self, current_time: f32, filter_duration: f32) -> bool {
+        if filter_duration <= 0.0 {
+            return false;
+        }
+        current_time - self.last_upward_propulsion_time < filter_duration
+    }
+
     // === Force Accumulation Methods ===
 
     /// Add force to the internal accumulator (called by controller systems).
@@ -433,6 +452,11 @@ pub struct ControllerConfig {
     /// If already moving upward (toward target) at or above this speed, no additional force is applied.
     /// This prevents overshooting by limiting acceleration when already moving fast enough.
     pub spring_max_velocity: Option<f32>,
+
+    /// Duration (seconds) after jump/upward propulsion during which downward spring forces are filtered.
+    /// During this window, only upward spring forces are applied to avoid counteracting the jump.
+    /// Set to 0.0 to disable this filtering.
+    pub jump_spring_filter_duration: f32,
 
     // === Movement Settings ===
     /// Maximum horizontal movement speed (units/second).
@@ -524,6 +548,7 @@ impl Default for ControllerConfig {
             spring_damping: 5.0,
             spring_max_force: None,
             spring_max_velocity: None,
+            jump_spring_filter_duration: 0.15, // 150ms
 
             // Movement settings
             max_speed: 200.0,
@@ -691,6 +716,13 @@ impl ControllerConfig {
     /// If already rotating toward the target at this speed or faster, no torque is applied.
     pub fn with_upright_max_angular_velocity(mut self, max_velocity: f32) -> Self {
         self.upright_max_angular_velocity = Some(max_velocity);
+        self
+    }
+
+    /// Builder: set jump spring filter duration.
+    /// Duration after jump/upward propulsion during which downward spring forces are filtered.
+    pub fn with_jump_spring_filter_duration(mut self, duration: f32) -> Self {
+        self.jump_spring_filter_duration = duration;
         self
     }
 
