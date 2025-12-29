@@ -181,11 +181,16 @@ impl<B: backend::CharacterPhysicsBackend> Plugin for CharacterControllerPlugin<B
         );
 
         // Phase 3: Intent Evaluation
-        // Evaluate MovementIntent and set intent flags (e.g., intends_upward_propulsion)
+        // First update timers, then evaluate MovementIntent and set intent flags
         // This runs AFTER sensors so it has access to current frame's floor/grounded state
         app.add_systems(
             FixedUpdate,
-            systems::evaluate_intent::<B>.in_set(CharacterControllerSet::IntentEvaluation),
+            (
+                systems::update_timers,
+                systems::evaluate_intent::<B>,
+            )
+                .chain()
+                .in_set(CharacterControllerSet::IntentEvaluation),
         );
 
         // Phase 4: Force Accumulation
