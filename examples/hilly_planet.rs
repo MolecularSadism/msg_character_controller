@@ -15,10 +15,12 @@
 //! The propulsion system provides vertical thrust that is automatically
 //! boosted by gravity magnitude to help counteract it when going up.
 
+mod helpers;
+
 use bevy::prelude::*;
 use bevy_egui::{egui, EguiContexts, EguiPlugin, EguiPrimaryContextPass};
-use bevy_egui::input::EguiWantsInput;
 use bevy_rapier2d::prelude::*;
+use helpers::{ControlsPlugin, Player};
 use msg_character_controller::prelude::*;
 use std::f32::consts::{PI, TAU};
 
@@ -43,10 +45,6 @@ const HILL_FREQUENCY: usize = 12; // Number of major hills around the planet
 const PLANET_SEGMENTS: usize = 96; // Segments for planet surface
 
 // ==================== Components ====================
-
-/// Marker for the player entity.
-#[derive(Component)]
-struct Player;
 
 /// Marker for entities affected by planetary gravity.
 #[derive(Component)]
@@ -85,6 +83,8 @@ fn main() {
         .add_plugins(RapierDebugRenderPlugin::default())
         // Character controller
         .add_plugins(CharacterControllerPlugin::<Rapier2dBackend>::default())
+        // Controls (input handling only - we have custom camera follow for planet)
+        .add_plugins(ControlsPlugin::input_only())
         // Egui for settings UI
         .add_plugins(EguiPlugin::default())
         // Resources
@@ -98,7 +98,7 @@ fn main() {
                 apply_planetary_gravity, // Gravity always applies (walking AND flying)
             ),
         )
-        .add_systems(Update, (handle_input, camera_follow))
+        .add_systems(Update, camera_follow)
         .add_systems(EguiPrimaryContextPass, settings_ui)
         .run();
 }
@@ -331,52 +331,6 @@ fn spawn_player(commands: &mut Commands) {
                 angular_damping: 5.0, // Some angular damping for stability
             },
         ));
-}
-
-// ==================== Input Handling ====================
-
-fn handle_input(
-    keyboard: Res<ButtonInput<KeyCode>>,
-    time: Res<Time>,
-    egui_wants_input: Res<EguiWantsInput>,
-    mut query: Query<(&mut MovementIntent, &mut JumpRequest), With<Player>>,
-) {
-    // Skip input handling if egui wants keyboard input
-    if egui_wants_input.wants_any_keyboard_input() {
-        // Clear any ongoing movement when egui takes focus
-        for (mut movement, _) in &mut query {
-            movement.clear();
-        }
-        return;
-    }
-
-    for (mut movement, mut jump_request) in &mut query {
-        // Horizontal input (A/D or Left/Right)
-        let mut horizontal = 0.0;
-        if keyboard.pressed(KeyCode::KeyA) || keyboard.pressed(KeyCode::ArrowLeft) {
-            horizontal -= 1.0;
-        }
-        if keyboard.pressed(KeyCode::KeyD) || keyboard.pressed(KeyCode::ArrowRight) {
-            horizontal += 1.0;
-        }
-
-        movement.set_walk(horizontal);
-
-        // Vertical propulsion (Space = up, S/Down = down)
-        let mut vertical = 0.0;
-        if keyboard.pressed(KeyCode::Space) {
-            vertical += 1.0;
-        }
-        if keyboard.pressed(KeyCode::KeyS) || keyboard.pressed(KeyCode::ArrowDown) {
-            vertical -= 1.0;
-        }
-        movement.set_fly(vertical);
-
-        // Jump on W or Up (just pressed)
-        if keyboard.just_pressed(KeyCode::KeyW) || keyboard.just_pressed(KeyCode::ArrowUp) {
-            jump_request.request(time.elapsed_secs());
-        }
-    }
 }
 
 // ==================== Planetary Systems ====================
