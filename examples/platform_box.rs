@@ -17,9 +17,9 @@
 mod helpers;
 
 use bevy::prelude::*;
-use bevy_egui::{EguiContexts, EguiPlugin, EguiPrimaryContextPass, egui};
+use bevy_egui::EguiPlugin;
 use bevy_rapier2d::prelude::*;
-use helpers::{config_panel_ui, diagnostics_panel_ui, ControlsPlugin, DiagnosticsData, Player};
+use helpers::{CharacterControllerUiPlugin, ControlsPlugin, Player};
 use msg_character_controller::prelude::*;
 
 // ==================== Constants ====================
@@ -62,10 +62,11 @@ fn main() {
         .add_plugins(ControlsPlugin::default())
         // Egui for settings UI
         .add_plugins(EguiPlugin::default())
+        // Character controller UI panels
+        .add_plugins(CharacterControllerUiPlugin::<Player>::default())
         // Systems
         .add_systems(Startup, setup)
         .add_systems(Update, apply_gravity)
-        .add_systems(EguiPrimaryContextPass, (settings_ui, diagnostics_ui))
         .run();
 }
 
