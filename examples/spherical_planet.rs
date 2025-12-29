@@ -18,7 +18,7 @@
 mod helpers;
 
 use bevy::prelude::*;
-use bevy_egui::{egui, EguiContexts, EguiPlugin, EguiPrimaryContextPass};
+use bevy_egui::{EguiContexts, EguiPlugin, EguiPrimaryContextPass, egui};
 use bevy_rapier2d::prelude::*;
 use helpers::{
     CharacterControllerUiPlugin, CharacterControllerUiState, ControlsPlugin,
@@ -109,8 +109,9 @@ fn main() {
         .add_systems(
             FixedUpdate,
             // Update orientation and gravity before controller systems
-            update_player_orientation_and_gravity
-                .before(msg_character_controller::systems::apply_floating_spring::<Rapier2dBackend>),
+            update_player_orientation_and_gravity.before(
+                msg_character_controller::systems::apply_floating_spring::<Rapier2dBackend>,
+            ),
         )
         .add_systems(Update, camera_follow)
         // Extra settings UI for planet-specific configuration
