@@ -259,9 +259,12 @@ mod float_height {
         let mut app = create_test_app();
 
         let float_height = 15.0;
+        // Use a stiffer, overdamped spring for precise settling without oscillation
+        // Critical damping: c = 2 * sqrt(k * m), with m ≈ 17, k = 5000 -> c ≈ 584
+        // Use c = 700 for overdamping to ensure stable settling
         let config = ControllerConfig::default()
             .with_float_height(float_height)
-            .with_spring(2000.0, 100.0);
+            .with_spring(5000.0, 700.0);
 
         // Ground at y=0
         spawn_ground(&mut app, Vec2::new(0.0, 0.0), Vec2::new(100.0, 5.0));
@@ -269,8 +272,8 @@ mod float_height {
         // Character starts above ground
         let character = spawn_character_with_config(&mut app, Vec2::new(0.0, 50.0), config);
 
-        // Run simulation to let character settle
-        run_frames(&mut app, 120);
+        // Run simulation to let character settle (more frames for precise settling)
+        run_frames(&mut app, 500);
 
         let controller = app.world().get::<CharacterController>(character).unwrap();
         let cfg = app.world().get::<ControllerConfig>(character).unwrap();
@@ -287,13 +290,14 @@ mod float_height {
         );
 
         // PROOF: ground_distance should be close to riding_height after settling
-        // Allow tolerance for spring oscillation
-        let tolerance = 5.0;
+        // With proper spring tuning, tolerance should be very tight (sub-pixel)
+        let tolerance = 0.1;
         assert!(
             (controller.ground_distance() - riding_height).abs() < tolerance,
-            "Ground distance {} should be close to riding_height {}",
+            "Ground distance {} should be close to riding_height {} (diff: {})",
             controller.ground_distance(),
-            riding_height
+            riding_height,
+            (controller.ground_distance() - riding_height).abs()
         );
 
         // PROOF: Character should NOT be touching the ground (position should be elevated)
@@ -491,58 +495,6 @@ mod ceiling_detection {
             !controller.touching_ceiling(),
             "Far ceiling should NOT be detected"
         );
-    }
-}
-
-// ==================== State Marker Tests ====================
-
-mod state_markers {
-    use super::*;
-
-    #[test]
-    fn grounded_marker_when_grounded() {
-        let mut app = create_test_app();
-
-        spawn_ground(&mut app, Vec2::new(0.0, 0.0), Vec2::new(100.0, 5.0));
-        let character = spawn_character(&mut app, Vec2::new(0.0, 20.0));
-
-        run_frames(&mut app, 5);
-
-        let has_grounded = app.world().get::<Grounded>(character).is_some();
-        let has_airborne = app.world().get::<Airborne>(character).is_some();
-
-        println!(
-            "PROOF: has_grounded={}, has_airborne={}",
-            has_grounded, has_airborne
-        );
-
-        // PROOF: Grounded marker should be present
-        assert!(has_grounded, "Grounded marker should be present");
-        // PROOF: Airborne marker should NOT be present
-        assert!(!has_airborne, "Airborne marker should NOT be present");
-    }
-
-    #[test]
-    fn airborne_marker_when_airborne() {
-        let mut app = create_test_app();
-
-        // No ground
-        let character = spawn_character(&mut app, Vec2::new(0.0, 100.0));
-
-        tick(&mut app);
-
-        let has_grounded = app.world().get::<Grounded>(character).is_some();
-        let has_airborne = app.world().get::<Airborne>(character).is_some();
-
-        println!(
-            "PROOF: has_grounded={}, has_airborne={}",
-            has_grounded, has_airborne
-        );
-
-        // PROOF: Airborne marker should be present
-        assert!(has_airborne, "Airborne marker should be present");
-        // PROOF: Grounded marker should NOT be present
-        assert!(!has_grounded, "Grounded marker should NOT be present");
     }
 }
 

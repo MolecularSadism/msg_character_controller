@@ -11,9 +11,6 @@ use bevy::prelude::*;
 use crate::backend::CharacterPhysicsBackend;
 use crate::config::{CharacterController, CharacterOrientation, ControllerConfig};
 use crate::intent::{JumpRequest, MovementIntent};
-use crate::state::{Airborne, Grounded, TouchingCeiling, TouchingWall};
-
-use crate::{GravityMode, GravityModeResource};
 
 /// Apply the floating spring force to maintain riding height.
 ///
@@ -80,22 +77,15 @@ pub fn apply_floating_spring<B: CharacterPhysicsBackend>(world: &mut World) {
     }
 }
 
-/// Apply internal gravity when configured.
+/// Apply gravity as a force.
 ///
-/// This system applies gravity from CharacterController.gravity when:
-/// - GravityMode is Internal
-/// - Character is not grounded
-pub fn apply_internal_gravity<B: CharacterPhysicsBackend>(world: &mut World) {
-    // Check gravity mode
-    let gravity_mode = world
-        .get_resource::<GravityModeResource>()
-        .map(|r| r.0)
-        .unwrap_or(GravityMode::Internal);
-
-    if gravity_mode != GravityMode::Internal {
-        return;
-    }
-
+/// Gravity is applied from CharacterController.gravity as a force when the
+/// character is not grounded. The gravity is applied as an impulse each
+/// physics frame to produce the equivalent acceleration.
+///
+/// Note: Gravity is always applied internally by this system. To change the
+/// gravity affecting a character, modify CharacterController::gravity directly.
+pub fn apply_gravity<B: CharacterPhysicsBackend>(world: &mut World) {
     let dt = B::get_fixed_timestep(world);
 
     // Collect entities needing gravity
@@ -107,10 +97,12 @@ pub fn apply_internal_gravity<B: CharacterPhysicsBackend>(world: &mut World) {
         .collect();
 
     for (entity, controller, _config) in entities {
-        // Apply gravity as a velocity change (acceleration)
-        let velocity = B::get_velocity(world, entity);
-        let new_velocity = velocity + controller.gravity * dt;
-        B::set_velocity(world, entity, new_velocity);
+        // Apply gravity as an impulse: I = m * g * dt
+        // This produces velocity change: dv = I / m = g * dt
+        // Using impulse ensures gravity is integrated correctly with the physics step
+        let actual_mass = B::get_mass(world, entity);
+        let gravity_impulse = controller.gravity * actual_mass * dt;
+        B::apply_impulse(world, entity, gravity_impulse);
     }
 }
 
@@ -307,91 +299,6 @@ pub fn apply_jump<B: CharacterPhysicsBackend>(world: &mut World) {
             }
         };
         B::apply_impulse(world, entity, impulse);
-    }
-}
-
-/// Sync state marker components based on CharacterController detection results.
-pub fn sync_state_markers(
-    mut commands: Commands,
-    q_controllers: Query<(
-        Entity,
-        &CharacterController,
-        &ControllerConfig,
-        Option<&CharacterOrientation>,
-        Has<Grounded>,
-        Has<Airborne>,
-        Has<TouchingWall>,
-        Has<TouchingCeiling>,
-    )>,
-) {
-    for (
-        entity,
-        controller,
-        config,
-        orientation_opt,
-        has_grounded,
-        has_airborne,
-        has_wall,
-        has_ceiling,
-    ) in &q_controllers
-    {
-        let orientation = orientation_opt.copied().unwrap_or_default();
-        let is_grounded = controller.is_grounded(config);
-
-        // Sync Grounded/Airborne
-        if is_grounded && !has_grounded {
-            commands.entity(entity).insert(Grounded);
-            commands.entity(entity).remove::<Airborne>();
-        } else if !is_grounded && has_grounded {
-            commands.entity(entity).remove::<Grounded>();
-            commands.entity(entity).insert(Airborne);
-        } else if !is_grounded && !has_airborne && !has_grounded {
-            commands.entity(entity).insert(Airborne);
-        }
-
-        // Sync TouchingWall using character's local directions
-        let touching_wall = controller.touching_wall();
-        if touching_wall && !has_wall {
-            let (direction, normal) = if controller.touching_left_wall() {
-                (
-                    orientation.left(),
-                    controller
-                        .left_wall
-                        .as_ref()
-                        .map(|w| w.normal)
-                        .unwrap_or(Vec2::X),
-                )
-            } else {
-                (
-                    orientation.right(),
-                    controller
-                        .right_wall
-                        .as_ref()
-                        .map(|w| w.normal)
-                        .unwrap_or(Vec2::NEG_X),
-                )
-            };
-            commands
-                .entity(entity)
-                .insert(TouchingWall::new(direction, normal));
-        } else if !touching_wall && has_wall {
-            commands.entity(entity).remove::<TouchingWall>();
-        }
-
-        // Sync TouchingCeiling
-        let touching_ceiling = controller.touching_ceiling();
-        if touching_ceiling && !has_ceiling {
-            let ceiling_normal = controller
-                .ceiling
-                .as_ref()
-                .map(|c| c.normal)
-                .unwrap_or(Vec2::NEG_Y);
-            commands
-                .entity(entity)
-                .insert(TouchingCeiling::new(0.0, ceiling_normal));
-        } else if !touching_ceiling && has_ceiling {
-            commands.entity(entity).remove::<TouchingCeiling>();
-        }
     }
 }
 

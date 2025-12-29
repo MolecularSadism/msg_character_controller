@@ -16,11 +16,6 @@ pub struct DiagnosticsData<'a> {
     pub velocity: &'a Velocity,
     pub movement_intent: Option<&'a MovementIntent>,
     pub jump_request: Option<&'a JumpRequest>,
-    pub grounded: bool,
-    pub touching_wall: Option<&'a TouchingWall>,
-    pub touching_ceiling: Option<&'a TouchingCeiling>,
-    pub external_force: Option<&'a ExternalForce>,
-    pub external_impulse: Option<&'a ExternalImpulse>,
 }
 
 /// Renders the position and velocity section.
@@ -63,8 +58,8 @@ pub fn ground_detection_ui(
     ui: &mut egui::Ui,
     controller: &CharacterController,
     config: &ControllerConfig,
-    grounded: bool,
 ) {
+    let grounded = controller.is_grounded(config);
     ui.collapsing("Ground Detection", |ui| {
         let state_color = if grounded {
             egui::Color32::from_rgb(100, 200, 100)
@@ -129,12 +124,7 @@ pub fn ground_detection_ui(
 }
 
 /// Renders the wall and ceiling detection section.
-pub fn wall_ceiling_ui(
-    ui: &mut egui::Ui,
-    controller: &CharacterController,
-    touching_wall: Option<&TouchingWall>,
-    touching_ceiling: Option<&TouchingCeiling>,
-) {
+pub fn wall_ceiling_ui(ui: &mut egui::Ui, controller: &CharacterController) {
     ui.collapsing("Wall & Ceiling", |ui| {
         // Left wall
         ui.horizontal(|ui| {
@@ -142,7 +132,7 @@ pub fn wall_ceiling_ui(
             if let Some(ref wall) = controller.left_wall {
                 ui.colored_label(
                     egui::Color32::from_rgb(200, 150, 100),
-                    format!("dist={:.2}", wall.distance),
+                    format!("dist={:.2}, normal=({:.2}, {:.2})", wall.distance, wall.normal.x, wall.normal.y),
                 );
             } else {
                 ui.label("None");
@@ -155,24 +145,12 @@ pub fn wall_ceiling_ui(
             if let Some(ref wall) = controller.right_wall {
                 ui.colored_label(
                     egui::Color32::from_rgb(200, 150, 100),
-                    format!("dist={:.2}", wall.distance),
+                    format!("dist={:.2}, normal=({:.2}, {:.2})", wall.distance, wall.normal.x, wall.normal.y),
                 );
             } else {
                 ui.label("None");
             }
         });
-
-        // TouchingWall component (if present)
-        if let Some(wall) = touching_wall {
-            ui.horizontal(|ui| {
-                ui.label("Wall Direction:");
-                ui.label(format!("({:.2}, {:.2})", wall.direction.x, wall.direction.y));
-            });
-            ui.horizontal(|ui| {
-                ui.label("Wall Normal:");
-                ui.label(format!("({:.2}, {:.2})", wall.normal.x, wall.normal.y));
-            });
-        }
 
         // Ceiling
         ui.horizontal(|ui| {
@@ -180,24 +158,35 @@ pub fn wall_ceiling_ui(
             if let Some(ref ceiling) = controller.ceiling {
                 ui.colored_label(
                     egui::Color32::from_rgb(200, 150, 100),
-                    format!("dist={:.2}", ceiling.distance),
+                    format!("dist={:.2}, normal=({:.2}, {:.2})", ceiling.distance, ceiling.normal.x, ceiling.normal.y),
                 );
             } else {
                 ui.label("None");
             }
         });
 
-        // TouchingCeiling component (if present)
-        if let Some(ceiling) = touching_ceiling {
-            ui.horizontal(|ui| {
-                ui.label("Ceiling Distance:");
-                ui.label(format!("{:.2}", ceiling.distance));
-            });
-            ui.horizontal(|ui| {
-                ui.label("Ceiling Normal:");
-                ui.label(format!("({:.2}, {:.2})", ceiling.normal.x, ceiling.normal.y));
-            });
-        }
+        // Summary
+        ui.horizontal(|ui| {
+            ui.label("Touching Wall:");
+            let touching = controller.touching_wall();
+            let color = if touching {
+                egui::Color32::from_rgb(200, 150, 100)
+            } else {
+                egui::Color32::from_rgb(150, 150, 150)
+            };
+            ui.colored_label(color, if touching { "Yes" } else { "No" });
+        });
+
+        ui.horizontal(|ui| {
+            ui.label("Touching Ceiling:");
+            let touching = controller.touching_ceiling();
+            let color = if touching {
+                egui::Color32::from_rgb(200, 150, 100)
+            } else {
+                egui::Color32::from_rgb(150, 150, 150)
+            };
+            ui.colored_label(color, if touching { "Yes" } else { "No" });
+        });
     });
 }
 
@@ -375,8 +364,8 @@ pub fn external_forces_ui(
 pub fn diagnostics_panel_ui(ui: &mut egui::Ui, data: &DiagnosticsData) {
     egui::ScrollArea::vertical().show(ui, |ui| {
         position_velocity_ui(ui, data.transform, data.velocity);
-        ground_detection_ui(ui, data.controller, data.config, data.grounded);
-        wall_ceiling_ui(ui, data.controller, data.touching_wall, data.touching_ceiling);
+        ground_detection_ui(ui, data.controller, data.config);
+        wall_ceiling_ui(ui, data.controller);
         movement_intent_ui(ui, data.movement_intent, data.jump_request);
         internal_state_ui(ui, data.controller);
         external_forces_ui(ui, data.external_force, data.external_impulse);

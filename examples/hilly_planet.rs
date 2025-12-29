@@ -361,15 +361,20 @@ fn apply_planetary_gravity(
     planet: Res<PlanetConfig>,
     time: Res<Time<Fixed>>,
     mut query: Query<
-        (&Transform, &mut Velocity, Option<&Grounded>),
+        (
+            &Transform,
+            &CharacterController,
+            &ControllerConfig,
+            &mut Velocity,
+        ),
         With<AffectedByPlanetaryGravity>,
     >,
 ) {
     let dt = time.delta_secs();
 
-    for (transform, mut velocity, grounded) in &mut query {
+    for (transform, controller, config, mut velocity) in &mut query {
         // Apply gravity when not grounded
-        if grounded.is_none() {
+        if !controller.is_grounded(config) {
             let position = transform.translation.xy();
             let to_center = planet.center - position;
             let gravity_dir = to_center.normalize_or_zero();
