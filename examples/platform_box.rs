@@ -24,7 +24,6 @@ use msg_character_controller::prelude::*;
 
 // ==================== Constants ====================
 
-const PLAYER_SIZE: f32 = 16.0;
 const PLAYER_HALF_HEIGHT: f32 = 8.0;
 const PLAYER_RADIUS: f32 = 6.0;
 
@@ -66,7 +65,7 @@ fn main() {
         // Systems
         .add_systems(Startup, setup)
         .add_systems(Update, apply_gravity)
-        .add_systems(EguiPrimaryContextPass, settings_ui)
+        .add_systems(EguiPrimaryContextPass, (settings_ui, diagnostics_ui))
         .run();
 }
 
@@ -203,7 +202,7 @@ fn spawn_player(commands: &mut Commands) {
             GlobalTransform::default(),
             Sprite {
                 color: Color::srgb(0.2, 0.6, 0.9),
-                custom_size: Some(Vec2::new(PLAYER_RADIUS * 2.0, PLAYER_SIZE)),
+                custom_size: Some(Vec2::new(PLAYER_RADIUS * 2.0, (PLAYER_RADIUS + PLAYER_HALF_HEIGHT) * 2.0)),
                 ..default()
             },
         ))
@@ -240,15 +239,15 @@ fn spawn_player(commands: &mut Commands) {
 fn apply_gravity(
     time: Res<Time<Fixed>>,
     mut query: Query<
-        (&CharacterController, &mut Velocity, Option<&Grounded>),
+        (&CharacterController, &ControllerConfig, &mut Velocity),
         With<AffectedByGravity>,
     >,
 ) {
     let dt = time.delta_secs();
 
-    for (controller, mut velocity, grounded) in &mut query {
+    for (controller, config, mut velocity) in &mut query {
         // Only apply gravity when not grounded
-        if grounded.is_none() {
+        if !controller.is_grounded(config) {
             velocity.linvel += controller.gravity * dt;
         }
     }
@@ -279,22 +278,6 @@ fn settings_ui(
             &mut CharacterController,
             &mut Transform,
             &mut Velocity,
-        ),
-        With<Player>,
-    >,
-    diagnostics_query: Query<
-        (
-            &ControllerConfig,
-            &CharacterController,
-            &Transform,
-            &Velocity,
-            Option<&MovementIntent>,
-            Option<&JumpRequest>,
-            Option<&Grounded>,
-            Option<&TouchingWall>,
-            Option<&TouchingCeiling>,
-            Option<&ExternalForce>,
-            Option<&ExternalImpulse>,
         ),
         With<Player>,
     >,
@@ -369,6 +352,44 @@ fn settings_ui(
 
             config_panel_ui(ui, &mut config, &mut controller);
         });
+}
+
+fn diagnostics_ui(
+    mut contexts: EguiContexts,
+    diagnostics_query: Query<
+        (
+            &ControllerConfig,
+            &CharacterController,
+            &Transform,
+            &Velocity,
+            Option<&MovementIntent>,
+            Option<&JumpRequest>,
+        ),
+        With<Player>,
+    >,
+    keyboard: Res<ButtonInput<KeyCode>>,
+    mut ui_state: Local<UiState>,
+) {
+    // Increment frame counter
+    ui_state.frame_count += 1;
+
+    // Skip the first few frames to ensure egui is fully initialized
+    if ui_state.frame_count <= 2 {
+        return;
+    }
+
+    let Ok(ctx) = contexts.ctx_mut() else {
+        return;
+    };
+
+    // Toggle settings window with TAB key
+    if keyboard.just_pressed(KeyCode::Tab) {
+        ui_state.show_settings = !ui_state.show_settings;
+    }
+
+    if !ui_state.show_settings {
+        return;
+    }
 
     // Diagnostics window
     if let Ok((
@@ -399,11 +420,6 @@ fn settings_ui(
                     velocity: velocity_ref,
                     movement_intent: movement,
                     jump_request: jump,
-                    grounded: grounded.is_some(),
-                    touching_wall: wall,
-                    touching_ceiling: ceiling,
-                    external_force: ext_force,
-                    external_impulse: ext_impulse,
                 };
                 diagnostics_panel_ui(ui, &data);
             });

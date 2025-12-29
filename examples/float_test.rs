@@ -153,13 +153,16 @@ fn setup(mut commands: Commands) {
 fn apply_gravity(
     gravity: Res<Gravity>,
     time: Res<Time>,
-    mut query: Query<(&mut Velocity, Option<&Grounded>), With<AffectedByGravity>>,
+    mut query: Query<
+        (&CharacterController, &ControllerConfig, &mut Velocity),
+        With<AffectedByGravity>,
+    >,
 ) {
     let dt = time.delta_secs();
 
-    for (mut velocity, grounded) in &mut query {
+    for (controller, config, mut velocity) in &mut query {
         // Only apply gravity when not grounded
-        if grounded.is_none() {
+        if !controller.is_grounded(config) {
             velocity.linvel += gravity.0 * dt;
         }
     }
@@ -167,9 +170,17 @@ fn apply_gravity(
 
 fn debug_floating(
     mut text_query: Query<(&mut Text, &mut TextColor), With<DebugText>>,
-    player_query: Query<(&Transform, &Velocity, &CharacterController, Option<&Grounded>), With<Player>>,
+    player_query: Query<
+        (
+            &Transform,
+            &Velocity,
+            &CharacterController,
+            &ControllerConfig,
+        ),
+        With<Player>,
+    >,
 ) {
-    let Ok((transform, velocity, controller, grounded)) = player_query.single() else {
+    let Ok((transform, velocity, controller, config)) = player_query.single() else {
         return;
     };
 
@@ -177,7 +188,11 @@ fn debug_floating(
         return;
     };
 
-    let grounded_str = if grounded.is_some() { "YES" } else { "NO" };
+    let grounded_str = if controller.is_grounded(config) {
+        "YES"
+    } else {
+        "NO"
+    };
     let platform_top_y = -180.0;
     let collider_bottom_offset = PLAYER_HALF_HEIGHT / 2.0 + PLAYER_RADIUS; // 10
     let capsule_bottom_y = transform.translation.y - collider_bottom_offset;
