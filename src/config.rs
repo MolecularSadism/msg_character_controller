@@ -110,6 +110,14 @@ impl CharacterOrientation {
 /// - `ceiling`: Ceiling collision data (when detected)
 /// - `left_wall`: Left wall collision data (when detected)
 /// - `right_wall`: Right wall collision data (when detected)
+///
+/// # Force Isolation
+///
+/// The controller tracks forces it applies internally to avoid interfering with
+/// external user forces on ExternalForce/ExternalTorque components. At the start
+/// of each frame, previously applied forces are subtracted, and at the end of
+/// the frame, accumulated forces are applied. This ensures the controller's
+/// forces are "isolated" and don't accumulate across frames.
 #[derive(Component, Reflect, Debug, Clone)]
 #[reflect(Component)]
 pub struct CharacterController {
@@ -146,6 +154,20 @@ pub struct CharacterController {
     /// Used for floating spring, extra fall gravity, and jump countering.
     pub gravity: Vec2,
 
+    // === Force Accumulation (internal) ===
+    /// Forces accumulated during the current frame (not yet applied to ExternalForce).
+    #[reflect(ignore)]
+    pub(crate) accumulated_force: Vec2,
+    /// Torque accumulated during the current frame (not yet applied to ExternalForce).
+    #[reflect(ignore)]
+    pub(crate) accumulated_torque: f32,
+    /// Forces that were applied to ExternalForce last frame (to be subtracted next frame).
+    #[reflect(ignore)]
+    pub(crate) applied_force: Vec2,
+    /// Torque that was applied to ExternalForce last frame (to be subtracted next frame).
+    #[reflect(ignore)]
+    pub(crate) applied_torque: f32,
+
     // === Internal (used by systems, kept pub(crate)) ===
     /// Distance from collider center to bottom (auto-detected from Collider).
     /// For a capsule, this is half_height + radius.
@@ -167,6 +189,11 @@ impl Default for CharacterController {
             time_since_grounded: 0.0,
             // Gravity
             gravity: Vec2::new(0.0, -980.0),
+            // Force accumulation (internal)
+            accumulated_force: Vec2::ZERO,
+            accumulated_torque: 0.0,
+            applied_force: Vec2::ZERO,
+            applied_torque: 0.0,
             // Internal
             collider_bottom_offset: 0.0,
         }
@@ -317,6 +344,40 @@ impl CharacterController {
         } else {
             false
         }
+    }
+
+    // === Force Accumulation Methods ===
+
+    /// Add force to the internal accumulator (called by controller systems).
+    #[inline]
+    pub(crate) fn add_force(&mut self, force: Vec2) {
+        self.accumulated_force += force;
+    }
+
+    /// Add torque to the internal accumulator (called by controller systems).
+    #[inline]
+    pub(crate) fn add_torque(&mut self, torque: f32) {
+        self.accumulated_torque += torque;
+    }
+
+    /// Prepare for a new frame: returns the forces to subtract from ExternalForce.
+    /// After calling this, accumulators are cleared and applied values are zeroed.
+    pub(crate) fn prepare_new_frame(&mut self) -> (Vec2, f32) {
+        let to_subtract = (self.applied_force, self.applied_torque);
+        self.accumulated_force = Vec2::ZERO;
+        self.accumulated_torque = 0.0;
+        self.applied_force = Vec2::ZERO;
+        self.applied_torque = 0.0;
+        to_subtract
+    }
+
+    /// Finalize the frame: returns the accumulated forces to apply to ExternalForce.
+    /// Moves accumulated values to applied for next frame's subtraction.
+    pub(crate) fn finalize_frame(&mut self) -> (Vec2, f32) {
+        let to_apply = (self.accumulated_force, self.accumulated_torque);
+        self.applied_force = self.accumulated_force;
+        self.applied_torque = self.accumulated_torque;
+        to_apply
     }
 }
 
