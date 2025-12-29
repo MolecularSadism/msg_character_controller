@@ -6,14 +6,18 @@
 //! If floating works: The character should descend and hover at float_height above the platform
 //! If floating doesn't work: The character will fall through or sit directly on the platform
 //!
-//! Controls:
-//! - **WASD/Arrow Keys**: Move
-//! - **Space**: Jump (to test if we can jump from floating position)
+//! ## Controls
+//! - **A/D** or **Left/Right**: Move horizontally
+//! - **W/Up**: Jump
+//! - **Space** (hold): Propulsion (fly upward)
+//! - **S/Down** (hold): Propulsion (fly downward)
+
+mod helpers;
 
 use bevy::prelude::*;
 use bevy_egui::{egui, EguiContexts, EguiPlugin, EguiPrimaryContextPass};
-use bevy_egui::input::EguiWantsInput;
 use bevy_rapier2d::prelude::*;
+use helpers::{ControlsPlugin, Player};
 use msg_character_controller::prelude::*;
 
 const PLAYER_RADIUS: f32 = 6.0;
@@ -34,25 +38,21 @@ fn main() {
         .add_plugins(RapierDebugRenderPlugin::default())
         // Character controller
         .add_plugins(CharacterControllerPlugin::<Rapier2dBackend>::default())
+        // Controls (input handling and camera follow)
+        .add_plugins(ControlsPlugin::default())
         // Egui for settings UI
         .add_plugins(EguiPlugin::default())
         // Resources
         .insert_resource(Gravity(Vec2::new(0.0, -980.0)))
         // Systems
         .add_systems(Startup, setup)
-        .add_systems(
-            Update,
-            (handle_input, apply_gravity, debug_floating, camera_follow),
-        )
+        .add_systems(Update, (apply_gravity, debug_floating))
         .add_systems(EguiPrimaryContextPass, settings_ui)
         .run();
 }
 
 #[derive(Resource)]
 struct Gravity(Vec2);
-
-#[derive(Component)]
-struct Player;
 
 #[derive(Component)]
 struct AffectedByGravity;
@@ -150,39 +150,6 @@ fn setup(mut commands: Commands) {
         ));
 }
 
-fn handle_input(
-    keyboard: Res<ButtonInput<KeyCode>>,
-    time: Res<Time>,
-    egui_wants_input: Res<EguiWantsInput>,
-    mut query: Query<(&mut MovementIntent, &mut JumpRequest), With<Player>>,
-) {
-    // Skip input handling if egui wants keyboard input
-    if egui_wants_input.wants_any_keyboard_input() {
-        // Clear any ongoing movement when egui takes focus
-        for (mut movement, _) in &mut query {
-            movement.clear();
-        }
-        return;
-    }
-
-    for (mut movement, mut jump_request) in &mut query {
-        // Horizontal movement
-        let mut direction = 0.0;
-        if keyboard.pressed(KeyCode::KeyA) || keyboard.pressed(KeyCode::ArrowLeft) {
-            direction -= 1.0;
-        }
-        if keyboard.pressed(KeyCode::KeyD) || keyboard.pressed(KeyCode::ArrowRight) {
-            direction += 1.0;
-        }
-        movement.set_walk(direction);
-
-        // Jump
-        if keyboard.just_pressed(KeyCode::Space) {
-            jump_request.request(time.elapsed_secs());
-        }
-    }
-}
-
 fn apply_gravity(
     gravity: Res<Gravity>,
     time: Res<Time>,
@@ -246,22 +213,6 @@ fn debug_floating(
     } else {
         color.0 = Color::srgb(0.9, 0.3, 0.3); // Red - no ground
     }
-}
-
-fn camera_follow(
-    player_query: Query<&Transform, (With<Player>, Without<Camera2d>)>,
-    mut camera_query: Query<&mut Transform, With<Camera2d>>,
-) {
-    let Ok(player_transform) = player_query.single() else {
-        return;
-    };
-
-    let Ok(mut camera_transform) = camera_query.single_mut() else {
-        return;
-    };
-
-    camera_transform.translation.x = player_transform.translation.x;
-    camera_transform.translation.y = player_transform.translation.y;
 }
 
 // ==================== Settings UI ====================
