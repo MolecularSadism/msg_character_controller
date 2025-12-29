@@ -10,7 +10,7 @@ use bevy::prelude::*;
 
 use crate::backend::CharacterPhysicsBackend;
 use crate::config::{CharacterController, CharacterOrientation, ControllerConfig};
-use crate::intent::{JumpRequest, MovementIntent};
+use crate::intent::MovementIntent;
 
 /// Apply the floating spring force to maintain riding height.
 ///
@@ -230,49 +230,48 @@ pub fn apply_movement<B: CharacterPhysicsBackend>(world: &mut World) {
 /// Apply jump impulse when requested.
 ///
 /// Jumping requires being grounded (or within coyote time).
+/// Jump requests are consumed directly from MovementIntent.
 pub fn apply_jump<B: CharacterPhysicsBackend>(world: &mut World) {
     let time = world
         .get_resource::<Time>()
         .map(|t| t.elapsed_secs())
         .unwrap_or(0.0);
 
-    let entities: Vec<(
-        Entity,
-        ControllerConfig,
-        CharacterOrientation,
-        CharacterController,
-        bool,
-    )> = world
-        .query::<(
-            Entity,
-            &ControllerConfig,
-            Option<&CharacterOrientation>,
-            &CharacterController,
-            &JumpRequest,
-        )>()
-        .iter(world)
-        .map(|(e, config, orientation, controller, jump)| {
-            let can_jump = jump.is_valid(time, config.jump_buffer_time)
-                && (controller.is_grounded(config)
-                    || controller.time_since_grounded < config.coyote_time);
-            (
-                e,
-                *config,
-                orientation.copied().unwrap_or_default(),
-                controller.clone(),
-                can_jump,
-            )
-        })
-        .collect();
+    // Collect entities with pending jump requests that can jump
+    let entities: Vec<(Entity, ControllerConfig, CharacterOrientation, CharacterController)> =
+        world
+            .query::<(
+                Entity,
+                &ControllerConfig,
+                Option<&CharacterOrientation>,
+                &CharacterController,
+                &MovementIntent,
+            )>()
+            .iter(world)
+            .filter_map(|(e, config, orientation, controller, intent)| {
+                // Check if there's a valid jump request
+                let jump = intent.jump_request.as_ref()?;
+                let is_within_buffer = jump.is_within_buffer(time, config.jump_buffer_time);
+                let can_jump_now = controller.is_grounded(config)
+                    || controller.time_since_grounded < config.coyote_time;
 
-    for (entity, config, orientation, controller, can_jump) in entities {
-        if !can_jump {
-            continue;
-        }
+                if is_within_buffer && can_jump_now {
+                    Some((
+                        e,
+                        *config,
+                        orientation.copied().unwrap_or_default(),
+                        controller.clone(),
+                    ))
+                } else {
+                    None
+                }
+            })
+            .collect();
 
-        // Consume the jump request
-        if let Some(mut jump) = world.get_mut::<JumpRequest>(entity) {
-            jump.consume();
+    for (entity, config, orientation, controller) in entities {
+        // Consume the jump request by taking it from MovementIntent
+        if let Some(mut intent) = world.get_mut::<MovementIntent>(entity) {
+            intent.take_jump_request();
         }
 
         // Calculate jump direction
@@ -299,15 +298,6 @@ pub fn apply_jump<B: CharacterPhysicsBackend>(world: &mut World) {
             }
         };
         B::apply_impulse(world, entity, impulse);
-    }
-}
-
-/// Reset jump requests at the end of each frame.
-pub fn reset_jump_requests(mut q: Query<&mut JumpRequest>) {
-    for mut jump in &mut q {
-        if jump.consumed {
-            jump.reset();
-        }
     }
 }
 
@@ -346,6 +336,17 @@ pub fn apply_upright_torque<B: CharacterPhysicsBackend>(world: &mut World) {
             angle_error += consts::TAU;
         }
 
+        // Check if already rotating toward target fast enough (velocity clamp).
+        // If rotating in the correct direction at or above max velocity, skip torque application.
+        if let Some(max_vel) = config.upright_max_angular_velocity {
+            // Positive angle_error means we need positive angular velocity to correct
+            let rotating_toward_target = (angle_error > 0.0 && angular_velocity > 0.0)
+                || (angle_error < 0.0 && angular_velocity < 0.0);
+            if rotating_toward_target && angular_velocity.abs() >= max_vel {
+                continue;
+            }
+        }
+
         // Get inertia for scaling torque
         // Scale by actual inertia so torque produces consistent angular acceleration
         let actual_inertia = B::get_principal_inertia(world, entity);
@@ -361,13 +362,13 @@ pub fn apply_upright_torque<B: CharacterPhysicsBackend>(world: &mut World) {
 
         let total_torque = spring_torque + damping_torque;
 
-        // Clamp total torque to prevent overflow.
-        // Maximum torque is based on the maximum spring torque at full rotation error (PI).
-        // This prevents the damping term from creating runaway torque when
-        // spinning at high angular velocity.
-        let max_spring_torque =
-            config.upright_torque_strength * consts::PI * consts::PI * actual_inertia;
-        let max_torque = max_spring_torque * 3.0;
+        // Clamp total torque to configured max, or use formula-based fallback.
+        let max_torque = config.upright_max_torque.map(|t| t * actual_inertia).unwrap_or_else(|| {
+            // Fallback: maximum based on spring torque at full rotation error (PI).
+            let max_spring_torque =
+                config.upright_torque_strength * consts::PI * consts::PI * actual_inertia;
+            max_spring_torque * 3.0
+        });
         let clamped_torque = total_torque.clamp(-max_torque, max_torque);
 
         B::apply_torque(world, entity, clamped_torque);
