@@ -128,19 +128,29 @@ impl CharacterPhysicsBackend for Rapier2dBackend {
     }
 
     fn get_mass(world: &World, entity: Entity) -> f32 {
-        world
+        let props = world
             .get::<ReadMassProperties>(entity)
-            .map(|props| props.mass)
-            .filter(|&m| m > 0.0 && m.is_finite())
-            .unwrap_or(1.0)
+            .expect("Entity must have ReadMassProperties component for mass calculation");
+        let mass = props.mass;
+        assert!(
+            mass > 0.0 && mass.is_finite(),
+            "Entity mass must be positive and finite, got: {}",
+            mass
+        );
+        mass
     }
 
     fn get_principal_inertia(world: &World, entity: Entity) -> f32 {
-        world
+        let props = world
             .get::<ReadMassProperties>(entity)
-            .map(|props| props.principal_inertia)
-            .filter(|&i| i > 0.0 && i.is_finite())
-            .unwrap_or(1.0)
+            .expect("Entity must have ReadMassProperties component for inertia calculation");
+        let inertia = props.principal_inertia;
+        assert!(
+            inertia > 0.0 && inertia.is_finite(),
+            "Entity principal inertia must be positive and finite, got: {}",
+            inertia
+        );
+        inertia
     }
 }
 
