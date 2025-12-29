@@ -297,20 +297,9 @@ pub fn apply_jump<B: CharacterPhysicsBackend>(world: &mut World) {
 
         // Apply jump impulse
         // jump_speed is the desired velocity change. Impulse = mass * delta_v
-        // When config.mass is Some, we scale by actual mass to get consistent jump height.
-        // When None, we just apply jump_speed as the impulse (Rapier will divide by mass).
-        let impulse = match config.mass {
-            Some(_) => {
-                // Scale impulse so velocity change equals jump_speed
-                let actual_mass = B::get_mass(world, entity);
-                up * config.jump_speed * actual_mass
-            }
-            None => {
-                // No scaling - apply as impulse directly
-                // Note: Rapier divides by mass, so velocity change = jump_speed / mass
-                up * config.jump_speed
-            }
-        };
+        // Scale by actual mass so velocity change equals jump_speed regardless of body mass.
+        let actual_mass = B::get_mass(world, entity);
+        let impulse = up * config.jump_speed * actual_mass;
         B::apply_impulse(world, entity, impulse);
     }
 }
