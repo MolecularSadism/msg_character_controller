@@ -17,9 +17,9 @@
 mod helpers;
 
 use bevy::prelude::*;
-use bevy_egui::{EguiContexts, EguiPlugin, EguiPrimaryContextPass, egui};
+use bevy_egui::EguiPlugin;
 use bevy_rapier2d::prelude::*;
-use helpers::{config_panel_ui, diagnostics_panel_ui, ControlsPlugin, DiagnosticsData, Player};
+use helpers::{CharacterControllerUiPlugin, ControlsPlugin, Player};
 use msg_character_controller::prelude::*;
 
 // ==================== Constants ====================
@@ -62,10 +62,11 @@ fn main() {
         .add_plugins(ControlsPlugin::default())
         // Egui for settings UI
         .add_plugins(EguiPlugin::default())
+        // Character controller UI panels
+        .add_plugins(CharacterControllerUiPlugin::<Player>::default())
         // Systems
         .add_systems(Startup, setup)
         .add_systems(Update, apply_gravity)
-        .add_systems(EguiPrimaryContextPass, (settings_ui, diagnostics_ui))
         .run();
 }
 
@@ -250,167 +251,5 @@ fn apply_gravity(
         if !controller.is_grounded(config) {
             velocity.linvel += controller.gravity * dt;
         }
-    }
-}
-
-// ==================== Settings UI ====================
-
-/// State for the settings UI
-struct UiState {
-    frame_count: u32,
-    show_settings: bool,
-}
-
-impl Default for UiState {
-    fn default() -> Self {
-        Self {
-            frame_count: 0,
-            show_settings: true, // Start with settings visible
-        }
-    }
-}
-
-fn settings_ui(
-    mut contexts: EguiContexts,
-    mut config_query: Query<
-        (
-            &mut ControllerConfig,
-            &mut CharacterController,
-            &mut Transform,
-            &mut Velocity,
-        ),
-        With<Player>,
-    >,
-    keyboard: Res<ButtonInput<KeyCode>>,
-    mut ui_state: Local<UiState>,
-) {
-    let Ok((mut config, mut controller, mut transform, mut velocity)) = config_query.single_mut()
-    else {
-        return;
-    };
-
-    // Increment frame counter
-    ui_state.frame_count += 1;
-
-    // Skip the first few frames to ensure egui is fully initialized
-    if ui_state.frame_count <= 2 {
-        return;
-    }
-
-    let Ok(ctx) = contexts.ctx_mut() else {
-        return;
-    };
-
-    // Toggle settings window with TAB key
-    if keyboard.just_pressed(KeyCode::Tab) {
-        ui_state.show_settings = !ui_state.show_settings;
-    }
-
-    // Always show the help text
-    egui::Area::new(egui::Id::new("info_area"))
-        .fixed_pos(egui::pos2(10.0, 40.0))
-        .show(ctx, |ui| {
-            ui.colored_label(
-                egui::Color32::from_rgb(200, 200, 200),
-                if ui_state.show_settings {
-                    "Press TAB to hide panels"
-                } else {
-                    "Press TAB to show panels"
-                },
-            );
-        });
-
-    if !ui_state.show_settings {
-        return;
-    }
-
-    // Controller Settings window
-    egui::Window::new("Controller Settings")
-        .default_pos([10.0, 80.0])
-        .default_width(300.0)
-        .default_height(400.0)
-        .collapsible(true)
-        .resizable(true)
-        .show(ctx, |ui| {
-            // Reload button at the top
-            ui.horizontal(|ui| {
-                if ui.button("Reset to Defaults").clicked() {
-                    *config = ControllerConfig::player()
-                        .with_float_height(15.0)
-                        .with_ground_cast_width(PLAYER_RADIUS);
-                    controller.gravity = Vec2::new(0.0, -980.0);
-                }
-                if ui.button("Respawn").clicked() {
-                    // Reset position to spawn point
-                    let spawn_pos = Vec2::new(-200.0, -BOX_HEIGHT / 2.0 + WALL_THICKNESS + 50.0);
-                    transform.translation = spawn_pos.extend(1.0);
-                    velocity.linvel = Vec2::ZERO;
-                    velocity.angvel = 0.0;
-                }
-            });
-            ui.add_space(8.0);
-
-            config_panel_ui(ui, &mut config, &mut controller);
-        });
-}
-
-fn diagnostics_ui(
-    mut contexts: EguiContexts,
-    diagnostics_query: Query<
-        (
-            &ControllerConfig,
-            &CharacterController,
-            &Transform,
-            &Velocity,
-            Option<&MovementIntent>,
-            Option<&JumpRequest>,
-        ),
-        With<Player>,
-    >,
-    keyboard: Res<ButtonInput<KeyCode>>,
-    mut ui_state: Local<UiState>,
-) {
-    // Increment frame counter
-    ui_state.frame_count += 1;
-
-    // Skip the first few frames to ensure egui is fully initialized
-    if ui_state.frame_count <= 2 {
-        return;
-    }
-
-    let Ok(ctx) = contexts.ctx_mut() else {
-        return;
-    };
-
-    // Toggle settings window with TAB key
-    if keyboard.just_pressed(KeyCode::Tab) {
-        ui_state.show_settings = !ui_state.show_settings;
-    }
-
-    if !ui_state.show_settings {
-        return;
-    }
-
-    // Diagnostics window
-    if let Ok((config_ref, controller_ref, transform_ref, velocity_ref, movement, jump)) =
-        diagnostics_query.single()
-    {
-        egui::Window::new("Diagnostics")
-            .default_pos([320.0, 80.0])
-            .default_width(280.0)
-            .default_height(400.0)
-            .collapsible(true)
-            .resizable(true)
-            .show(ctx, |ui| {
-                let data = DiagnosticsData {
-                    controller: controller_ref,
-                    config: config_ref,
-                    transform: transform_ref,
-                    velocity: velocity_ref,
-                    movement_intent: movement,
-                    jump_request: jump,
-                };
-                diagnostics_panel_ui(ui, &data);
-            });
     }
 }
