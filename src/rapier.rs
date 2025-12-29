@@ -87,14 +87,18 @@ impl CharacterPhysicsBackend for Rapier2dBackend {
     }
 
     fn apply_force(world: &mut World, entity: Entity, force: Vec2) {
-        if let Some(mut ext_force) = world.get_mut::<ExternalForce>(entity) {
-            ext_force.force += force;
+        // Accumulate into CharacterController instead of directly modifying ExternalForce.
+        // Forces will be applied to ExternalForce at the end of the frame by finalize_controller_forces.
+        if let Some(mut controller) = world.get_mut::<CharacterController>(entity) {
+            controller.add_force(force);
         }
     }
 
     fn apply_torque(world: &mut World, entity: Entity, torque: f32) {
-        if let Some(mut ext_force) = world.get_mut::<ExternalForce>(entity) {
-            ext_force.torque += torque;
+        // Accumulate into CharacterController instead of directly modifying ExternalForce.
+        // Torque will be applied to ExternalForce at the end of the frame by finalize_controller_forces.
+        if let Some(mut controller) = world.get_mut::<CharacterController>(entity) {
+            controller.add_torque(torque);
         }
     }
 
@@ -193,6 +197,20 @@ impl Plugin for Rapier2dBackendPlugin {
             )
                 .chain()
                 .before(crate::systems::apply_floating_spring::<Rapier2dBackend>),
+        );
+
+        // Chain force isolation systems with the controller systems:
+        // clear -> [detection] -> [accumulate: spring, gravity, torque, movement, jump] -> apply
+        // All chained together before Rapier's physics step with no frame delay
+        app.add_systems(
+            FixedUpdate,
+            clear_controller_forces.before(rapier_ground_detection),
+        );
+        app.add_systems(
+            FixedUpdate,
+            apply_controller_forces
+                .after(crate::systems::apply_jump::<Rapier2dBackend>)
+                .before(bevy_rapier2d::plugin::PhysicsSet::StepSimulation),
         );
     }
 }
@@ -627,11 +645,45 @@ fn rapier_ceiling_detection(
     }
 }
 
-/// Reset external forces after they've been applied.
-fn reset_external_forces(mut q: Query<&mut ExternalForce, With<CharacterController>>) {
-    for mut ext_force in &mut q {
-        ext_force.force = Vec2::ZERO;
-        ext_force.torque = 0.0;
+/// Clear controller forces at the start of each frame.
+///
+/// This system runs BEFORE any controller force systems. It:
+/// 1. Subtracts the forces we applied last frame from ExternalForce
+/// 2. Clears the accumulators for the new frame
+///
+/// This ensures that external user forces are preserved while our forces
+/// are "isolated" between frames.
+pub fn clear_controller_forces(
+    mut q: Query<(&mut ExternalForce, &mut CharacterController)>,
+) {
+    for (mut ext_force, mut controller) in &mut q {
+        // Get the forces we applied last frame and clear for the new frame
+        let (force_to_subtract, torque_to_subtract) = controller.prepare_new_frame();
+
+        // Subtract our previously applied forces from ExternalForce
+        // This restores ExternalForce to the "external-only" state
+        ext_force.force -= force_to_subtract;
+        ext_force.torque -= torque_to_subtract;
+    }
+}
+
+/// Apply controller forces at the end of each frame.
+///
+/// This system runs AFTER all controller force systems. It:
+/// 1. Applies accumulated forces to ExternalForce
+/// 2. Stores what we applied for next frame's subtraction
+///
+/// This ensures our forces are integrated by Rapier's physics step.
+pub fn apply_controller_forces(
+    mut q: Query<(&mut ExternalForce, &mut CharacterController)>,
+) {
+    for (mut ext_force, mut controller) in &mut q {
+        // Get accumulated forces and prepare for next frame
+        let (force_to_apply, torque_to_apply) = controller.finalize_frame();
+
+        // Apply our accumulated forces to ExternalForce
+        ext_force.force += force_to_apply;
+        ext_force.torque += torque_to_apply;
     }
 }
 
