@@ -494,58 +494,6 @@ mod ceiling_detection {
     }
 }
 
-// ==================== State Marker Tests ====================
-
-mod state_markers {
-    use super::*;
-
-    #[test]
-    fn grounded_marker_when_grounded() {
-        let mut app = create_test_app();
-
-        spawn_ground(&mut app, Vec2::new(0.0, 0.0), Vec2::new(100.0, 5.0));
-        let character = spawn_character(&mut app, Vec2::new(0.0, 20.0));
-
-        run_frames(&mut app, 5);
-
-        let has_grounded = app.world().get::<Grounded>(character).is_some();
-        let has_airborne = app.world().get::<Airborne>(character).is_some();
-
-        println!(
-            "PROOF: has_grounded={}, has_airborne={}",
-            has_grounded, has_airborne
-        );
-
-        // PROOF: Grounded marker should be present
-        assert!(has_grounded, "Grounded marker should be present");
-        // PROOF: Airborne marker should NOT be present
-        assert!(!has_airborne, "Airborne marker should NOT be present");
-    }
-
-    #[test]
-    fn airborne_marker_when_airborne() {
-        let mut app = create_test_app();
-
-        // No ground
-        let character = spawn_character(&mut app, Vec2::new(0.0, 100.0));
-
-        tick(&mut app);
-
-        let has_grounded = app.world().get::<Grounded>(character).is_some();
-        let has_airborne = app.world().get::<Airborne>(character).is_some();
-
-        println!(
-            "PROOF: has_grounded={}, has_airborne={}",
-            has_grounded, has_airborne
-        );
-
-        // PROOF: Airborne marker should be present
-        assert!(has_airborne, "Airborne marker should be present");
-        // PROOF: Grounded marker should NOT be present
-        assert!(!has_grounded, "Grounded marker should NOT be present");
-    }
-}
-
 // ==================== Movement Tests ====================
 
 mod movement {

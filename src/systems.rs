@@ -11,7 +11,6 @@ use bevy::prelude::*;
 use crate::backend::CharacterPhysicsBackend;
 use crate::config::{CharacterController, CharacterOrientation, ControllerConfig};
 use crate::intent::{JumpRequest, MovementIntent};
-use crate::state::{Airborne, Grounded, TouchingCeiling, TouchingWall};
 
 use crate::{GravityMode, GravityModeResource};
 
@@ -307,91 +306,6 @@ pub fn apply_jump<B: CharacterPhysicsBackend>(world: &mut World) {
             }
         };
         B::apply_impulse(world, entity, impulse);
-    }
-}
-
-/// Sync state marker components based on CharacterController detection results.
-pub fn sync_state_markers(
-    mut commands: Commands,
-    q_controllers: Query<(
-        Entity,
-        &CharacterController,
-        &ControllerConfig,
-        Option<&CharacterOrientation>,
-        Has<Grounded>,
-        Has<Airborne>,
-        Has<TouchingWall>,
-        Has<TouchingCeiling>,
-    )>,
-) {
-    for (
-        entity,
-        controller,
-        config,
-        orientation_opt,
-        has_grounded,
-        has_airborne,
-        has_wall,
-        has_ceiling,
-    ) in &q_controllers
-    {
-        let orientation = orientation_opt.copied().unwrap_or_default();
-        let is_grounded = controller.is_grounded(config);
-
-        // Sync Grounded/Airborne
-        if is_grounded && !has_grounded {
-            commands.entity(entity).insert(Grounded);
-            commands.entity(entity).remove::<Airborne>();
-        } else if !is_grounded && has_grounded {
-            commands.entity(entity).remove::<Grounded>();
-            commands.entity(entity).insert(Airborne);
-        } else if !is_grounded && !has_airborne && !has_grounded {
-            commands.entity(entity).insert(Airborne);
-        }
-
-        // Sync TouchingWall using character's local directions
-        let touching_wall = controller.touching_wall();
-        if touching_wall && !has_wall {
-            let (direction, normal) = if controller.touching_left_wall() {
-                (
-                    orientation.left(),
-                    controller
-                        .left_wall
-                        .as_ref()
-                        .map(|w| w.normal)
-                        .unwrap_or(Vec2::X),
-                )
-            } else {
-                (
-                    orientation.right(),
-                    controller
-                        .right_wall
-                        .as_ref()
-                        .map(|w| w.normal)
-                        .unwrap_or(Vec2::NEG_X),
-                )
-            };
-            commands
-                .entity(entity)
-                .insert(TouchingWall::new(direction, normal));
-        } else if !touching_wall && has_wall {
-            commands.entity(entity).remove::<TouchingWall>();
-        }
-
-        // Sync TouchingCeiling
-        let touching_ceiling = controller.touching_ceiling();
-        if touching_ceiling && !has_ceiling {
-            let ceiling_normal = controller
-                .ceiling
-                .as_ref()
-                .map(|c| c.normal)
-                .unwrap_or(Vec2::NEG_Y);
-            commands
-                .entity(entity)
-                .insert(TouchingCeiling::new(0.0, ceiling_normal));
-        } else if !touching_ceiling && has_ceiling {
-            commands.entity(entity).remove::<TouchingCeiling>();
-        }
     }
 }
 
