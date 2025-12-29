@@ -16,6 +16,8 @@ pub struct DiagnosticsData<'a> {
     pub velocity: &'a Velocity,
     pub movement_intent: Option<&'a MovementIntent>,
     pub jump_request: Option<&'a JumpRequest>,
+    pub external_force: Option<&'a ExternalForce>,
+    pub external_impulse: Option<&'a ExternalImpulse>,
 }
 
 /// Renders the position and velocity section.
