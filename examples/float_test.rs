@@ -17,7 +17,10 @@ mod helpers;
 use bevy::prelude::*;
 use bevy_egui::{egui, EguiContexts, EguiPlugin, EguiPrimaryContextPass};
 use bevy_rapier2d::prelude::*;
-use helpers::{ControlsPlugin, Player};
+use helpers::{
+    float_settings_ui, jump_settings_ui, movement_settings_ui, sensor_settings_ui,
+    slope_settings_ui, spring_settings_ui, upright_torque_settings_ui, ControlsPlugin, Player,
+};
 use msg_character_controller::prelude::*;
 
 const PLAYER_RADIUS: f32 = 6.0;
@@ -108,7 +111,10 @@ fn setup(mut commands: Commands) {
     println!("=== FLOAT TEST SETUP ===");
     println!("Spawning player at Y: {}", spawn_pos.y);
     println!("Platform top at Y: {}", platform_top);
-    println!("Float height (gap from capsule bottom to ground): {}", float_height);
+    println!(
+        "Float height (gap from capsule bottom to ground): {}",
+        float_height
+    );
     println!("Collider bottom offset: {}", collider_bottom_offset);
     println!("Expected center Y: {}", expected_hover_y);
 
@@ -233,11 +239,33 @@ fn debug_floating(
 
 fn settings_ui(
     mut contexts: EguiContexts,
-    mut query: Query<(&mut ControllerConfig, &mut CharacterController, &mut Transform, &mut Velocity), With<Player>>,
+    mut query: Query<
+        (
+            &mut ControllerConfig,
+            &mut CharacterController,
+            &mut Transform,
+            &mut Velocity,
+            &mut ExternalImpulse,
+            &mut ExternalForce,
+            &mut MovementIntent,
+            &mut JumpRequest,
+        ),
+        With<Player>,
+    >,
     mut gravity_res: ResMut<Gravity>,
     mut frame_count: Local<u32>,
 ) {
-    let Ok((mut config, mut controller, mut transform, mut velocity)) = query.single_mut() else {
+    let Ok((
+        mut config,
+        mut controller,
+        mut transform,
+        mut velocity,
+        mut external_impulse,
+        mut external_force,
+        mut movement_intent,
+        mut jump_request,
+    )) = query.single_mut()
+    else {
         return;
     };
 
@@ -260,7 +288,7 @@ fn settings_ui(
             egui::ScrollArea::vertical().show(ui, |ui| {
                 // Reload button at the top
                 ui.horizontal(|ui| {
-                    if ui.button("⟳ Reset to Defaults").clicked() {
+                    if ui.button("Reset to Defaults").clicked() {
                         *config = ControllerConfig::player()
                             .with_float_height(2.0)
                             .with_spring(20000.0, 500.0)
@@ -268,36 +296,59 @@ fn settings_ui(
                         gravity_res.0 = Vec2::new(0.0, -980.0);
                         controller.gravity = gravity_res.0;
                     }
-                    if ui.button("🔄 Respawn Player").clicked() {
+                    if ui.button("Respawn Player").clicked() {
                         // Reset position to spawn point (200 units above platform)
                         let spawn_pos = Vec2::new(0.0, 200.0);
                         transform.translation = spawn_pos.extend(1.0);
+                        transform.rotation = Quat::IDENTITY;
+
+                        // Reset velocity
                         velocity.linvel = Vec2::ZERO;
                         velocity.angvel = 0.0;
+
+                        // Reset external impulse and force
+                        external_impulse.impulse = Vec2::ZERO;
+                        external_impulse.torque_impulse = 0.0;
+                        external_force.force = Vec2::ZERO;
+                        external_force.torque = 0.0;
+
+                        // Reset controller state (keep gravity)
+                        let gravity = controller.gravity;
+                        *controller = CharacterController::with_gravity(gravity);
+
+                        // Reset movement intent and jump request
+                        movement_intent.clear();
+                        jump_request.reset();
                     }
                 });
                 ui.add_space(8.0);
 
-                // Gravity Settings (synced to both Gravity resource and CharacterController)
+                // Gravity Settings (custom - syncs with resource)
                 ui.collapsing("Gravity Settings", |ui| {
                     let mut changed = false;
                     ui.horizontal(|ui| {
                         ui.label("Gravity X:");
-                        if ui.add(
-                            egui::DragValue::new(&mut gravity_res.0.x)
-                                .speed(10.0)
-                                .range(-2000.0..=2000.0),
-                        ).changed() {
+                        if ui
+                            .add(
+                                egui::DragValue::new(&mut gravity_res.0.x)
+                                    .speed(10.0)
+                                    .range(-2000.0..=2000.0),
+                            )
+                            .changed()
+                        {
                             changed = true;
                         }
                     });
                     ui.horizontal(|ui| {
                         ui.label("Gravity Y:");
-                        if ui.add(
-                            egui::DragValue::new(&mut gravity_res.0.y)
-                                .speed(10.0)
-                                .range(-2000.0..=2000.0),
-                        ).changed() {
+                        if ui
+                            .add(
+                                egui::DragValue::new(&mut gravity_res.0.y)
+                                    .speed(10.0)
+                                    .range(-2000.0..=2000.0),
+                            )
+                            .changed()
+                        {
                             changed = true;
                         }
                     });
@@ -306,141 +357,14 @@ fn settings_ui(
                     }
                 });
 
-                // Float Settings
-                ui.collapsing("Float Settings", |ui| {
-                    ui.horizontal(|ui| {
-                        ui.label("Float Height:");
-                        ui.add(egui::DragValue::new(&mut config.float_height).speed(0.1).range(0.0..=100.0));
-                    });
-                    ui.horizontal(|ui| {
-                        ui.label("Cling Distance:");
-                        ui.add(egui::DragValue::new(&mut config.cling_distance).speed(0.1).range(0.0..=50.0));
-                    });
-                    ui.horizontal(|ui| {
-                        ui.label("Cling Strength:");
-                        ui.add(egui::DragValue::new(&mut config.cling_strength).speed(0.01).range(0.0..=2.0));
-                    });
-                });
-
-                // Spring Settings
-                ui.collapsing("Spring Settings", |ui| {
-                    ui.horizontal(|ui| {
-                        ui.label("Spring Strength:");
-                        ui.add(egui::DragValue::new(&mut config.spring_strength).speed(100.0).range(0.0..=50000.0));
-                    });
-                    ui.horizontal(|ui| {
-                        ui.label("Spring Damping:");
-                        ui.add(egui::DragValue::new(&mut config.spring_damping).speed(10.0).range(0.0..=2000.0));
-                    });
-                });
-
-                // Movement Settings
-                ui.collapsing("Movement Settings", |ui| {
-                    ui.horizontal(|ui| {
-                        ui.label("Max Speed:");
-                        ui.add(egui::DragValue::new(&mut config.max_speed).speed(1.0).range(0.0..=1000.0));
-                    });
-                    ui.horizontal(|ui| {
-                        ui.label("Acceleration:");
-                        ui.add(egui::DragValue::new(&mut config.acceleration).speed(10.0).range(0.0..=5000.0));
-                    });
-                    ui.horizontal(|ui| {
-                        ui.label("Friction:");
-                        ui.add(egui::DragValue::new(&mut config.friction).speed(0.01).range(0.0..=1.0));
-                    });
-                    ui.horizontal(|ui| {
-                        ui.label("Air Control:");
-                        ui.add(egui::DragValue::new(&mut config.air_control).speed(0.01).range(0.0..=1.0));
-                    });
-                });
-
-                // Slope Settings
-                ui.collapsing("Slope Settings", |ui| {
-                    let mut angle_deg = config.max_slope_angle.to_degrees();
-                    ui.horizontal(|ui| {
-                        ui.label("Max Slope Angle (°):");
-                        if ui.add(egui::DragValue::new(&mut angle_deg).speed(1.0).range(0.0..=90.0)).changed() {
-                            config.max_slope_angle = angle_deg.to_radians();
-                        }
-                    });
-                    ui.horizontal(|ui| {
-                        ui.label("Uphill Gravity Mult:");
-                        ui.add(egui::DragValue::new(&mut config.uphill_gravity_multiplier).speed(0.1).range(0.0..=5.0));
-                    });
-                });
-
-                // Sensor Settings
-                ui.collapsing("Sensor Settings", |ui| {
-                    ui.horizontal(|ui| {
-                        ui.label("Ground Cast Mult:");
-                        ui.add(egui::DragValue::new(&mut config.ground_cast_multiplier).speed(0.1).range(1.0..=20.0));
-                    });
-                    ui.horizontal(|ui| {
-                        ui.label("Ground Cast Width:");
-                        ui.add(egui::DragValue::new(&mut config.ground_cast_width).speed(0.1).range(0.0..=50.0));
-                    });
-                    ui.horizontal(|ui| {
-                        ui.label("Wall Cast Mult:");
-                        ui.add(egui::DragValue::new(&mut config.wall_cast_multiplier).speed(0.1).range(0.0..=5.0));
-                    });
-                    ui.horizontal(|ui| {
-                        ui.label("Wall Cast Height:");
-                        ui.add(egui::DragValue::new(&mut config.wall_cast_height).speed(0.1).range(0.0..=50.0));
-                    });
-                    ui.horizontal(|ui| {
-                        ui.label("Ceiling Cast Mult:");
-                        ui.add(egui::DragValue::new(&mut config.ceiling_cast_multiplier).speed(0.1).range(0.0..=10.0));
-                    });
-                    ui.horizontal(|ui| {
-                        ui.label("Ceiling Cast Width:");
-                        ui.add(egui::DragValue::new(&mut config.ceiling_cast_width).speed(0.1).range(0.0..=50.0));
-                    });
-                });
-
-                // Jump Settings
-                ui.collapsing("Jump Settings", |ui| {
-                    ui.horizontal(|ui| {
-                        ui.label("Jump Speed:");
-                        ui.add(egui::DragValue::new(&mut config.jump_speed).speed(100.0).range(0.0..=20000.0));
-                    });
-                    ui.horizontal(|ui| {
-                        ui.label("Coyote Time:");
-                        ui.add(egui::DragValue::new(&mut config.coyote_time).speed(0.01).range(0.0..=1.0));
-                    });
-                    ui.horizontal(|ui| {
-                        ui.label("Jump Buffer Time:");
-                        ui.add(egui::DragValue::new(&mut config.jump_buffer_time).speed(0.01).range(0.0..=1.0));
-                    });
-                    ui.horizontal(|ui| {
-                        ui.label("Extra Fall Gravity:");
-                        ui.add(egui::DragValue::new(&mut config.extra_fall_gravity).speed(0.1).range(0.0..=10.0));
-                    });
-                });
-
-                // Upright Torque Settings
-                ui.collapsing("Upright Torque Settings", |ui| {
-                    ui.checkbox(&mut config.upright_torque_enabled, "Enabled");
-                    ui.horizontal(|ui| {
-                        ui.label("Torque Strength:");
-                        ui.add(egui::DragValue::new(&mut config.upright_torque_strength).speed(10.0).range(0.0..=1000.0));
-                    });
-                    ui.horizontal(|ui| {
-                        ui.label("Torque Damping:");
-                        ui.add(egui::DragValue::new(&mut config.upright_torque_damping).speed(1.0).range(0.0..=200.0));
-                    });
-                    let mut has_target = config.upright_target_angle.is_some();
-                    let mut target_deg = config.upright_target_angle.unwrap_or(0.0).to_degrees();
-                    ui.horizontal(|ui| {
-                        if ui.checkbox(&mut has_target, "Target Angle:").changed() {
-                            config.upright_target_angle = if has_target { Some(target_deg.to_radians()) } else { None };
-                        }
-                        if has_target {
-                            if ui.add(egui::DragValue::new(&mut target_deg).speed(1.0).range(-180.0..=180.0)).changed() {
-                                config.upright_target_angle = Some(target_deg.to_radians());
-                            }
-                        }
-                    });
-                });
+                // Use helper functions for standard config sections
+                float_settings_ui(ui, &mut config);
+                spring_settings_ui(ui, &mut config);
+                movement_settings_ui(ui, &mut config);
+                slope_settings_ui(ui, &mut config);
+                sensor_settings_ui(ui, &mut config);
+                jump_settings_ui(ui, &mut config);
+                upright_torque_settings_ui(ui, &mut config);
             });
         });
 }
