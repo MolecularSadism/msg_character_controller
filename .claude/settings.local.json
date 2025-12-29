@@ -8,7 +8,8 @@
       "Bash(cargo test:*)",
       "Bash(cargo doc:*)",
       "Read(//c/Users/fmulk/.cargo/registry/src/**)",
-      "Bash(timeout 5 cargo run:*)"
+      "Bash(timeout 5 cargo run:*)",
+      "Bash(git add:*)"
     ],
     "deny": [],
     "ask": []
