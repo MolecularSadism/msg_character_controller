@@ -465,22 +465,6 @@ pub struct ControllerConfig {
     /// Width of ceiling detection shapecast.
     pub ceiling_cast_width: f32,
 
-    // === Mass Settings ===
-    /// Reference mass for force calculations.
-    ///
-    /// When `Some(mass)`, all force-based parameters (spring_strength, jump_speed,
-    /// upright_torque_strength) are scaled proportionally based on the actual
-    /// rigid body mass to produce consistent acceleration/velocity.
-    ///
-    /// When `None`, forces are applied using the actual rigid body mass directly
-    /// (no scaling). This is the recommended default as it works automatically
-    /// with Rapier's mass computed from collider geometry.
-    ///
-    /// For example, if `mass = Some(1.0)` and `jump_speed = 300.0`, a character
-    /// with actual mass 10.0 will receive an impulse of 3000.0 to achieve the
-    /// same jump velocity.
-    pub mass: Option<f32>,
-
     // === Jump Settings ===
     /// Jump impulse strength (applied as velocity).
     pub jump_speed: f32,
@@ -550,9 +534,6 @@ impl Default for ControllerConfig {
             ceiling_cast_multiplier: 2.0,
             ceiling_cast_width: 6.0,
 
-            // Mass setting (None = use actual Rapier mass)
-            mass: None,
-
             // Jump settings
             jump_speed: 300.0,
             coyote_time: 0.15,
@@ -575,22 +556,6 @@ impl ControllerConfig {
     #[inline]
     pub fn wall_cast_length(&self) -> f32 {
         self.ground_cast_width * self.wall_cast_multiplier
-    }
-
-    /// Get the effective mass for force calculations.
-    ///
-    /// Returns the configured mass if set, otherwise returns the actual
-    /// physics body mass provided by the backend. This centralizes the
-    /// mass logic for consistent force scaling across all systems.
-    ///
-    /// # Arguments
-    /// * `actual_mass` - The actual mass from the physics backend (e.g., Rapier)
-    ///
-    /// # Returns
-    /// The mass to use for force calculations
-    #[inline]
-    pub fn effective_mass(&self, actual_mass: f32) -> f32 {
-        self.mass.unwrap_or(actual_mass)
     }
 
     /// Create a config optimized for responsive player control.
@@ -738,17 +703,6 @@ impl ControllerConfig {
         self
     }
 
-    /// Builder: set reference mass.
-    ///
-    /// When set, forces will be scaled so that the config parameters produce
-    /// consistent behavior regardless of actual mass. This is useful when you
-    /// want the same config values to work across characters of different sizes.
-    ///
-    /// Leave as `None` (default) to use actual Rapier mass directly.
-    pub fn with_mass(mut self, mass: f32) -> Self {
-        self.mass = Some(mass);
-        self
-    }
 }
 
 /// Configuration for stair stepping behavior.

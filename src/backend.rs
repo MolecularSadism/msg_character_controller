@@ -93,19 +93,19 @@ pub trait CharacterPhysicsBackend: 'static + Send + Sync {
     ///
     /// Used to scale forces so that config parameters produce consistent
     /// acceleration regardless of actual body mass.
-    fn get_mass(_world: &World, _entity: Entity) -> f32 {
-        // TODO this should take the backend-provided mass!
-        1.0
-    }
+    ///
+    /// # Panics
+    /// Panics if the entity does not have valid mass properties.
+    fn get_mass(world: &World, entity: Entity) -> f32;
 
     /// Get the principal moment of inertia of an entity.
     ///
     /// In 2D this is a scalar. Used to scale torques so that config parameters
     /// produce consistent angular acceleration regardless of actual body inertia.
-    fn get_principal_inertia(_world: &World, _entity: Entity) -> f32 {
-        // Default implementation returns 1.0 (no scaling)
-        1.0
-    }
+    ///
+    /// # Panics
+    /// Panics if the entity does not have valid inertia properties.
+    fn get_principal_inertia(world: &World, entity: Entity) -> f32;
 }
 
 /// Empty plugin for backends that don't need additional setup.
