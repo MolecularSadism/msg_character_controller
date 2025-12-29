@@ -135,22 +135,10 @@ impl MovementIntent {
 
     /// Request a jump at the given time.
     ///
-    /// If there's already a pending jump request that is still within a
-    /// reasonable buffer window, this does nothing. Expired requests are
-    /// overwritten to prevent them from blocking future inputs.
+    /// Sets the jump request timestamp. The request will be consumed
+    /// by apply_jump later in the same frame if conditions allow.
     pub fn request_jump(&mut self, current_time: f32) {
-        // Maximum buffer time - if a request is older than this, it's definitely
-        // expired and should be replaced. This is generous to cover any config.
-        const MAX_BUFFER_TIME: f32 = 0.5;
-
-        let should_set = match &self.jump_request {
-            None => true,
-            Some(existing) => (current_time - existing.request_time) >= MAX_BUFFER_TIME,
-        };
-
-        if should_set {
-            self.jump_request = Some(JumpRequest::new(current_time));
-        }
+        self.jump_request = Some(JumpRequest::new(current_time));
     }
 
     /// Take and consume the pending jump request, if any.
@@ -369,24 +357,6 @@ mod tests {
     }
 
     #[test]
-    fn movement_intent_request_jump_does_not_overwrite_recent() {
-        let mut intent = MovementIntent::new();
-        intent.request_jump(1.0);
-        intent.request_jump(1.1); // Should not overwrite (within 0.5s buffer)
-
-        assert_eq!(intent.jump_request.unwrap().request_time, 1.0);
-    }
-
-    #[test]
-    fn movement_intent_request_jump_overwrites_expired() {
-        let mut intent = MovementIntent::new();
-        intent.request_jump(1.0);
-        intent.request_jump(2.0); // Should overwrite (0.5s+ later)
-
-        assert_eq!(intent.jump_request.unwrap().request_time, 2.0);
-    }
-
-    #[test]
     fn movement_intent_take_jump_request() {
         let mut intent = MovementIntent::new();
         intent.request_jump(1.0);
@@ -408,5 +378,14 @@ mod tests {
 
         intent.clear_jump_request();
         assert!(!intent.has_jump_request());
+    }
+
+    #[test]
+    fn movement_intent_request_jump_always_overwrites() {
+        let mut intent = MovementIntent::new();
+        intent.request_jump(1.0);
+        intent.request_jump(2.0);
+
+        assert_eq!(intent.jump_request.unwrap().request_time, 2.0);
     }
 }
