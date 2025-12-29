@@ -436,6 +436,15 @@ pub struct ControllerConfig {
 
     /// Target angle for upright torque (radians). None = use CharacterOrientation.
     pub upright_target_angle: Option<f32>,
+
+    /// Maximum torque to apply for uprighting.
+    /// If None, uses the default formula-based clamp.
+    pub upright_max_torque: Option<f32>,
+
+    /// Maximum angular velocity at which torque is still applied.
+    /// If already rotating toward the target at or above this speed, no additional torque is applied.
+    /// This prevents overshooting by limiting acceleration when already moving fast enough.
+    pub upright_max_angular_velocity: Option<f32>,
 }
 
 impl Default for ControllerConfig {
@@ -483,6 +492,8 @@ impl Default for ControllerConfig {
             upright_torque_strength: 200.0,
             upright_torque_damping: 20.0,
             upright_target_angle: None,
+            upright_max_torque: None,
+            upright_max_angular_velocity: Some(3.0),
         }
     }
 }
@@ -612,6 +623,20 @@ impl ControllerConfig {
     /// Builder: set upright target angle.
     pub fn with_upright_target_angle(mut self, angle: f32) -> Self {
         self.upright_target_angle = Some(angle);
+        self
+    }
+
+    /// Builder: set maximum upright torque.
+    /// Clamps the total torque applied for uprighting.
+    pub fn with_upright_max_torque(mut self, max_torque: f32) -> Self {
+        self.upright_max_torque = Some(max_torque);
+        self
+    }
+
+    /// Builder: set maximum angular velocity for upright torque.
+    /// If already rotating toward the target at this speed or faster, no torque is applied.
+    pub fn with_upright_max_angular_velocity(mut self, max_velocity: f32) -> Self {
+        self.upright_max_angular_velocity = Some(max_velocity);
         self
     }
 
