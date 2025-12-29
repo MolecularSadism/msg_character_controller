@@ -41,7 +41,6 @@ pub mod backend;
 pub mod collision;
 pub mod config;
 pub mod intent;
-pub mod state;
 pub mod systems;
 
 #[cfg(feature = "rapier2d")]
@@ -58,7 +57,6 @@ pub mod prelude {
         CharacterController, CharacterOrientation, ControllerConfig, StairConfig,
     };
     pub use crate::intent::{JumpRequest, MovementIntent};
-    pub use crate::state::{Airborne, Grounded, TouchingCeiling, TouchingWall};
 
     #[cfg(feature = "rapier2d")]
     pub use crate::rapier::Rapier2dBackend;
@@ -168,10 +166,6 @@ impl<B: backend::CharacterPhysicsBackend> Plugin for CharacterControllerPlugin<B
         app.register_type::<config::StairConfig>();
         app.register_type::<intent::MovementIntent>();
         app.register_type::<intent::JumpRequest>();
-        app.register_type::<state::Grounded>();
-        app.register_type::<state::Airborne>();
-        app.register_type::<state::TouchingWall>();
-        app.register_type::<state::TouchingCeiling>();
 
         // Insert gravity mode as a resource
         app.insert_resource(GravityModeResource(self.gravity_mode));
@@ -188,7 +182,6 @@ impl<B: backend::CharacterPhysicsBackend> Plugin for CharacterControllerPlugin<B
                 systems::apply_upright_torque::<B>,
                 systems::apply_movement::<B>,
                 systems::apply_jump::<B>,
-                systems::sync_state_markers,
             )
                 .chain(),
         );
