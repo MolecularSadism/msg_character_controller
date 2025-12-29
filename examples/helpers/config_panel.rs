@@ -438,7 +438,7 @@ pub fn stair_settings_ui(ui: &mut egui::Ui, stair_config: &mut StairConfig) {
             ui.add(
                 egui::DragValue::new(&mut stair_config.climb_force_multiplier)
                     .speed(0.1)
-                    .range(0.0..=10.0),
+                    .range(0.0..=10000.0),
             );
         });
     });
