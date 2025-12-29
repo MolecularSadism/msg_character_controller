@@ -82,10 +82,7 @@ pub fn apply_floating_spring<B: CharacterPhysicsBackend>(world: &mut World) {
         // When config.mass is Some, forces are scaled so config parameters produce
         // consistent acceleration. When None, apply forces without scaling.
         let mass_ratio = match config.mass {
-            Some(config_mass) => {
-                let actual_mass = B::get_mass(world, entity);
-                actual_mass / config_mass.max(0.001)
-            }
+            Some(config_mass) => config_mass.max(0.00001),
             None => 1.0, // No scaling - apply forces directly
         };
 
@@ -95,10 +92,12 @@ pub fn apply_floating_spring<B: CharacterPhysicsBackend>(world: &mut World) {
         let min_spring_range = controller.capsule_half_height() - f32::EPSILON;
 
         // Check if in spring range
-        let in_spring_range = floor.distance <= max_spring_range && floor.distance > min_spring_range;
+        let in_spring_range =
+            floor.distance <= max_spring_range && floor.distance > min_spring_range;
 
         if !in_spring_range {
             // Apply extra fall gravity when outside spring range and falling
+            // TODO Only do that after the zenite a jump for 1 sec or until grounded
             let vertical_velocity = velocity.dot(up);
             if vertical_velocity < 0.0 && config.extra_fall_gravity > 0.0 {
                 let extra_gravity_force = gravity * config.extra_fall_gravity * mass_ratio;
@@ -120,7 +119,8 @@ pub fn apply_floating_spring<B: CharacterPhysicsBackend>(world: &mut World) {
         // x > 0: below target → push UP
         // x < 0: above target → push DOWN
         // Scale by mass_ratio so config values work consistently across different masses
-        let spring_force = ((x * config.spring_strength) - (rel_vel * config.spring_damping)) * mass_ratio;
+        let spring_force =
+            ((x * config.spring_strength) - (rel_vel * config.spring_damping)) * mass_ratio;
 
         // Only suppress upward spring during active flight upward
         // Jumping is handled by the impulse system - spring should still work normally
@@ -192,26 +192,31 @@ pub fn apply_internal_gravity<B: CharacterPhysicsBackend>(world: &mut World) {
 /// This unified system handles both horizontal walking and vertical propulsion.
 /// Flying downwards is disabled while grounded.
 pub fn apply_movement<B: CharacterPhysicsBackend>(world: &mut World) {
-    let entities: Vec<(Entity, ControllerConfig, CharacterOrientation, MovementIntent, CharacterController)> =
-        world
-            .query::<(
-                Entity,
-                &ControllerConfig,
-                Option<&CharacterOrientation>,
-                &MovementIntent,
-                &CharacterController,
-            )>()
-            .iter(world)
-            .map(|(e, config, orientation, intent, controller)| {
-                (
-                    e,
-                    *config,
-                    orientation.copied().unwrap_or_default(),
-                    *intent,
-                    controller.clone(),
-                )
-            })
-            .collect();
+    let entities: Vec<(
+        Entity,
+        ControllerConfig,
+        CharacterOrientation,
+        MovementIntent,
+        CharacterController,
+    )> = world
+        .query::<(
+            Entity,
+            &ControllerConfig,
+            Option<&CharacterOrientation>,
+            &MovementIntent,
+            &CharacterController,
+        )>()
+        .iter(world)
+        .map(|(e, config, orientation, intent, controller)| {
+            (
+                e,
+                *config,
+                orientation.copied().unwrap_or_default(),
+                *intent,
+                controller.clone(),
+            )
+        })
+        .collect();
 
     // Get fixed timestep delta
     let dt = world
@@ -312,29 +317,34 @@ pub fn apply_jump<B: CharacterPhysicsBackend>(world: &mut World) {
         .map(|t| t.elapsed_secs())
         .unwrap_or(0.0);
 
-    let entities: Vec<(Entity, ControllerConfig, CharacterOrientation, CharacterController, bool)> =
-        world
-            .query::<(
-                Entity,
-                &ControllerConfig,
-                Option<&CharacterOrientation>,
-                &CharacterController,
-                &JumpRequest,
-            )>()
-            .iter(world)
-            .map(|(e, config, orientation, controller, jump)| {
-                let can_jump = jump.is_valid(time, config.jump_buffer_time)
-                    && (controller.is_grounded(config)
-                        || controller.time_since_grounded < config.coyote_time);
-                (
-                    e,
-                    *config,
-                    orientation.copied().unwrap_or_default(),
-                    controller.clone(),
-                    can_jump,
-                )
-            })
-            .collect();
+    let entities: Vec<(
+        Entity,
+        ControllerConfig,
+        CharacterOrientation,
+        CharacterController,
+        bool,
+    )> = world
+        .query::<(
+            Entity,
+            &ControllerConfig,
+            Option<&CharacterOrientation>,
+            &CharacterController,
+            &JumpRequest,
+        )>()
+        .iter(world)
+        .map(|(e, config, orientation, controller, jump)| {
+            let can_jump = jump.is_valid(time, config.jump_buffer_time)
+                && (controller.is_grounded(config)
+                    || controller.time_since_grounded < config.coyote_time);
+            (
+                e,
+                *config,
+                orientation.copied().unwrap_or_default(),
+                controller.clone(),
+                can_jump,
+            )
+        })
+        .collect();
 
     for (entity, config, orientation, controller, can_jump) in entities {
         if !can_jump {
@@ -387,8 +397,16 @@ pub fn sync_state_markers(
         Has<TouchingCeiling>,
     )>,
 ) {
-    for (entity, controller, config, orientation_opt, has_grounded, has_airborne, has_wall, has_ceiling) in
-        &q_controllers
+    for (
+        entity,
+        controller,
+        config,
+        orientation_opt,
+        has_grounded,
+        has_airborne,
+        has_wall,
+        has_ceiling,
+    ) in &q_controllers
     {
         let orientation = orientation_opt.copied().unwrap_or_default();
         let is_grounded = controller.is_grounded(config);
@@ -408,9 +426,23 @@ pub fn sync_state_markers(
         let touching_wall = controller.touching_wall();
         if touching_wall && !has_wall {
             let (direction, normal) = if controller.touching_left_wall() {
-                (orientation.left(), controller.left_wall.as_ref().map(|w| w.normal).unwrap_or(Vec2::X))
+                (
+                    orientation.left(),
+                    controller
+                        .left_wall
+                        .as_ref()
+                        .map(|w| w.normal)
+                        .unwrap_or(Vec2::X),
+                )
             } else {
-                (orientation.right(), controller.right_wall.as_ref().map(|w| w.normal).unwrap_or(Vec2::NEG_X))
+                (
+                    orientation.right(),
+                    controller
+                        .right_wall
+                        .as_ref()
+                        .map(|w| w.normal)
+                        .unwrap_or(Vec2::NEG_X),
+                )
             };
             commands
                 .entity(entity)
@@ -422,7 +454,11 @@ pub fn sync_state_markers(
         // Sync TouchingCeiling
         let touching_ceiling = controller.touching_ceiling();
         if touching_ceiling && !has_ceiling {
-            let ceiling_normal = controller.ceiling.as_ref().map(|c| c.normal).unwrap_or(Vec2::NEG_Y);
+            let ceiling_normal = controller
+                .ceiling
+                .as_ref()
+                .map(|c| c.normal)
+                .unwrap_or(Vec2::NEG_Y);
             commands
                 .entity(entity)
                 .insert(TouchingCeiling::new(0.0, ceiling_normal));
@@ -482,8 +518,11 @@ pub fn apply_upright_torque<B: CharacterPhysicsBackend>(world: &mut World) {
 
         // Apply cubic spring-damper torque for stronger correction at large angles
         // Scale by inertia so config values work consistently across different body shapes
-        let spring_torque =
-            config.upright_torque_strength * angle_error * angle_error * angle_error.signum() * actual_inertia;
+        let spring_torque = config.upright_torque_strength
+            * angle_error
+            * angle_error
+            * angle_error.signum()
+            * actual_inertia;
         let damping_torque = -config.upright_torque_damping * angular_velocity * actual_inertia;
 
         let total_torque = spring_torque + damping_torque;
