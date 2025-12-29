@@ -159,31 +159,32 @@ pub struct Rapier2dBackendPlugin;
 
 impl Plugin for Rapier2dBackendPlugin {
     fn build(&self, app: &mut App) {
-        // Add Rapier-specific detection systems that use RapierContext
-        // These run BEFORE the generic controller systems
+        use crate::CharacterControllerSet;
+
+        // Phase 1: Preparation - Clear forces from previous frame
+        app.add_systems(
+            FixedUpdate,
+            clear_controller_forces.in_set(CharacterControllerSet::Preparation),
+        );
+
+        // Phase 3: Sensors - Rapier-specific detection systems
+        // Ground detection must run first because it sets collider_bottom_offset
+        // which ceiling detection uses for capsule_half_height().
+        // Wall and ceiling detection can run in parallel after ground detection.
         app.add_systems(
             FixedUpdate,
             (
                 rapier_ground_detection,
-                rapier_wall_detection,
-                rapier_ceiling_detection,
+                (rapier_wall_detection, rapier_ceiling_detection),
             )
                 .chain()
-                .before(crate::systems::apply_floating_spring::<Rapier2dBackend>),
+                .in_set(CharacterControllerSet::Sensors),
         );
 
-        // Chain force isolation systems with the controller systems:
-        // clear -> [detection] -> [accumulate: spring, gravity, torque, movement, jump] -> apply
-        // All chained together before Rapier's physics step with no frame delay
+        // Phase 6: Final Application - Apply accumulated forces to physics
         app.add_systems(
             FixedUpdate,
-            clear_controller_forces.before(rapier_ground_detection),
-        );
-        app.add_systems(
-            FixedUpdate,
-            apply_controller_forces
-                .after(crate::systems::apply_jump::<Rapier2dBackend>)
-                .before(bevy_rapier2d::plugin::PhysicsSet::StepSimulation),
+            apply_controller_forces.in_set(CharacterControllerSet::FinalApplication),
         );
     }
 }

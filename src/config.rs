@@ -163,6 +163,12 @@ pub struct CharacterController {
     /// Time of last upward propulsion (jump or fly up) for spring force filtering.
     pub last_upward_propulsion_time: f32,
 
+    // === Intent State (set by evaluate_intent, used by force systems) ===
+    /// Whether the character intends to propel upward this frame.
+    /// Set by evaluate_intent system based on MovementIntent.
+    /// Used by spring system to filter downward forces immediately.
+    pub intends_upward_propulsion: bool,
+
     // === Gravity ===
     /// Gravity vector affecting this character.
     /// Used for floating spring, extra fall gravity, and jump countering.
@@ -210,6 +216,8 @@ impl Default for CharacterController {
             // Stair climbing state
             active_stair_height: 0.0,
             last_upward_propulsion_time: f32::NEG_INFINITY,
+            // Intent state
+            intends_upward_propulsion: false,
             // Gravity
             gravity: Vec2::new(0.0, -980.0),
             // Force accumulation (internal)
@@ -444,6 +452,12 @@ impl CharacterController {
     #[inline]
     pub(crate) fn add_torque(&mut self, torque: f32) {
         self.accumulated_torque += torque;
+    }
+
+    /// Reset intent state for a new frame.
+    /// Called at the start of each frame before intent evaluation.
+    pub(crate) fn reset_intent_state(&mut self) {
+        self.intends_upward_propulsion = false;
     }
 
     /// Prepare for a new frame: returns the forces to subtract from ExternalForce.
