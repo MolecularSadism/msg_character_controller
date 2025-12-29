@@ -3,6 +3,19 @@
 //! These systems implement the floating character controller behavior.
 //! They are generic over the physics backend to allow different physics
 //! engines to be used.
+//!
+//! # System Order
+//!
+//! The systems are designed to run in a specific order:
+//!
+//! 1. **Preparation**: Clear forces from previous frame
+//! 2. **Intent Evaluation**: Read MovementIntent and set intent flags
+//! 3. **Sensors**: Collect ground, wall, ceiling data (can run in parallel)
+//! 4. **Force Accumulation**: Spring, gravity, stair climb, upright torque
+//! 5. **Intent Application**: Apply jump, walk, fly based on intent
+//! 6. **Final Application**: Apply accumulated forces to physics
+//!
+//! Within each phase, systems that don't depend on each other can run in parallel.
 
 use std::f32::consts;
 
@@ -12,7 +25,50 @@ use crate::backend::CharacterPhysicsBackend;
 use crate::config::{CharacterController, CharacterOrientation, ControllerConfig};
 use crate::intent::MovementIntent;
 
-/// Apply the floating spring force to maintain riding height.
+// ============================================================================
+// PHASE 2: INTENT EVALUATION
+// ============================================================================
+
+/// Evaluate MovementIntent and set intent flags on CharacterController.
+///
+/// This system runs early in the frame to determine:
+/// - Whether the character intends to propel upward (jump or fly up)
+///
+/// These flags are used by downstream systems (like the spring) to make
+/// decisions before the actual forces are applied.
+pub fn evaluate_intent<B: CharacterPhysicsBackend>(
+    time: Res<Time>,
+    mut query: Query<(&mut CharacterController, &ControllerConfig, &MovementIntent)>,
+) {
+    let current_time = time.elapsed_secs();
+
+    for (mut controller, config, intent) in &mut query {
+        // Reset intent state for this frame
+        controller.reset_intent_state();
+
+        // Check if intending to jump (has valid jump request and can jump)
+        let intends_jump = if let Some(ref jump) = intent.jump_request {
+            let is_within_buffer = jump.is_within_buffer(current_time, config.jump_buffer_time);
+            let can_jump = controller.is_grounded(config)
+                || controller.time_since_grounded < config.coyote_time;
+            is_within_buffer && can_jump
+        } else {
+            false
+        };
+
+        // Check if intending to fly upward
+        let intends_fly_up = intent.fly > 0.001;
+
+        // Set the combined upward propulsion intent
+        controller.intends_upward_propulsion = intends_jump || intends_fly_up;
+    }
+}
+
+// ============================================================================
+// PHASE 4: FORCE ACCUMULATION
+// ============================================================================
+
+/// Accumulate floating spring force to maintain riding height.
 ///
 /// Simple spring-damper: F = k * displacement - c * velocity
 /// - displacement = target_height - current_height (positive = below target)
@@ -20,9 +76,13 @@ use crate::intent::MovementIntent;
 ///
 /// When climbing stairs, the target height includes `active_stair_height` to
 /// temporarily raise the character over the step.
-/// After jump/upward propulsion, downward spring forces are temporarily filtered
-/// to avoid counteracting the desired upward movement. Upward spring forces remain active.
-pub fn apply_floating_spring<B: CharacterPhysicsBackend>(world: &mut World) {
+///
+/// Downward spring forces are filtered when:
+/// - `intends_upward_propulsion` is true (same-frame filtering)
+/// - Within `jump_spring_filter_duration` after propulsion (cross-frame filtering)
+///
+/// Upward spring forces always remain active.
+pub fn accumulate_spring_force<B: CharacterPhysicsBackend>(world: &mut World) {
     let time = world
         .get_resource::<Time>()
         .map(|t| t.elapsed_secs())
@@ -61,20 +121,22 @@ pub fn apply_floating_spring<B: CharacterPhysicsBackend>(world: &mut World) {
         let target_height = controller.effective_riding_height(&config);
         let current_height = floor.distance;
 
-        // Check if in jump spring filter window (after recent jump/upward propulsion)
-        let in_filter_window =
-            controller.in_jump_spring_filter_window(time, config.jump_spring_filter_duration);
+        // Check if we should filter downward spring forces:
+        // 1. intends_upward_propulsion - intent evaluated this frame (same-frame filtering)
+        // 2. in_jump_spring_filter_window - time-based filter (cross-frame filtering)
+        let should_filter_downward = controller.intends_upward_propulsion
+            || controller.in_jump_spring_filter_window(time, config.jump_spring_filter_duration);
 
-        // Only apply spring within active range, unless in filter window
-        // During filter window, we still process the spring but filter downward forces
+        // Only apply spring within active range, unless filtering
+        // During filtering, we still process the spring but filter downward forces
         let max_range = target_height + config.ground_tolerance;
         let min_range = controller.capsule_half_height();
         if current_height < min_range {
             // Below minimum range (physics collision zone) - skip spring
             continue;
         }
-        if current_height > max_range && !in_filter_window {
-            // Above max range and not in filter window - skip spring entirely
+        if current_height > max_range && !should_filter_downward {
+            // Above max range and not filtering - skip spring entirely
             continue;
         }
 
@@ -116,11 +178,11 @@ pub fn apply_floating_spring<B: CharacterPhysicsBackend>(world: &mut World) {
             });
         let clamped_spring_force = spring_force.clamp(-max_spring_force, max_spring_force);
 
-        // During filter window after jump/propulsion, reject downward spring forces
-        // (negative force would push character down, counteracting the jump)
-        // Upward spring forces remain active
-        let final_spring_force = if in_filter_window && clamped_spring_force < 0.0 {
-            // Filter out downward force during jump window
+        // When upward propulsion is intended or within filter window, reject downward spring forces
+        // (negative force would push character down, counteracting the jump/fly)
+        // Upward spring forces remain active to help correct position
+        let final_spring_force = if should_filter_downward && clamped_spring_force < 0.0 {
+            // Filter out downward force during upward propulsion
             0.0
         } else {
             clamped_spring_force
@@ -132,7 +194,7 @@ pub fn apply_floating_spring<B: CharacterPhysicsBackend>(world: &mut World) {
     }
 }
 
-/// Apply stair climbing forces and update active_stair_height.
+/// Accumulate stair climbing forces and update active_stair_height.
 ///
 /// When a step is detected that is higher than the float height but within
 /// the max climb height, this system:
@@ -140,9 +202,9 @@ pub fn apply_floating_spring<B: CharacterPhysicsBackend>(world: &mut World) {
 /// 2. Applies extra upward force proportional to gravity to help climb the step
 ///
 /// When no step is detected, `active_stair_height` is reset to 0.
-pub fn apply_stair_climbing<B: CharacterPhysicsBackend>(world: &mut World) {
-    // Collect entities with stair config enabled
-    let entities: Vec<(Entity, ControllerConfig, CharacterController, CharacterOrientation)> = world
+pub fn accumulate_stair_climb_force<B: CharacterPhysicsBackend>(world: &mut World) {
+    // Collect entities with stair config
+    let entities: Vec<(Entity, ControllerConfig, CharacterController, StairConfig, CharacterOrientation)> = world
         .query::<(
             Entity,
             &ControllerConfig,
@@ -195,15 +257,15 @@ pub fn apply_stair_climbing<B: CharacterPhysicsBackend>(world: &mut World) {
     }
 }
 
-/// Apply gravity.
+/// Accumulate gravity impulse.
 ///
-/// Gravity is applied from CharacterController.gravity as a force when the
-/// character is not grounded. The gravity is applied as an impulse each
-/// physics frame to produce the equivalent acceleration.
+/// Gravity is applied from CharacterController.gravity as an impulse when the
+/// character is not grounded. Applied as an impulse each physics frame to
+/// produce the equivalent acceleration.
 ///
 /// Note: Gravity is always applied internally by this system. To change the
 /// gravity affecting a character, modify CharacterController::gravity directly.
-pub fn apply_gravity<B: CharacterPhysicsBackend>(world: &mut World) {
+pub fn accumulate_gravity<B: CharacterPhysicsBackend>(world: &mut World) {
     let dt = B::get_fixed_timestep(world);
 
     // Collect entities needing gravity
@@ -224,7 +286,195 @@ pub fn apply_gravity<B: CharacterPhysicsBackend>(world: &mut World) {
     }
 }
 
+// ============================================================================
+// PHASE 5: INTENT APPLICATION
+// ============================================================================
+
+/// Apply walking movement based on intent.
+///
+/// Handles horizontal movement using impulses scaled by mass for consistent
+/// acceleration. Uses slope tangent when grounded, world-space horizontal when airborne.
+///
+/// For the floating controller, friction is simulated internally since the character
+/// hovers above the ground and doesn't use Rapier's contact friction.
+pub fn apply_walk<B: CharacterPhysicsBackend>(world: &mut World) {
+    let entities: Vec<(
+        Entity,
+        ControllerConfig,
+        CharacterOrientation,
+        MovementIntent,
+        CharacterController,
+    )> = world
+        .query::<(
+            Entity,
+            &ControllerConfig,
+            Option<&CharacterOrientation>,
+            &MovementIntent,
+            &CharacterController,
+        )>()
+        .iter(world)
+        .map(|(e, config, orientation, intent, controller)| {
+            (
+                e,
+                *config,
+                orientation.copied().unwrap_or_default(),
+                *intent,
+                controller.clone(),
+            )
+        })
+        .collect();
+
+    let dt = B::get_fixed_timestep(world);
+
+    for (entity, config, orientation, intent, controller) in entities {
+        let current_velocity = B::get_velocity(world, entity);
+        let mass = B::get_mass(world, entity);
+        let right = orientation.right();
+
+        let is_grounded = controller.is_grounded(&config);
+
+        let desired_walk_speed = intent.effective_walk() * config.max_speed;
+        let walk_accel = if is_grounded {
+            config.acceleration
+        } else {
+            config.acceleration * config.air_control
+        };
+
+        if is_grounded && controller.ground_detected() {
+            // GROUNDED: Move along slope surface using forces
+            let slope_tangent = controller.ground_tangent();
+            let current_slope_speed = current_velocity.dot(slope_tangent);
+
+            // Calculate velocity change toward target, clamped by max acceleration
+            let velocity_diff = desired_walk_speed - current_slope_speed;
+            let max_change = walk_accel * dt;
+            let change = velocity_diff.clamp(-max_change, max_change);
+
+            // Apply friction when not walking
+            let friction_factor = if !intent.is_walking() {
+                1.0 - config.friction
+            } else {
+                1.0
+            };
+            let new_slope_speed = (current_slope_speed + change) * friction_factor;
+            let slope_velocity_delta = new_slope_speed - current_slope_speed;
+
+            // Apply impulse along slope tangent: I = m * dv
+            let walk_impulse = slope_tangent * slope_velocity_delta * mass;
+            B::apply_impulse(world, entity, walk_impulse);
+
+            // Dampen normal velocity: preserve 50% of downward motion, zero out upward
+            let slope_normal = controller.ground_normal();
+            let normal_velocity = current_velocity.dot(slope_normal);
+            let target_normal = if normal_velocity < 0.0 {
+                normal_velocity * 0.5
+            } else {
+                0.0
+            };
+            let normal_velocity_delta = target_normal - normal_velocity;
+            let normal_impulse = slope_normal * normal_velocity_delta * mass;
+            B::apply_impulse(world, entity, normal_impulse);
+        } else {
+            // AIRBORNE: Use world-space horizontal axis
+            let current_horizontal = current_velocity.dot(right);
+
+            // Calculate velocity change toward target, clamped by max acceleration
+            let velocity_diff = desired_walk_speed - current_horizontal;
+            let max_change = walk_accel * dt;
+            let change = velocity_diff.clamp(-max_change, max_change);
+
+            // Apply impulse along right axis: I = m * dv
+            let walk_impulse = right * change * mass;
+            B::apply_impulse(world, entity, walk_impulse);
+        }
+    }
+}
+
+/// Apply vertical propulsion (flying) based on intent.
+///
+/// Handles vertical movement using impulses scaled by mass. Upward propulsion
+/// is boosted by gravity magnitude to counteract gravity.
+///
+/// Flying downwards is disabled while grounded.
+pub fn apply_fly<B: CharacterPhysicsBackend>(world: &mut World) {
+    let time = world
+        .get_resource::<Time>()
+        .map(|t| t.elapsed_secs())
+        .unwrap_or(0.0);
+
+    let entities: Vec<(
+        Entity,
+        ControllerConfig,
+        CharacterOrientation,
+        MovementIntent,
+        CharacterController,
+    )> = world
+        .query::<(
+            Entity,
+            &ControllerConfig,
+            Option<&CharacterOrientation>,
+            &MovementIntent,
+            &CharacterController,
+        )>()
+        .iter(world)
+        .map(|(e, config, orientation, intent, controller)| {
+            (
+                e,
+                *config,
+                orientation.copied().unwrap_or_default(),
+                *intent,
+                controller.clone(),
+            )
+        })
+        .collect();
+
+    let dt = B::get_fixed_timestep(world);
+
+    for (entity, config, orientation, intent, controller) in entities {
+        let is_grounded = controller.is_grounded(&config);
+
+        // Flying downwards is disabled while grounded
+        let fly_direction = intent.fly;
+        let should_apply_fly = intent.is_flying() && !(is_grounded && intent.is_flying_down());
+
+        if !should_apply_fly {
+            continue;
+        }
+
+        let current_velocity = B::get_velocity(world, entity);
+        let mass = B::get_mass(world, entity);
+        let up = orientation.up();
+
+        let current_vertical = current_velocity.dot(up);
+        let desired_vertical = intent.effective_fly() * config.max_speed;
+
+        let mut fly_accel = config.acceleration;
+        // Boost upward propulsion by gravity magnitude to counteract gravity
+        if fly_direction > 0.0 {
+            fly_accel += controller.gravity.length();
+        }
+
+        // Calculate velocity change toward target, clamped by max acceleration
+        let velocity_diff = desired_vertical - current_vertical;
+        let max_change = fly_accel * dt;
+        let change = velocity_diff.clamp(-max_change, max_change);
+
+        // Apply impulse along up axis: I = m * dv
+        let fly_impulse = up * change * mass;
+        B::apply_impulse(world, entity, fly_impulse);
+
+        // Record upward propulsion time when actively flying up
+        if fly_direction > 0.0 && change > 0.0 {
+            if let Some(mut controller) = world.get_mut::<CharacterController>(entity) {
+                controller.record_upward_propulsion(time);
+            }
+        }
+    }
+}
+
 /// Apply movement (walking and flying) based on intent.
+///
+/// **DEPRECATED**: Use `apply_walk` and `apply_fly` separately for better control.
 ///
 /// This unified system handles both horizontal walking and vertical propulsion
 /// using impulses rather than direct velocity manipulation. All impulses are scaled
@@ -234,6 +484,7 @@ pub fn apply_gravity<B: CharacterPhysicsBackend>(world: &mut World) {
 /// hovers above the ground and doesn't use Rapier's contact friction.
 ///
 /// Flying downwards is disabled while grounded.
+#[deprecated(since = "0.3.0", note = "Use apply_walk and apply_fly separately")]
 pub fn apply_movement<B: CharacterPhysicsBackend>(world: &mut World) {
     let time = world
         .get_resource::<Time>()
@@ -439,14 +690,14 @@ pub fn apply_jump<B: CharacterPhysicsBackend>(world: &mut World) {
     }
 }
 
-/// Apply upright torque to keep characters oriented correctly.
+/// Accumulate upright torque to keep characters oriented correctly.
 ///
 /// Uses a simple linear spring-damper system to orient the character to the target rotation.
 /// The torque formula is: `(strength * angle_error) - (damping * angular_velocity)`
 /// Both terms are scaled by inertia for consistent behavior across different body shapes.
 ///
 /// For critical damping (no oscillation): `damping = 2 * sqrt(strength)`
-pub fn apply_upright_torque<B: CharacterPhysicsBackend>(world: &mut World) {
+pub fn accumulate_upright_torque<B: CharacterPhysicsBackend>(world: &mut World) {
     let entities: Vec<(Entity, ControllerConfig, CharacterOrientation)> = world
         .query::<(
             Entity,

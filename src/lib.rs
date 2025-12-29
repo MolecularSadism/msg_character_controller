@@ -21,6 +21,17 @@
 //! 4. Horizontal movement and vertical propulsion is controlled via MovementIntent
 //! 5. Jumping is an impulse-based action that requires being grounded
 //!
+//! ## System Order
+//!
+//! Systems run in clearly defined phases using [`CharacterControllerSet`]:
+//!
+//! 1. **Preparation** - Clear forces from previous frame
+//! 2. **IntentEvaluation** - Read MovementIntent, set intent flags
+//! 3. **Sensors** - Collect ground/wall/ceiling data (run in parallel)
+//! 4. **ForceAccumulation** - Spring, gravity, stair climb, upright torque
+//! 5. **IntentApplication** - Apply jump, walk, fly based on intent
+//! 6. **FinalApplication** - Apply accumulated forces to physics
+//!
 //! ## Usage
 //!
 //! ```rust
@@ -46,10 +57,43 @@ pub mod systems;
 #[cfg(feature = "rapier2d")]
 pub mod rapier;
 
+/// System sets for character controller phases.
+///
+/// These sets define the order of operations for the character controller:
+///
+/// 1. **Preparation** - Clear forces from previous frame
+/// 2. **IntentEvaluation** - Read MovementIntent, set intent flags (e.g., intends_upward_propulsion)
+/// 3. **Sensors** - Collect ground/wall/ceiling data (systems can run in parallel)
+/// 4. **ForceAccumulation** - Accumulate spring, gravity, stair climb, upright torque forces
+/// 5. **IntentApplication** - Apply jump, walk, fly impulses based on intent
+/// 6. **FinalApplication** - Apply accumulated forces to physics engine
+///
+/// # Usage
+///
+/// Systems within the same set can run in parallel if they don't depend on each other.
+/// Use `.chain()` for groups that need sequential execution within a set.
+#[derive(SystemSet, Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum CharacterControllerSet {
+    /// Phase 1: Clear forces from previous frame.
+    Preparation,
+    /// Phase 2: Evaluate MovementIntent and set intent flags.
+    IntentEvaluation,
+    /// Phase 3: Collect sensor data (ground, wall, ceiling detection).
+    /// Systems in this phase can run in parallel.
+    Sensors,
+    /// Phase 4: Accumulate forces (spring, gravity, stair climb, upright torque).
+    ForceAccumulation,
+    /// Phase 5: Apply intent-based impulses (jump, walk, fly).
+    IntentApplication,
+    /// Phase 6: Apply accumulated forces to physics engine.
+    FinalApplication,
+}
+
 pub mod prelude {
     //! Convenient re-exports for common usage.
 
     pub use crate::CharacterControllerPlugin;
+    pub use crate::CharacterControllerSet;
     pub use crate::backend::CharacterPhysicsBackend;
     pub use crate::collision::CollisionData;
     pub use crate::config::{
@@ -120,22 +164,63 @@ impl<B: backend::CharacterPhysicsBackend> Plugin for CharacterControllerPlugin<B
         // Add the physics backend plugin
         app.add_plugins(B::plugin());
 
-        // Add core systems in FixedUpdate for consistent physics behavior
-        // These must run before Rapier's StepSimulation to ensure forces are integrated
-        // Order: stair_climbing -> floating_spring -> gravity -> upright_torque -> movement -> jump
-        // Stair climbing must run first to set active_stair_height before the spring uses it
+        // Configure system set ordering
+        // Phase order: Preparation -> IntentEvaluation -> Sensors -> ForceAccumulation -> IntentApplication -> FinalApplication
+        app.configure_sets(
+            FixedUpdate,
+            (
+                CharacterControllerSet::Preparation,
+                CharacterControllerSet::IntentEvaluation,
+                CharacterControllerSet::Sensors,
+                CharacterControllerSet::ForceAccumulation,
+                CharacterControllerSet::IntentApplication,
+                CharacterControllerSet::FinalApplication,
+            )
+                .chain()
+        );
+
+        // Phase 2: Intent Evaluation
+        // Evaluate MovementIntent and set intent flags (e.g., intends_upward_propulsion)
+        // This runs BEFORE sensors so downstream systems can use intent information
+        app.add_systems(
+            FixedUpdate,
+            systems::evaluate_intent::<B>.in_set(CharacterControllerSet::IntentEvaluation),
+        );
+
+        // Phase 4: Force Accumulation
+        // These systems accumulate forces based on sensor data and intent
+        // Spring must run after stair climbing (which sets active_stair_height)
+        // Gravity and upright torque can run in parallel with each other
         app.add_systems(
             FixedUpdate,
             (
-                systems::apply_stair_climbing::<B>,
-                systems::apply_floating_spring::<B>,
-                systems::apply_gravity::<B>,
-                systems::apply_upright_torque::<B>,
-                systems::apply_movement::<B>,
-                systems::apply_jump::<B>,
+                systems::accumulate_stair_climb_force::<B>,
+                systems::accumulate_spring_force::<B>,
             )
                 .chain()
-                .before(bevy_rapier2d::plugin::PhysicsSet::StepSimulation),
+                .in_set(CharacterControllerSet::ForceAccumulation),
+        );
+        app.add_systems(
+            FixedUpdate,
+            (
+                systems::accumulate_gravity::<B>,
+                systems::accumulate_upright_torque::<B>,
+            )
+                .in_set(CharacterControllerSet::ForceAccumulation),
+        );
+
+        // Phase 5: Intent Application
+        // Apply impulses based on intent (jump, walk, fly)
+        // Jump runs first so it can consume the jump request before walk/fly
+        // Walk and fly can run in parallel as they affect orthogonal axes
+        app.add_systems(
+            FixedUpdate,
+            systems::apply_jump::<B>.in_set(CharacterControllerSet::IntentApplication),
+        );
+        app.add_systems(
+            FixedUpdate,
+            (systems::apply_walk::<B>, systems::apply_fly::<B>)
+                .in_set(CharacterControllerSet::IntentApplication),
         );
     }
 }
