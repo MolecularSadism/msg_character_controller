@@ -18,10 +18,8 @@ mod helpers;
 
 use bevy::prelude::*;
 use bevy_egui::{EguiContexts, EguiPlugin, EguiPrimaryContextPass, egui};
-// Import the input checking resource
-use bevy_egui::input::EguiWantsInput;
 use bevy_rapier2d::prelude::*;
-use helpers::{config_panel_ui, diagnostics_panel_ui, DiagnosticsData};
+use helpers::{config_panel_ui, diagnostics_panel_ui, ControlsPlugin, DiagnosticsData, Player};
 use msg_character_controller::prelude::*;
 
 // ==================== Constants ====================
@@ -39,10 +37,6 @@ const PLATFORM_HEIGHT: f32 = 20.0;
 const PLATFORM_Y: f32 = 100.0;
 
 // ==================== Components ====================
-
-/// Marker for the player entity.
-#[derive(Component)]
-struct Player;
 
 /// Marker for entities that need gravity applied.
 #[derive(Component)]
@@ -65,11 +59,13 @@ fn main() {
         .add_plugins(RapierDebugRenderPlugin::default())
         // Character controller
         .add_plugins(CharacterControllerPlugin::<Rapier2dBackend>::default())
+        // Controls (input handling and camera follow)
+        .add_plugins(ControlsPlugin::default())
         // Egui for settings UI
         .add_plugins(EguiPlugin::default())
         // Systems
         .add_systems(Startup, setup)
-        .add_systems(Update, (handle_input, apply_gravity, camera_follow))
+        .add_systems(Update, apply_gravity)
         .add_systems(EguiPrimaryContextPass, settings_ui)
         .run();
 }
@@ -237,52 +233,6 @@ fn spawn_player(commands: &mut Commands) {
         ));
 }
 
-// ==================== Input Handling ====================
-
-fn handle_input(
-    keyboard: Res<ButtonInput<KeyCode>>,
-    time: Res<Time>,
-    egui_wants_input: Res<EguiWantsInput>,
-    mut query: Query<(&mut MovementIntent, &mut JumpRequest), With<Player>>,
-) {
-    // Skip input handling if egui wants keyboard input
-    if egui_wants_input.wants_any_keyboard_input() {
-        // Clear any ongoing movement when egui takes focus
-        for (mut movement, _) in &mut query {
-            movement.clear();
-        }
-        return;
-    }
-
-    for (mut movement, mut jump_request) in &mut query {
-        // Horizontal input (A/D or Left/Right)
-        let mut horizontal = 0.0;
-        if keyboard.pressed(KeyCode::KeyA) || keyboard.pressed(KeyCode::ArrowLeft) {
-            horizontal -= 1.0;
-        }
-        if keyboard.pressed(KeyCode::KeyD) || keyboard.pressed(KeyCode::ArrowRight) {
-            horizontal += 1.0;
-        }
-
-        movement.set_walk(horizontal);
-
-        // Vertical propulsion (Space = up, S/Down = down)
-        let mut vertical = 0.0;
-        if keyboard.pressed(KeyCode::Space) {
-            vertical += 1.0;
-        }
-        if keyboard.pressed(KeyCode::KeyS) || keyboard.pressed(KeyCode::ArrowDown) {
-            vertical -= 1.0;
-        }
-        movement.set_fly(vertical);
-
-        // Jump on W or Up (just pressed)
-        if keyboard.just_pressed(KeyCode::KeyW) || keyboard.just_pressed(KeyCode::ArrowUp) {
-            jump_request.request(time.elapsed_secs());
-        }
-    }
-}
-
 // ==================== Gravity System ====================
 
 /// Applies gravity to entities with the AffectedByGravity component.
@@ -302,28 +252,6 @@ fn apply_gravity(
             velocity.linvel += controller.gravity * dt;
         }
     }
-}
-
-// ==================== Camera ====================
-
-fn camera_follow(
-    player_query: Query<&Transform, (With<Player>, Without<Camera2d>)>,
-    mut camera_query: Query<&mut Transform, With<Camera2d>>,
-) {
-    let Ok(player_transform) = player_query.single() else {
-        return;
-    };
-
-    let Ok(mut camera_transform) = camera_query.single_mut() else {
-        return;
-    };
-
-    // Smooth camera follow
-    let target = player_transform.translation.xy();
-    let current = camera_transform.translation.xy();
-    let smoothed = current.lerp(target, 0.1);
-    camera_transform.translation.x = smoothed.x;
-    camera_transform.translation.y = smoothed.y;
 }
 
 // ==================== Settings UI ====================
