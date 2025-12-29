@@ -289,6 +289,56 @@ pub fn upright_torque_settings_ui(ui: &mut egui::Ui, config: &mut ControllerConf
                 }
             }
         });
+
+        // upright_max_torque is Option<f32>
+        let mut has_max_torque = config.upright_max_torque.is_some();
+        let mut max_torque = config.upright_max_torque.unwrap_or(100.0);
+        ui.horizontal(|ui| {
+            if ui.checkbox(&mut has_max_torque, "Max Torque:").changed() {
+                config.upright_max_torque = if has_max_torque {
+                    Some(max_torque)
+                } else {
+                    None
+                };
+            }
+            if has_max_torque {
+                if ui
+                    .add(
+                        egui::DragValue::new(&mut max_torque)
+                            .speed(1.0)
+                            .range(0.0..=1000.0),
+                    )
+                    .changed()
+                {
+                    config.upright_max_torque = Some(max_torque);
+                }
+            }
+        });
+
+        // upright_max_angular_velocity is Option<f32>
+        let mut has_max_vel = config.upright_max_angular_velocity.is_some();
+        let mut max_vel = config.upright_max_angular_velocity.unwrap_or(3.0);
+        ui.horizontal(|ui| {
+            if ui.checkbox(&mut has_max_vel, "Max Angular Vel:").changed() {
+                config.upright_max_angular_velocity = if has_max_vel {
+                    Some(max_vel)
+                } else {
+                    None
+                };
+            }
+            if has_max_vel {
+                if ui
+                    .add(
+                        egui::DragValue::new(&mut max_vel)
+                            .speed(0.1)
+                            .range(0.0..=20.0),
+                    )
+                    .changed()
+                {
+                    config.upright_max_angular_velocity = Some(max_vel);
+                }
+            }
+        });
     });
 }
 
