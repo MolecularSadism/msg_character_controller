@@ -5,14 +5,12 @@
 //! all character controller examples.
 
 use bevy::prelude::*;
-use bevy_egui::{egui, EguiContexts, EguiPrimaryContextPass};
+use bevy_egui::{EguiContexts, EguiPrimaryContextPass, egui};
 use bevy_rapier2d::prelude::{ExternalForce, ExternalImpulse, Velocity};
 use msg_character_controller::prelude::*;
 use std::marker::PhantomData;
 
 use super::{config_panel_ui, diagnostics_panel_ui, respawn_player, DiagnosticsData};
-
-// ==================== Resources ====================
 
 /// Resource containing the UI panel state.
 #[derive(Resource)]

@@ -5,7 +5,10 @@
 
 use bevy::prelude::*;
 
-use crate::collision::CollisionData;
+#[cfg(feature = "rapier2d")]
+use bevy_rapier2d::prelude::{ExternalForce, ExternalImpulse, ReadMassProperties};
+
+use crate::{collision::CollisionData, intent::MovementIntent};
 
 /// Defines the local coordinate system for a character controller.
 ///
@@ -120,6 +123,9 @@ impl CharacterOrientation {
 /// forces are "isolated" and don't accumulate across frames.
 #[derive(Component, Reflect, Debug, Clone)]
 #[reflect(Component)]
+#[require(MovementIntent)]
+#[cfg(feature = "rapier2d")]
+#[require(ReadMassProperties, ExternalForce, ExternalImpulse)]
 pub struct CharacterController {
     // === Collision Data (Option<CollisionData> for each direction) ===
     /// Floor collision data. Contains distance, normal, point, and entity.
@@ -154,6 +160,8 @@ pub struct CharacterController {
     /// temporarily to raise the character over the step. Resets to 0 when
     /// no stair is detected.
     pub active_stair_height: f32,
+    /// Time of last upward propulsion (jump or fly up) for spring force filtering.
+    pub last_upward_propulsion_time: f32,
 
     // === Gravity ===
     /// Gravity vector affecting this character.
@@ -195,6 +203,7 @@ impl Default for CharacterController {
             time_since_grounded: 0.0,
             // Stair climbing state
             active_stair_height: 0.0,
+            last_upward_propulsion_time: f32::NEG_INFINITY,
             // Gravity
             gravity: Vec2::new(0.0, -980.0),
             // Force accumulation (internal)
@@ -216,7 +225,10 @@ impl CharacterController {
 
     /// Create a new controller with custom gravity.
     pub fn with_gravity(gravity: Vec2) -> Self {
-        Self { gravity, ..default() }
+        Self {
+            gravity,
+            ..default()
+        }
     }
 
     /// Set the gravity vector.
@@ -364,6 +376,21 @@ impl CharacterController {
         }
     }
 
+    /// Record an upward propulsion event (jump or fly up).
+    /// This enables temporary filtering of downward spring forces.
+    pub fn record_upward_propulsion(&mut self, time: f32) {
+        self.last_upward_propulsion_time = time;
+    }
+
+    /// Check if within the jump spring filter window.
+    /// Returns true if downward spring forces should be filtered.
+    pub fn in_jump_spring_filter_window(&self, current_time: f32, filter_duration: f32) -> bool {
+        if filter_duration <= 0.0 {
+            return false;
+        }
+        current_time - self.last_upward_propulsion_time < filter_duration
+    }
+
     // === Force Accumulation Methods ===
 
     /// Add force to the internal accumulator (called by controller systems).
@@ -442,6 +469,11 @@ pub struct ControllerConfig {
     /// If already moving upward (toward target) at or above this speed, no additional force is applied.
     /// This prevents overshooting by limiting acceleration when already moving fast enough.
     pub spring_max_velocity: Option<f32>,
+
+    /// Duration (seconds) after jump/upward propulsion during which downward spring forces are filtered.
+    /// During this window, only upward spring forces are applied to avoid counteracting the jump.
+    /// Set to 0.0 to disable this filtering.
+    pub jump_spring_filter_duration: f32,
 
     // === Movement Settings ===
     /// Maximum horizontal movement speed (units/second).
@@ -523,19 +555,20 @@ impl Default for ControllerConfig {
     fn default() -> Self {
         Self {
             // Float settings
-            float_height: 1.0, // 1 pixel gap between collider bottom and ground
+            float_height: 1.0,     // 1 pixel gap between collider bottom and ground
             ground_tolerance: 2.0, // tolerance for spring activation
-            cling_distance: 2.0, // distance for wall/ceiling detection
+            cling_distance: 2.0,   // distance for wall/ceiling detection
             cling_strength: 0.5,
 
-            // Spring settings (tuned for mass=1.0)
-            spring_strength: 500.0,
-            spring_damping: 30.0,
+            // Spring settings
+            spring_strength: 300.0,
+            spring_damping: 5.0,
             spring_max_force: None,
             spring_max_velocity: None,
+            jump_spring_filter_duration: 0.15, // 150ms
 
             // Movement settings
-            max_speed: 100.0,
+            max_speed: 200.0,
             acceleration: 800.0,
             friction: 0.1,
             air_control: 0.3,
@@ -545,23 +578,23 @@ impl Default for ControllerConfig {
             uphill_gravity_multiplier: 1.0,
 
             // Sensor settings (derived from float_height)
-            ground_cast_multiplier: 10.0,
-            ground_cast_width: 6.0,
-            wall_cast_multiplier: 1.5,
-            wall_cast_height: 4.0,
-            ceiling_cast_multiplier: 2.0,
-            ceiling_cast_width: 6.0,
+            ground_cast_multiplier: 1.0,
+            ground_cast_width: 12.0,
+            wall_cast_multiplier: 1.0,
+            wall_cast_height: 0.0,
+            ceiling_cast_multiplier: 1.0,
+            ceiling_cast_width: 12.0,
 
             // Jump settings
-            jump_speed: 300.0,
+            jump_speed: 120.0,
             coyote_time: 0.15,
             jump_buffer_time: 0.1,
             extra_fall_gravity: 1.0,
 
             // Upright torque settings
             upright_torque_enabled: true,
-            upright_torque_strength: 100_000.0,
-            upright_torque_damping: 30_000.0,
+            upright_torque_strength: 120.0,
+            upright_torque_damping: 5.0,
             upright_target_angle: None,
             upright_max_torque: None,
             upright_max_angular_velocity: Some(10.0),
@@ -578,13 +611,7 @@ impl ControllerConfig {
 
     /// Create a config optimized for responsive player control.
     pub fn player() -> Self {
-        Self {
-            spring_strength: 800.0,
-            spring_damping: 50.0,
-            acceleration: 1200.0,
-            jump_speed: 350.0,
-            ..default()
-        }
+        Self::default()
     }
 
     /// Create a config for AI-controlled characters.
@@ -709,6 +736,13 @@ impl ControllerConfig {
         self
     }
 
+    /// Builder: set jump spring filter duration.
+    /// Duration after jump/upward propulsion during which downward spring forces are filtered.
+    pub fn with_jump_spring_filter_duration(mut self, duration: f32) -> Self {
+        self.jump_spring_filter_duration = duration;
+        self
+    }
+
     /// Builder: set ground tolerance.
     pub fn with_ground_tolerance(mut self, tolerance: f32) -> Self {
         self.ground_tolerance = tolerance;
@@ -720,7 +754,6 @@ impl ControllerConfig {
         self.cling_distance = distance;
         self
     }
-
 }
 
 /// Configuration for stair stepping behavior.
@@ -880,11 +913,21 @@ mod tests {
         assert!(controller.is_grounded(&config));
 
         // Floor detected at edge of tolerance
-        controller.floor = Some(CollisionData::new(riding_height + config.ground_tolerance, Vec2::Y, Vec2::ZERO, None));
+        controller.floor = Some(CollisionData::new(
+            riding_height + config.ground_tolerance,
+            Vec2::Y,
+            Vec2::ZERO,
+            None,
+        ));
         assert!(controller.is_grounded(&config));
 
         // Floor detected beyond tolerance
-        controller.floor = Some(CollisionData::new(riding_height + config.ground_tolerance + 1.0, Vec2::Y, Vec2::ZERO, None));
+        controller.floor = Some(CollisionData::new(
+            riding_height + config.ground_tolerance + 1.0,
+            Vec2::Y,
+            Vec2::ZERO,
+            None,
+        ));
         assert!(!controller.is_grounded(&config));
     }
 
@@ -901,7 +944,12 @@ mod tests {
         assert!(controller.in_spring_range(&config));
 
         // Floor below capsule half height - physics takes over
-        controller.floor = Some(CollisionData::new(controller.collider_bottom_offset - 1.0, Vec2::Y, Vec2::ZERO, None));
+        controller.floor = Some(CollisionData::new(
+            controller.collider_bottom_offset - 1.0,
+            Vec2::Y,
+            Vec2::ZERO,
+            None,
+        ));
         assert!(!controller.in_spring_range(&config));
     }
 
@@ -910,7 +958,10 @@ mod tests {
         let config = ControllerConfig::default();
 
         // Wall cast derived from ground_cast_width
-        assert_eq!(config.wall_cast_length(), config.ground_cast_width * config.wall_cast_multiplier);
+        assert_eq!(
+            config.wall_cast_length(),
+            config.ground_cast_width * config.wall_cast_multiplier
+        );
     }
 
     #[test]
