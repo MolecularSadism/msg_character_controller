@@ -149,6 +149,12 @@ pub struct CharacterController {
     /// Time since last grounded (for coyote time).
     pub time_since_grounded: f32,
 
+    // === Stair Climbing State ===
+    /// Active stair height when climbing. This is added to the riding height
+    /// temporarily to raise the character over the step. Resets to 0 when
+    /// no stair is detected.
+    pub active_stair_height: f32,
+
     // === Gravity ===
     /// Gravity vector affecting this character.
     /// Used for floating spring, extra fall gravity, and jump countering.
@@ -187,6 +193,8 @@ impl Default for CharacterController {
             step_detected: false,
             step_height: 0.0,
             time_since_grounded: 0.0,
+            // Stair climbing state
+            active_stair_height: 0.0,
             // Gravity
             gravity: Vec2::new(0.0, -980.0),
             // Force accumulation (internal)
@@ -305,13 +313,23 @@ impl CharacterController {
         self.slope_angle = 0.0;
         self.step_detected = false;
         self.step_height = 0.0;
+        // Note: active_stair_height is NOT reset here - it's managed by the stair climbing system
     }
 
-    /// Get the riding height (desired height from ground to collider center).
+    /// Get the base riding height (desired height from ground to collider center).
     /// This is float_height + collider_bottom_offset (half_height + radius for capsule).
+    /// Does NOT include active_stair_height - use effective_riding_height for that.
     #[inline]
     pub fn riding_height(&self, config: &ControllerConfig) -> f32 {
         config.float_height + self.collider_bottom_offset
+    }
+
+    /// Get the effective riding height including stair climbing adjustment.
+    /// This is riding_height + active_stair_height.
+    /// Use this for the floating spring system when climbing stairs.
+    #[inline]
+    pub fn effective_riding_height(&self, config: &ControllerConfig) -> f32 {
+        self.riding_height(config) + self.active_stair_height
     }
 
     /// Get the capsule half height (half_height + radius for capsule).
@@ -706,17 +724,38 @@ impl ControllerConfig {
 }
 
 /// Configuration for stair stepping behavior.
+///
+/// The stair climbing system works by casting a ray downward in front of the character
+/// (in the direction of movement intent) to detect steps. If a step is detected that is:
+/// - Higher than the float_height (requires climbing)
+/// - Lower than max_climb_height (climbable)
+///
+/// Then the system applies extra upward force and temporarily raises the riding height.
 #[derive(Component, Reflect, Debug, Clone, Copy)]
 #[reflect(Component)]
 pub struct StairConfig {
     /// Maximum step height the character can automatically climb.
-    pub max_step_height: f32,
+    /// Steps higher than this will not be climbed.
+    pub max_climb_height: f32,
 
     /// Minimum horizontal depth for a valid step.
     pub min_step_depth: f32,
 
-    /// Forward raycast distance for step detection.
-    pub step_check_distance: f32,
+    /// Width of the stair detection shapecast.
+    pub stair_cast_width: f32,
+
+    /// Offset from the collider radius for the stair detection cast.
+    /// The cast origin is placed at: position + movement_direction * (radius + stair_cast_offset)
+    /// Default is 2.0 pixels outside the collider radius.
+    pub stair_cast_offset: f32,
+
+    /// Tolerance for stair detection. Steps within this tolerance of the float height
+    /// are not considered stairs (they're handled by the normal spring system).
+    pub stair_tolerance: f32,
+
+    /// Extra upward force multiplier when climbing stairs, as a multiple of gravity.
+    /// For example, 2.0 means apply 2x gravity as extra upward force.
+    pub climb_force_multiplier: f32,
 
     /// Whether stair stepping is enabled.
     pub enabled: bool,
@@ -725,9 +764,12 @@ pub struct StairConfig {
 impl Default for StairConfig {
     fn default() -> Self {
         Self {
-            max_step_height: 8.0,
+            max_climb_height: 8.0,
             min_step_depth: 4.0,
-            step_check_distance: 8.0,
+            stair_cast_width: 6.0,
+            stair_cast_offset: 2.0,
+            stair_tolerance: 1.0,
+            climb_force_multiplier: 2.0,
             enabled: true,
         }
     }
@@ -742,9 +784,33 @@ impl StairConfig {
         }
     }
 
-    /// Builder: set max step height.
-    pub fn with_max_height(mut self, height: f32) -> Self {
-        self.max_step_height = height;
+    /// Builder: set max climb height.
+    pub fn with_max_climb_height(mut self, height: f32) -> Self {
+        self.max_climb_height = height;
+        self
+    }
+
+    /// Builder: set stair cast width.
+    pub fn with_stair_cast_width(mut self, width: f32) -> Self {
+        self.stair_cast_width = width;
+        self
+    }
+
+    /// Builder: set stair cast offset from collider radius.
+    pub fn with_stair_cast_offset(mut self, offset: f32) -> Self {
+        self.stair_cast_offset = offset;
+        self
+    }
+
+    /// Builder: set stair tolerance.
+    pub fn with_stair_tolerance(mut self, tolerance: f32) -> Self {
+        self.stair_tolerance = tolerance;
+        self
+    }
+
+    /// Builder: set climb force multiplier.
+    pub fn with_climb_force_multiplier(mut self, multiplier: f32) -> Self {
+        self.climb_force_multiplier = multiplier;
         self
     }
 }
@@ -858,11 +924,47 @@ mod tests {
     fn stair_config_default() {
         let config = StairConfig::default();
         assert!(config.enabled);
+        assert_eq!(config.max_climb_height, 8.0);
+        assert_eq!(config.stair_cast_width, 6.0);
+        assert_eq!(config.stair_cast_offset, 2.0);
+        assert_eq!(config.stair_tolerance, 1.0);
+        assert_eq!(config.climb_force_multiplier, 2.0);
     }
 
     #[test]
     fn stair_config_disabled() {
         let config = StairConfig::disabled();
         assert!(!config.enabled);
+    }
+
+    #[test]
+    fn stair_config_builders() {
+        let config = StairConfig::default()
+            .with_max_climb_height(12.0)
+            .with_stair_cast_width(8.0)
+            .with_stair_cast_offset(3.0)
+            .with_stair_tolerance(2.0)
+            .with_climb_force_multiplier(3.0);
+
+        assert_eq!(config.max_climb_height, 12.0);
+        assert_eq!(config.stair_cast_width, 8.0);
+        assert_eq!(config.stair_cast_offset, 3.0);
+        assert_eq!(config.stair_tolerance, 2.0);
+        assert_eq!(config.climb_force_multiplier, 3.0);
+    }
+
+    #[test]
+    fn controller_effective_riding_height() {
+        let config = ControllerConfig::default();
+        let mut controller = CharacterController::new();
+        controller.collider_bottom_offset = 10.0;
+
+        // Without stair climbing
+        let base_height = controller.riding_height(&config);
+        assert_eq!(controller.effective_riding_height(&config), base_height);
+
+        // With stair climbing
+        controller.active_stair_height = 5.0;
+        assert_eq!(controller.effective_riding_height(&config), base_height + 5.0);
     }
 }
