@@ -18,7 +18,7 @@
 mod helpers;
 
 use bevy::prelude::*;
-use bevy_egui::{egui, EguiContexts, EguiPlugin, EguiPrimaryContextPass};
+use bevy_egui::{EguiContexts, EguiPlugin, EguiPrimaryContextPass, egui};
 use bevy_rapier2d::prelude::*;
 use helpers::{
     CharacterControllerUiPlugin, CharacterControllerUiState, ControlsPlugin,
@@ -105,7 +105,9 @@ fn main() {
             ..default()
         }))
         // Physics with 16 pixels per meter
-        .add_plugins(RapierPhysicsPlugin::<NoUserData>::pixels_per_meter(PIXELS_PER_METER))
+        .add_plugins(RapierPhysicsPlugin::<NoUserData>::pixels_per_meter(
+            PIXELS_PER_METER,
+        ))
         .add_plugins(RapierDebugRenderPlugin::default())
         // Character controller
         .add_plugins(CharacterControllerPlugin::<Rapier2dBackend>::default())
@@ -129,8 +131,9 @@ fn main() {
         .add_systems(
             FixedUpdate,
             // Update orientation and gravity before controller systems
-            update_player_orientation_and_gravity
-                .before(msg_character_controller::systems::apply_floating_spring::<Rapier2dBackend>),
+            update_player_orientation_and_gravity.before(
+                msg_character_controller::systems::apply_floating_spring::<Rapier2dBackend>,
+            ),
         )
         .add_systems(Update, camera_follow)
         // Extra settings UI for planet-specific configuration
