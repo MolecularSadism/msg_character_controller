@@ -122,9 +122,12 @@ impl<B: backend::CharacterPhysicsBackend> Plugin for CharacterControllerPlugin<B
 
         // Add core systems in FixedUpdate for consistent physics behavior
         // These must run before Rapier's StepSimulation to ensure forces are integrated
+        // Order: stair_climbing -> floating_spring -> gravity -> upright_torque -> movement -> jump
+        // Stair climbing must run first to set active_stair_height before the spring uses it
         app.add_systems(
             FixedUpdate,
             (
+                systems::apply_stair_climbing::<B>,
                 systems::apply_floating_spring::<B>,
                 systems::apply_gravity::<B>,
                 systems::apply_upright_torque::<B>,

@@ -310,6 +310,8 @@ fn rapier_raycast(
         })
 }
 
+use crate::intent::MovementIntent;
+
 /// Rapier-specific ground detection system using shapecast.
 ///
 /// Floor raycast covers: riding_height + ground_tolerance
@@ -322,7 +324,7 @@ fn rapier_ground_detection(
         &ControllerConfig,
         Option<&CharacterOrientation>,
         Option<&StairConfig>,
-        &Velocity,
+        Option<&MovementIntent>,
         &mut CharacterController,
         Option<&CollisionGroups>,
         Option<&Collider>,
@@ -342,13 +344,16 @@ fn rapier_ground_detection(
         config,
         orientation_opt,
         stair_config,
-        velocity,
+        movement_intent,
         mut controller,
         collision_groups,
         collider,
     ) in &mut q_controllers
     {
         let position = transform.translation().xy();
+
+        // Get collider radius for stair detection offset
+        let radius = collider.map(get_collider_radius).unwrap_or(0.0);
 
         // Update collider_bottom_offset from actual collider dimensions
         controller.collider_bottom_offset = collider.map(get_collider_bottom_offset).unwrap_or(0.0);
@@ -395,23 +400,24 @@ fn rapier_ground_detection(
             // Store floor collision data
             controller.floor = Some(ground_hit);
             controller.slope_angle = slope_angle;
+        }
 
-            // Check for stairs if enabled
-            let is_walkable = slope_angle <= config.max_slope_angle;
-            if let Some(stair) = stair_config {
-                if stair.enabled && !is_walkable {
-                    if let Some(step_height) = check_stair_step(
-                        &context,
-                        entity,
-                        position,
-                        velocity.linvel,
-                        orientation,
-                        stair,
-                        collision_groups_tuple,
-                    ) {
-                        controller.step_detected = true;
-                        controller.step_height = step_height;
-                    }
+        // Check for stairs if enabled and we have movement intent
+        if let (Some(stair), Some(intent)) = (stair_config, movement_intent) {
+            if stair.enabled && intent.is_walking() {
+                if let Some(step_height) = check_stair_step(
+                    &context,
+                    entity,
+                    position,
+                    radius,
+                    config.float_height,
+                    intent,
+                    orientation,
+                    stair,
+                    collision_groups_tuple,
+                ) {
+                    controller.step_detected = true;
+                    controller.step_height = step_height;
                 }
             }
         }
@@ -426,51 +432,104 @@ fn rapier_ground_detection(
     }
 }
 
+/// Check for a climbable stair in front of the character using movement intent.
+///
+/// This function casts a shapecast downward from a position in front of the character
+/// (in the direction of movement intent) to detect steps.
+///
+/// Returns Some(step_height) if a climbable stair is detected, where step_height is
+/// the height above the current ground level that needs to be climbed.
 fn check_stair_step(
     context: &RapierContext,
     entity: Entity,
     position: Vec2,
-    velocity: Vec2,
+    collider_radius: f32,
+    float_height: f32,
+    intent: &MovementIntent,
     orientation: &CharacterOrientation,
     config: &StairConfig,
     collision_groups: Option<(Group, Group)>,
 ) -> Option<f32> {
     let down = orientation.down();
+    let up = orientation.up();
     let right = orientation.right();
 
-    // Project velocity onto horizontal axis and determine movement direction
-    let horizontal_vel = velocity.dot(right);
-    let move_dir = if horizontal_vel.abs() > 0.1 {
-        right * horizontal_vel.signum()
-    } else {
-        return None;
-    };
+    // Determine movement direction from intent
+    let walk_direction = intent.walk;
+    if walk_direction.abs() < 0.001 {
+        return None; // No horizontal intent
+    }
 
-    // Cast forward at step height (elevated in the "up" direction)
-    let step_origin = position - down * config.max_step_height;
-    let forward_hit = rapier_raycast(
+    let move_dir = right * walk_direction.signum();
+
+    // Calculate the cast origin: position + move_dir * (radius + stair_cast_offset)
+    // This places the cast just outside the collider in the movement direction
+    let cast_offset = collider_radius + config.stair_cast_offset;
+    let cast_origin = position + move_dir * cast_offset;
+
+    // Cast downward from this position to detect the ground in front
+    // Cast distance should be enough to detect steps up to max_climb_height below our current position
+    // plus some buffer for floating height variations
+    let cast_distance = config.max_climb_height + float_height + config.stair_tolerance + 2.0;
+
+    // Use shapecast for more reliable detection
+    let shape_rotation = orientation.angle() - std::f32::consts::FRAC_PI_2;
+
+    let stair_hit = rapier_shapecast(
         context,
-        step_origin,
-        move_dir,
-        config.step_check_distance,
+        cast_origin,
+        down,
+        cast_distance,
+        config.stair_cast_width,
+        0.0, // height not used for downward detection
+        shape_rotation,
+        entity,
+        collision_groups,
+    )?;
+
+    // Calculate the ground height at the stair position relative to our current height
+    // stair_hit.distance is how far down from cast_origin we hit
+    // The step surface is at: cast_origin + down * stair_hit.distance
+    let step_surface_point = cast_origin + down * stair_hit.distance;
+
+    // Get the current ground level under the character (from center position)
+    // We need to cast down from our current position to get the floor distance
+    let current_ground_hit = rapier_shapecast(
+        context,
+        position,
+        down,
+        cast_distance,
+        config.stair_cast_width,
+        0.0, // height not used for ground detection
+        shape_rotation,
         entity,
         collision_groups,
     );
 
-    // If no hit forward at step height, check down to find step top
-    if forward_hit.is_none() {
-        let check_origin = step_origin + move_dir * config.step_check_distance;
-        if let Some(down_hit) = rapier_raycast(
-            context,
-            check_origin,
-            down,
-            config.max_step_height + 2.0,
-            entity,
-            collision_groups,
-        ) {
-            if down_hit.distance < config.max_step_height {
-                return Some(config.max_step_height - down_hit.distance);
-            }
+    let current_ground_distance = current_ground_hit
+        .map(|h| h.distance)
+        .unwrap_or(f32::MAX);
+
+    // Calculate step height: how much higher is the step surface compared to our current ground?
+    // The step is at cast_origin + down * stair_hit.distance
+    // Our ground is at position + down * current_ground_distance
+    // The height difference in the "up" direction:
+    let step_height_in_up = (step_surface_point - (position + down * current_ground_distance)).dot(up);
+
+    // step_height_in_up will be positive if the step is above our current ground
+    // (since up points up, and step surface is higher than current ground)
+    let step_height = -step_height_in_up; // Negate because if step is above, dot product is negative
+
+    // Check if the step height is within climbable range:
+    // - Higher than float_height + tolerance (needs climbing, not just spring)
+    // - Lower than max_climb_height (not too high to climb)
+    if step_height > float_height + config.stair_tolerance && step_height <= config.max_climb_height {
+        // Also verify the step has adequate depth (horizontal surface)
+        // Check that the normal is mostly pointing up (it's a floor, not a wall)
+        let normal_up_component = stair_hit.normal.dot(up);
+        if normal_up_component > 0.7 {
+            // At least 45 degrees from horizontal
+            return Some(step_height);
         }
     }
 

@@ -9,7 +9,7 @@ use std::f32::consts;
 use bevy::prelude::*;
 
 use crate::backend::CharacterPhysicsBackend;
-use crate::config::{CharacterController, CharacterOrientation, ControllerConfig};
+use crate::config::{CharacterController, CharacterOrientation, ControllerConfig, StairConfig};
 use crate::intent::MovementIntent;
 
 /// Apply the floating spring force to maintain riding height.
@@ -18,6 +18,8 @@ use crate::intent::MovementIntent;
 /// - displacement = target_height - current_height (positive = below target)
 /// - velocity = vertical velocity (positive = moving up)
 ///
+/// When climbing stairs, the target height includes `active_stair_height` to
+/// temporarily raise the character over the step.
 /// After jump/upward propulsion, downward spring forces are temporarily filtered
 /// to avoid counteracting the desired upward movement. Upward spring forces remain active.
 pub fn apply_floating_spring<B: CharacterPhysicsBackend>(world: &mut World) {
@@ -54,8 +56,9 @@ pub fn apply_floating_spring<B: CharacterPhysicsBackend>(world: &mut World) {
         let velocity = B::get_velocity(world, entity);
         let vertical_velocity = velocity.dot(up);
 
-        // Target height and current height
-        let target_height = controller.riding_height(&config);
+        // Target height includes active_stair_height when climbing stairs
+        // This temporarily raises the riding height to lift the character over the step
+        let target_height = controller.effective_riding_height(&config);
         let current_height = floor.distance;
 
         // Check if in jump spring filter window (after recent jump/upward propulsion)
@@ -126,6 +129,68 @@ pub fn apply_floating_spring<B: CharacterPhysicsBackend>(world: &mut World) {
         // Apply force along up direction
         let force = up * final_spring_force;
         B::apply_force(world, entity, force);
+    }
+}
+
+/// Apply stair climbing forces and update active_stair_height.
+///
+/// When a step is detected that is higher than the float height but within
+/// the max climb height, this system:
+/// 1. Sets `active_stair_height` to the measured step height (used by the spring system)
+/// 2. Applies extra upward force proportional to gravity to help climb the step
+///
+/// When no step is detected, `active_stair_height` is reset to 0.
+pub fn apply_stair_climbing<B: CharacterPhysicsBackend>(world: &mut World) {
+    // Collect entities with stair config
+    let entities: Vec<(Entity, ControllerConfig, CharacterController, StairConfig, CharacterOrientation)> = world
+        .query::<(
+            Entity,
+            &ControllerConfig,
+            &CharacterController,
+            &StairConfig,
+            Option<&CharacterOrientation>,
+        )>()
+        .iter(world)
+        .filter(|(_, _, _, stair, _)| stair.enabled)
+        .map(|(e, config, controller, stair, orientation)| {
+            (
+                e,
+                *config,
+                controller.clone(),
+                *stair,
+                orientation.copied().unwrap_or_default(),
+            )
+        })
+        .collect();
+
+    for (entity, config, controller, stair_config, orientation) in entities {
+        // Check if a step is detected that requires climbing
+        let should_climb = controller.step_detected
+            && controller.step_height > config.float_height + stair_config.stair_tolerance
+            && controller.step_height <= stair_config.max_climb_height;
+
+        if should_climb {
+            // Set active_stair_height to the measured step height
+            if let Some(mut ctrl) = world.get_mut::<CharacterController>(entity) {
+                ctrl.active_stair_height = controller.step_height;
+            }
+
+            // Apply extra upward force to help climb the step
+            // Force = gravity_magnitude * climb_force_multiplier * mass
+            let mass = B::get_mass(world, entity);
+            let gravity_magnitude = controller.gravity.length();
+            let up = orientation.up();
+            let climb_force = up * gravity_magnitude * stair_config.climb_force_multiplier * mass;
+
+            B::apply_force(world, entity, climb_force);
+        } else {
+            // No step detected or step is not climbable - reset active_stair_height
+            if let Some(mut ctrl) = world.get_mut::<CharacterController>(entity) {
+                // Gradually decay active_stair_height for smooth transition
+                // Or reset immediately - for now, reset immediately
+                ctrl.active_stair_height = 0.0;
+            }
+        }
     }
 }
 
