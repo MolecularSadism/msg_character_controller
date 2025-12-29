@@ -336,6 +336,17 @@ pub fn apply_upright_torque<B: CharacterPhysicsBackend>(world: &mut World) {
             angle_error += consts::TAU;
         }
 
+        // Check if already rotating toward target fast enough (velocity clamp).
+        // If rotating in the correct direction at or above max velocity, skip torque application.
+        if let Some(max_vel) = config.upright_max_angular_velocity {
+            // Positive angle_error means we need positive angular velocity to correct
+            let rotating_toward_target = (angle_error > 0.0 && angular_velocity > 0.0)
+                || (angle_error < 0.0 && angular_velocity < 0.0);
+            if rotating_toward_target && angular_velocity.abs() >= max_vel {
+                continue;
+            }
+        }
+
         // Get inertia for scaling torque
         // Scale by actual inertia so torque produces consistent angular acceleration
         let actual_inertia = B::get_principal_inertia(world, entity);
@@ -351,13 +362,13 @@ pub fn apply_upright_torque<B: CharacterPhysicsBackend>(world: &mut World) {
 
         let total_torque = spring_torque + damping_torque;
 
-        // Clamp total torque to prevent overflow.
-        // Maximum torque is based on the maximum spring torque at full rotation error (PI).
-        // This prevents the damping term from creating runaway torque when
-        // spinning at high angular velocity.
-        let max_spring_torque =
-            config.upright_torque_strength * consts::PI * consts::PI * actual_inertia;
-        let max_torque = max_spring_torque * 3.0;
+        // Clamp total torque to configured max, or use formula-based fallback.
+        let max_torque = config.upright_max_torque.map(|t| t * actual_inertia).unwrap_or_else(|| {
+            // Fallback: maximum based on spring torque at full rotation error (PI).
+            let max_spring_torque =
+                config.upright_torque_strength * consts::PI * consts::PI * actual_inertia;
+            max_spring_torque * 3.0
+        });
         let clamped_torque = total_torque.clamp(-max_torque, max_torque);
 
         B::apply_torque(world, entity, clamped_torque);
