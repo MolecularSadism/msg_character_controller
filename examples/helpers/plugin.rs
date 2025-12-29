@@ -5,7 +5,7 @@
 
 use bevy::prelude::*;
 use bevy_egui::{egui, EguiContexts, EguiPrimaryContextPass};
-use bevy_rapier2d::prelude::Velocity;
+use bevy_rapier2d::prelude::{ExternalForce, ExternalImpulse, Velocity};
 use msg_character_controller::prelude::*;
 use std::marker::PhantomData;
 
@@ -150,10 +150,13 @@ impl<M: Component> Plugin for CharacterControllerUiPlugin<M> {
             diagnostics_window_pos: self.config.diagnostics_window_pos,
         });
 
-        // Add the UI system
+        // Add the UI systems
         app.add_systems(
             EguiPrimaryContextPass,
-            character_controller_ui_system::<M>,
+            (
+                character_controller_config_ui_system::<M>,
+                character_controller_diagnostics_ui_system::<M>,
+            ),
         );
     }
 }
@@ -167,22 +170,11 @@ struct CharacterControllerUiPanelConfig {
     diagnostics_window_pos: [f32; 2],
 }
 
-/// System that renders the character controller UI panels.
-fn character_controller_ui_system<M: Component>(
+/// System that renders the config panel and help text.
+fn character_controller_config_ui_system<M: Component>(
     mut contexts: EguiContexts,
     mut config_query: Query<
         (&mut ControllerConfig, &mut CharacterController),
-        With<M>,
-    >,
-    diagnostics_query: Query<
-        (
-            &ControllerConfig,
-            &CharacterController,
-            &Transform,
-            &Velocity,
-            Option<&MovementIntent>,
-            Option<&JumpRequest>,
-        ),
         With<M>,
     >,
     keyboard: Res<ButtonInput<KeyCode>>,
@@ -238,6 +230,39 @@ fn character_controller_ui_system<M: Component>(
                 });
         }
     }
+}
+
+/// System that renders the diagnostics panel.
+fn character_controller_diagnostics_ui_system<M: Component>(
+    mut contexts: EguiContexts,
+    diagnostics_query: Query<
+        (
+            &ControllerConfig,
+            &CharacterController,
+            &Transform,
+            &Velocity,
+            Option<&MovementIntent>,
+            Option<&JumpRequest>,
+            Option<&ExternalForce>,
+            Option<&ExternalImpulse>,
+        ),
+        With<M>,
+    >,
+    ui_state: Res<CharacterControllerUiState>,
+    panel_config: Res<CharacterControllerUiPanelConfig>,
+) {
+    // Skip the first few frames to ensure egui is fully initialized
+    if ui_state.frame_count <= 2 {
+        return;
+    }
+
+    if !ui_state.show_panels {
+        return;
+    }
+
+    let Ok(ctx) = contexts.ctx_mut() else {
+        return;
+    };
 
     // Diagnostics panel
     if panel_config.show_diagnostics_panel {
@@ -248,6 +273,8 @@ fn character_controller_ui_system<M: Component>(
             velocity_ref,
             movement,
             jump,
+            ext_force,
+            ext_impulse,
         )) = diagnostics_query.single()
         {
             egui::Window::new("Diagnostics")
@@ -264,6 +291,8 @@ fn character_controller_ui_system<M: Component>(
                         velocity: velocity_ref,
                         movement_intent: movement,
                         jump_request: jump,
+                        external_force: ext_force,
+                        external_impulse: ext_impulse,
                     };
                     diagnostics_panel_ui(ui, &data);
                 });
