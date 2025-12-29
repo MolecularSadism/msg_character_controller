@@ -332,13 +332,10 @@ fn rapier_ground_detection(
         Option<&CollisionGroups>,
         Option<&Collider>,
     )>,
-    time: Res<Time<Fixed>>,
 ) {
     let Ok(context) = rapier_context.single() else {
         return;
     };
-
-    let delta = time.delta();
 
     for (
         entity,
@@ -419,17 +416,6 @@ fn rapier_ground_detection(
                 }
             }
         }
-
-        // Update coyote timer
-        let is_grounded = controller.is_grounded(config);
-        if is_grounded {
-            controller.reset_coyote_timer(config.coyote_time);
-        } else {
-            controller.tick_coyote_timer(delta);
-        }
-
-        // Tick the jump spring filter timer
-        controller.jump_spring_filter_timer.tick(delta);
     }
 }
 

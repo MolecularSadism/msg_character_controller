@@ -18,6 +18,7 @@
 //! Within each phase, systems that don't depend on each other can run in parallel.
 
 use std::f32::consts;
+use std::time::Duration;
 
 use bevy::prelude::*;
 
@@ -28,6 +29,32 @@ use crate::intent::MovementIntent;
 // ============================================================================
 // PHASE 3: INTENT EVALUATION
 // ============================================================================
+
+/// Update coyote timer and jump spring filter timer.
+///
+/// This system runs in IntentEvaluation phase before intent is evaluated,
+/// ensuring timers are current when checking jump validity.
+///
+/// - Coyote timer: Reset when grounded, tick when airborne
+/// - Jump spring filter timer: Always tick
+pub fn update_timers(
+    time: Res<Time<Fixed>>,
+    mut query: Query<(&mut CharacterController, &ControllerConfig)>,
+) {
+    let delta = Duration::from_secs_f64(time.delta_secs_f64());
+
+    for (mut controller, config) in &mut query {
+        // Update coyote timer
+        if controller.is_grounded(config) {
+            controller.reset_coyote_timer(config.coyote_time);
+        } else {
+            controller.tick_coyote_timer(delta);
+        }
+
+        // Tick the jump spring filter timer
+        controller.jump_spring_filter_timer.tick(delta);
+    }
+}
 
 /// Evaluate MovementIntent and set intent flags on CharacterController.
 ///
