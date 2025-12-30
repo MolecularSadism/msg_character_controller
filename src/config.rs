@@ -167,6 +167,16 @@ pub struct CharacterController {
     /// For a capsule, this is half_height + radius.
     pub(crate) collider_bottom_offset: f32,
 
+    // === Ground Reaction Force (for dynamic ground interaction) ===
+    /// The ground entity to apply reaction force to (if dynamic).
+    /// Set by the spring force system when pushing against ground.
+    #[reflect(ignore)]
+    pub(crate) ground_reaction_entity: Option<Entity>,
+    /// The reaction force to apply to the ground entity.
+    /// This is the opposite of the spring force applied to the character.
+    #[reflect(ignore)]
+    pub(crate) ground_reaction_force: Vec2,
+
     // === Stair Configuration ===
     /// Configuration for stair stepping behavior.
     /// Set to `Some(StairConfig::default())` by default (enabled).
@@ -224,6 +234,9 @@ impl Default for CharacterController {
             applied_torque: 0.0,
             // Internal
             collider_bottom_offset: 0.0,
+            // Ground reaction force (for dynamic ground interaction)
+            ground_reaction_entity: None,
+            ground_reaction_force: Vec2::ZERO,
             // Stair configuration (enabled by default)
             stair_config: Some(StairConfig::default()),
         }
@@ -660,6 +673,31 @@ impl CharacterController {
         self.applied_force = self.accumulated_force;
         self.applied_torque = self.accumulated_torque;
         to_apply
+    }
+
+    // === Ground Reaction Force Methods ===
+
+    /// Set the ground reaction force to apply to a dynamic ground entity.
+    /// Called by the spring force system when pushing against ground.
+    pub(crate) fn set_ground_reaction(&mut self, entity: Entity, force: Vec2) {
+        self.ground_reaction_entity = Some(entity);
+        self.ground_reaction_force = force;
+    }
+
+    /// Clear the ground reaction force.
+    /// Called at the start of each frame.
+    pub(crate) fn clear_ground_reaction(&mut self) {
+        self.ground_reaction_entity = None;
+        self.ground_reaction_force = Vec2::ZERO;
+    }
+
+    /// Take the ground reaction force info for application.
+    /// Returns (entity, force) if a reaction force should be applied.
+    pub(crate) fn take_ground_reaction(&mut self) -> Option<(Entity, Vec2)> {
+        let entity = self.ground_reaction_entity.take()?;
+        let force = self.ground_reaction_force;
+        self.ground_reaction_force = Vec2::ZERO;
+        Some((entity, force))
     }
 }
 
