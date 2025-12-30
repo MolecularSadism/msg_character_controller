@@ -106,6 +106,16 @@ pub trait CharacterPhysicsBackend: 'static + Send + Sync {
     /// # Panics
     /// Panics if the entity does not have valid inertia properties.
     fn get_principal_inertia(world: &World, entity: Entity) -> f32;
+
+    /// Check if rotation is locked for an entity.
+    ///
+    /// When rotation is locked, the upright torque system should skip the entity
+    /// since applying torque would have no effect.
+    ///
+    /// Default implementation returns false (rotation allowed).
+    fn is_rotation_locked(_world: &World, _entity: Entity) -> bool {
+        false
+    }
 }
 
 /// Empty plugin for backends that don't need additional setup.
