@@ -1184,10 +1184,18 @@ pub fn apply_jump<B: CharacterPhysicsBackend>(world: &mut World) {
             }
         }
 
-        // Apply jump impulse
+        // Apply jump impulse, reducing it by pre-existing upward velocity
+        // This prevents "super jumps" when jumping while already moving upward
         // jump_speed is the desired velocity change. Impulse = mass * delta_v
         // Scale by actual mass so velocity change equals jump_speed regardless of body mass.
-        let impulse = jump_direction * config.jump_speed * mass;
+        let effective_jump_speed = if vertical_velocity > 0.0 {
+            // Reduce jump speed by current upward velocity, scaled by compensation factor
+            let reduction = vertical_velocity * config.jump_upward_velocity_compensation;
+            (config.jump_speed - reduction).max(0.0)
+        } else {
+            config.jump_speed
+        };
+        let impulse = jump_direction * effective_jump_speed * mass;
         B::apply_impulse(world, entity, impulse);
 
         // Record upward propulsion for spring force filtering and fall gravity tracking
