@@ -97,7 +97,7 @@ pub mod prelude {
     pub use crate::CharacterControllerSet;
     pub use crate::backend::CharacterPhysicsBackend;
     pub use crate::collision::CollisionData;
-    pub use crate::config::{CharacterController, ControllerConfig, StairConfig};
+    pub use crate::config::{CharacterController, ControllerConfig, JumpType, StairConfig};
     pub use crate::intent::{JumpRequest, MovementIntent};
 
     #[cfg(feature = "rapier2d")]
@@ -157,6 +157,7 @@ impl<B: backend::CharacterPhysicsBackend> Plugin for CharacterControllerPlugin<B
         app.register_type::<config::CharacterController>();
         app.register_type::<config::ControllerConfig>();
         app.register_type::<config::StairConfig>();
+        app.register_type::<config::JumpType>();
         app.register_type::<intent::MovementIntent>();
 
         // Add the physics backend plugin
@@ -194,12 +195,14 @@ impl<B: backend::CharacterPhysicsBackend> Plugin for CharacterControllerPlugin<B
         );
 
         // Phase 3: Intent Evaluation
-        // First update timers, then evaluate MovementIntent and set intent flags
+        // First update timers, then update jump type, then evaluate MovementIntent
         // This runs AFTER sensors so it has access to current frame's floor/grounded state
+        // update_jump_type must run before evaluate_intent so buffered jumps use correct type
         app.add_systems(
             FixedUpdate,
             (
                 systems::update_timers,
+                systems::update_jump_type,
                 systems::evaluate_intent::<B>,
             )
                 .chain()

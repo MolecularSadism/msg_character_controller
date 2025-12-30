@@ -68,6 +68,7 @@ pub fn expire_jump_requests(mut query: Query<&mut MovementIntent>) {
 /// ensuring timers are current when checking jump validity.
 ///
 /// - Coyote timer: Reset when grounded, tick when airborne
+/// - Wall coyote timer: Reset when touching wall, tick when not
 /// - Jump spring filter timer: Always tick
 pub fn update_timers(
     time: Res<Time<Fixed>>,
@@ -83,8 +84,58 @@ pub fn update_timers(
             controller.tick_coyote_timer(delta);
         }
 
+        // Update wall coyote timer (only if wall jumping is enabled)
+        if config.wall_jumping {
+            if controller.touching_wall() {
+                controller.reset_wall_coyote_timer(config.coyote_time);
+            } else {
+                controller.tick_wall_coyote_timer(delta);
+            }
+        }
+
         // Tick the jump spring filter timer
         controller.jump_spring_filter_timer.tick(delta);
+    }
+}
+
+/// Update the jump type based on current contact state.
+///
+/// This system determines which type of jump should be performed based on
+/// ground and wall contact. The detection priority is:
+/// 1. Ground contact -> JumpType::Ground (normal jump)
+/// 2. Only left wall contact -> JumpType::LeftWall (wall jump)
+/// 3. Only right wall contact -> JumpType::RightWall (wall jump)
+///
+/// This runs after sensors and timers, before evaluate_intent, so that
+/// buffered jumps will process the correct jump type when contact is made.
+/// The last_jump_type is stored on the controller for coyote time to respect.
+pub fn update_jump_type(
+    mut query: Query<(&mut CharacterController, &ControllerConfig)>,
+) {
+    use crate::config::JumpType;
+
+    for (mut controller, config) in &mut query {
+        // Ground contact takes priority - normal jump
+        if controller.is_grounded(config) {
+            controller.last_jump_type = JumpType::Ground;
+            continue;
+        }
+
+        // Check wall contact (only if wall jumping is enabled)
+        if config.wall_jumping {
+            let touching_left = controller.touching_left_wall();
+            let touching_right = controller.touching_right_wall();
+
+            // Only one wall contact = wall jump
+            // Both walls or no walls = keep previous type (for coyote time)
+            if touching_left && !touching_right {
+                controller.last_jump_type = JumpType::LeftWall;
+            } else if touching_right && !touching_left {
+                controller.last_jump_type = JumpType::RightWall;
+            }
+            // If touching both walls or neither, keep the previous jump type
+            // This allows coyote time to work correctly
+        }
     }
 }
 
@@ -105,14 +156,23 @@ pub fn update_timers(
 pub fn evaluate_intent<B: CharacterPhysicsBackend>(
     mut query: Query<(&mut CharacterController, &ControllerConfig, &MovementIntent)>,
 ) {
+    use crate::config::JumpType;
+
     for (mut controller, config, intent) in &mut query {
         // Reset intent state for this frame
         controller.reset_intent_state();
 
         // Check if intending to jump (has valid jump request and can jump)
         // Expired requests are already removed by expire_jump_requests
-        let intends_jump = intent.jump_request.is_some()
-            && (controller.is_grounded(config) || controller.in_coyote_time());
+        let can_ground_jump = controller.is_grounded(config) || controller.in_coyote_time();
+        let can_wall_jump = config.wall_jumping
+            && matches!(
+                controller.last_jump_type,
+                JumpType::LeftWall | JumpType::RightWall
+            )
+            && (controller.touching_wall() || controller.in_wall_coyote_time());
+
+        let intends_jump = intent.jump_request.is_some() && (can_ground_jump || can_wall_jump);
 
         // Check if intending to fly upward
         let intends_fly_up = intent.fly > 0.001;
@@ -606,12 +666,20 @@ pub fn apply_movement<B: CharacterPhysicsBackend>(world: &mut World) {
 
 /// Apply jump impulse when requested.
 ///
-/// Jumping requires being grounded (or within coyote time).
+/// Jumping requires being grounded, touching a wall (with wall jumping enabled),
+/// or within the respective coyote time window.
 /// Jump requests are consumed directly from MovementIntent.
+///
+/// Jump direction depends on the jump type:
+/// - Ground: Jump along ground normal (or ideal up if using coyote time)
+/// - LeftWall: Jump diagonally up-right at configured angle
+/// - RightWall: Jump diagonally up-left at configured angle
 ///
 /// Note: Expired jump requests are removed by `expire_jump_requests` before
 /// this system runs, so we just check if a request exists.
 pub fn apply_jump<B: CharacterPhysicsBackend>(world: &mut World) {
+    use crate::config::JumpType;
+
     // Collect entities with pending jump requests that can jump
     // Expired requests are already removed by expire_jump_requests
     let entities: Vec<(Entity, ControllerConfig, CharacterController)> = world
@@ -627,9 +695,19 @@ pub fn apply_jump<B: CharacterPhysicsBackend>(world: &mut World) {
             if intent.jump_request.is_none() {
                 return None;
             }
-            let can_jump_now = controller.is_grounded(config) || controller.in_coyote_time();
 
-            if can_jump_now {
+            // Check ground jump possibility
+            let can_ground_jump = controller.is_grounded(config) || controller.in_coyote_time();
+
+            // Check wall jump possibility
+            let can_wall_jump = config.wall_jumping
+                && matches!(
+                    controller.last_jump_type,
+                    JumpType::LeftWall | JumpType::RightWall
+                )
+                && (controller.touching_wall() || controller.in_wall_coyote_time());
+
+            if can_ground_jump || can_wall_jump {
                 Some((e, *config, controller.clone()))
             } else {
                 None
@@ -643,18 +721,49 @@ pub fn apply_jump<B: CharacterPhysicsBackend>(world: &mut World) {
             intent.take_jump_request();
         }
 
-        // Calculate jump direction
-        let up = if controller.ground_detected() {
-            controller.ground_normal()
-        } else {
-            controller.ideal_up()
+        // Calculate jump direction based on jump type
+        let jump_direction = match controller.last_jump_type {
+            JumpType::Ground => {
+                // Normal ground jump: use ground normal or ideal up
+                if controller.ground_detected() {
+                    controller.ground_normal()
+                } else {
+                    controller.ideal_up()
+                }
+            }
+            JumpType::LeftWall => {
+                // Wall jump from left wall: jump up-right (away from wall)
+                // Rotate ideal_up by wall_jump_angle clockwise (toward right)
+                let up = controller.ideal_up();
+                let angle = -config.wall_jump_angle; // Negative to rotate clockwise
+                let cos_a = angle.cos();
+                let sin_a = angle.sin();
+                Vec2::new(
+                    up.x * cos_a - up.y * sin_a,
+                    up.x * sin_a + up.y * cos_a,
+                )
+                .normalize()
+            }
+            JumpType::RightWall => {
+                // Wall jump from right wall: jump up-left (away from wall)
+                // Rotate ideal_up by wall_jump_angle counter-clockwise (toward left)
+                let up = controller.ideal_up();
+                let angle = config.wall_jump_angle; // Positive to rotate counter-clockwise
+                let cos_a = angle.cos();
+                let sin_a = angle.sin();
+                Vec2::new(
+                    up.x * cos_a - up.y * sin_a,
+                    up.x * sin_a + up.y * cos_a,
+                )
+                .normalize()
+            }
         };
 
         // Apply jump impulse
         // jump_speed is the desired velocity change. Impulse = mass * delta_v
         // Scale by actual mass so velocity change equals jump_speed regardless of body mass.
         let mass = B::get_mass(world, entity);
-        let impulse = up * config.jump_speed * mass;
+        let impulse = jump_direction * config.jump_speed * mass;
         B::apply_impulse(world, entity, impulse);
 
         // Record upward propulsion for spring force filtering
