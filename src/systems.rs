@@ -172,10 +172,7 @@ pub fn accumulate_spring_force<B: CharacterPhysicsBackend>(world: &mut World) {
         // During filtering, we still process the spring but filter downward forces
         let max_range = target_height + config.ground_tolerance;
         let min_range = controller.capsule_half_height();
-        if current_height < min_range {
-            // Below minimum range (physics collision zone) - skip spring
-            continue;
-        }
+
         if current_height > max_range && !should_filter_downward {
             // Above max range and not filtering - skip spring entirely
             continue;
