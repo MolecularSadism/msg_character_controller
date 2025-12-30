@@ -303,6 +303,23 @@ pub fn jump_settings_ui(ui: &mut egui::Ui, config: &mut ControllerConfig) {
                     .range(0.0..=1.0),
             );
         });
+
+        // Recently jumped duration (displayed in ms for user-friendliness)
+        let mut recently_jumped_ms = config.recently_jumped_duration * 1000.0;
+        ui.horizontal(|ui| {
+            ui.label("Recently Jumped (ms):");
+            if ui
+                .add(
+                    egui::DragValue::new(&mut recently_jumped_ms)
+                        .speed(10.0)
+                        .range(0.0..=1000.0),
+                )
+                .changed()
+            {
+                config.recently_jumped_duration = recently_jumped_ms / 1000.0;
+            }
+        });
+        ui.label("(blocks fall gravity trigger)");
     });
 }
 

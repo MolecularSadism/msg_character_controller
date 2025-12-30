@@ -81,7 +81,8 @@ pub fn update_timers(
         let has_wall_contact = config.wall_jumping && controller.touching_wall();
 
         // Reset coyote timer when we have any valid contact
-        if is_grounded || has_wall_contact {
+        // BUT not if we recently jumped (prevents coyote time from being granted after a jump)
+        if (is_grounded || has_wall_contact) && !controller.recently_jumped() {
             controller.reset_coyote_timer(config.coyote_time);
         } else {
             controller.tick_coyote_timer(delta);
@@ -98,6 +99,9 @@ pub fn update_timers(
 
         // Tick the wall jump movement block timer
         controller.wall_jump_movement_block_timer.tick(delta);
+
+        // Tick the recently jumped timer
+        controller.recently_jumped_timer.tick(delta);
     }
 }
 
@@ -460,10 +464,12 @@ pub fn apply_fall_gravity<B: CharacterPhysicsBackend>(world: &mut World) {
         // Check if we should trigger fall gravity
         // Conditions:
         // 1. We jumped recently (within jump_cancel_window)
-        // 2. AND either:
+        // 2. AND we're past the recently_jumped grace period (protects against velocity flicker)
+        // 3. AND either:
         //    - Jump button not held (player let go)
         //    - OR we're moving downward (crossed the zenith)
         let should_trigger = controller.in_jump_cancel_window()
+            && !controller.recently_jumped()
             && (!jump_held || vertical_velocity < 0.0);
 
         // Trigger fall gravity if conditions are met
@@ -1067,6 +1073,8 @@ pub fn apply_jump<B: CharacterPhysicsBackend>(world: &mut World) {
             controller.record_upward_propulsion(config.jump_spring_filter_duration);
             // Record jump for fall gravity system - tracks when we can cancel the jump
             controller.record_jump(config.jump_cancel_window);
+            // Record recently jumped for fall gravity protection and coyote rejection
+            controller.record_recently_jumped(config.recently_jumped_duration);
 
             // For wall jumps, block movement toward the wall to help jump away correctly
             // LeftWall jump: block leftward movement (toward the left wall)
