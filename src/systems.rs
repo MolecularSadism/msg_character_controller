@@ -95,6 +95,9 @@ pub fn update_timers(
 
         // Tick the extra gravity timer
         controller.extra_gravity_timer.tick(delta);
+
+        // Tick the wall jump movement block timer
+        controller.wall_jump_movement_block_timer.tick(delta);
     }
 }
 
@@ -526,9 +529,19 @@ pub fn apply_walk<B: CharacterPhysicsBackend>(world: &mut World) {
 
         // Check for wall clinging rejection
         let effective_walk = intent.effective_walk();
-        let walk_blocked = !config.wall_clinging
+        let wall_cling_blocked = !config.wall_clinging
             && ((effective_walk > 0.0 && controller.touching_right_wall())
                 || (effective_walk < 0.0 && controller.touching_left_wall()));
+
+        // Check for wall jump movement blocking
+        // blocked_direction > 0 means block rightward movement (positive walk)
+        // blocked_direction < 0 means block leftward movement (negative walk)
+        let blocked_direction = controller.get_wall_jump_blocked_direction();
+        let wall_jump_blocked = blocked_direction != 0.0
+            && ((blocked_direction > 0.0 && effective_walk > 0.0)
+                || (blocked_direction < 0.0 && effective_walk < 0.0));
+
+        let walk_blocked = wall_cling_blocked || wall_jump_blocked;
 
         let desired_walk_speed = if walk_blocked {
             0.0
@@ -918,6 +931,25 @@ pub fn apply_jump<B: CharacterPhysicsBackend>(world: &mut World) {
             controller.record_upward_propulsion(config.jump_spring_filter_duration);
             // Record jump for fall gravity system - tracks when we can cancel the jump
             controller.record_jump(config.jump_cancel_window);
+
+            // For wall jumps, block movement toward the wall to help jump away correctly
+            // LeftWall jump: block leftward movement (toward the left wall)
+            // RightWall jump: block rightward movement (toward the right wall)
+            match controller.last_jump_type {
+                JumpType::LeftWall => {
+                    controller.record_wall_jump_movement_block(
+                        config.wall_jump_movement_block_duration,
+                        -1.0, // Block leftward movement
+                    );
+                }
+                JumpType::RightWall => {
+                    controller.record_wall_jump_movement_block(
+                        config.wall_jump_movement_block_duration,
+                        1.0, // Block rightward movement
+                    );
+                }
+                JumpType::Ground => {}
+            }
         }
     }
 }
