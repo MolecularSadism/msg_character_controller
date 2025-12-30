@@ -898,14 +898,14 @@ impl Default for ControllerConfig {
             ceiling_cast_width: 12.0,
 
             // Jump settings
-            jump_speed: 90.0,
+            jump_speed: 75.0,
             coyote_time: 0.15,
             jump_buffer_time: 0.1,
             fall_gravity: 6.0,             // 6x gravity when jump is cancelled
-            jump_cancel_window: 2.0,       // 2 seconds to cancel jump
-            fall_gravity_duration: 0.3,    // 300ms of fall gravity
-            recently_jumped_duration: 0.15, // 150ms protection after jump
-            jump_max_ascent_duration: 0.6, // 600ms max ascent before forced fall gravity
+            jump_cancel_window: 2.0,       // time to cancel jump
+            fall_gravity_duration: 0.3,    // fall gravity time
+            recently_jumped_duration: 0.15, // protection after jump
+            jump_max_ascent_duration: 0.45, // max ascent before forced fall gravity
 
             // Wall jump settings
             wall_jumping: true,
@@ -1184,12 +1184,12 @@ pub struct StairConfig {
 impl Default for StairConfig {
     fn default() -> Self {
         Self {
-            max_climb_height: 8.0,
-            min_step_depth: 4.0,
-            stair_cast_width: 6.0,
-            stair_cast_offset: 2.0,
-            stair_tolerance: 1.0,
-            climb_force_multiplier: 1.0,
+            max_climb_height: 11.0,
+            min_step_depth: 6.5, // Slightly more than float height
+            stair_cast_width: 2.0,
+            stair_cast_offset: 3.0,
+            stair_tolerance: 2.0,
+            climb_force_multiplier: 2.0,
             enabled: true,
         }
     }
