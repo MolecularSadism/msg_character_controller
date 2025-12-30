@@ -335,7 +335,7 @@ pub fn wall_jump_settings_ui(ui: &mut egui::Ui, config: &mut ControllerConfig) {
                     .add(
                         egui::DragValue::new(&mut angle_deg)
                             .speed(1.0)
-                            .range(0.0..=90.0),
+                            .range(0.0..=45.0),
                     )
                     .changed()
                 {
