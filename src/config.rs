@@ -895,13 +895,13 @@ impl Default for ControllerConfig {
 
             // Movement settings
             max_speed: 150.0,
-            acceleration: 800.0,
-            friction: 0.1,
+            acceleration: 400.0,
+            friction: 0.06,
             air_control: 0.15,
             // Flying settings
             fly_max_speed: 150.0,              // Same as max_speed by default
-            fly_vertical_speed_ratio: 1.0,     // Same speed vertical and horizontal
-            fly_gravity_compensation: 1.0,     // Full gravity compensation by default
+            fly_vertical_speed_ratio: 0.6,     // Same speed vertical and horizontal
+            fly_gravity_compensation: 0.05,     // Gravity compensation by default
             wall_clinging: true, // Allow wall clinging by default
             wall_clinging_dampening: 0.5, // Moderate wall dampening by default
             wall_clinging_dampen_upward: false, // Only dampen downward motion by default
@@ -926,7 +926,7 @@ impl Default for ControllerConfig {
             jump_cancel_window: 2.0,       // time window to cancel jump
             fall_gravity_duration: 0.15,    // how long fall gravity is applied
             recently_jumped_duration: 0.15, // protection window after jump
-            jump_max_ascent_duration: 0.6, // max ascent time before forced fall gravity
+            jump_max_ascent_duration: 0.45, // max ascent time before forced fall gravity
 
             // Wall jump settings
             wall_jumping: true,
