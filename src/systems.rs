@@ -1120,11 +1120,18 @@ pub fn apply_jump<B: CharacterPhysicsBackend>(world: &mut World) {
 ///
 /// For critical damping (no oscillation): `damping = 2 * sqrt(strength)`
 pub fn accumulate_upright_torque<B: CharacterPhysicsBackend>(world: &mut World) {
-    let entities: Vec<(Entity, ControllerConfig, CharacterController)> = world
+    // First, collect entities that have upright torque enabled
+    let candidates: Vec<(Entity, ControllerConfig, CharacterController)> = world
         .query::<(Entity, &CharacterController, &ControllerConfig)>()
         .iter(world)
         .filter(|(_, _, config)| config.upright_torque_enabled)
         .map(|(e, controller, config)| (e, *config, controller.clone()))
+        .collect();
+
+    // Filter out entities with rotation locked (no point applying torque)
+    let entities: Vec<_> = candidates
+        .into_iter()
+        .filter(|(entity, _, _)| !B::is_rotation_locked(world, *entity))
         .collect();
 
     for (entity, config, controller) in entities {

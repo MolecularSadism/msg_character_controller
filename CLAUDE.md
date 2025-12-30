@@ -112,9 +112,8 @@ commands.spawn((
     Transform::from_translation(position.extend(0.0)),
     CharacterController::new(),  // or ::with_gravity(custom_gravity)
     ControllerConfig::default(), // or ::player() / ::ai()
-    MovementIntent::default(),
-    Rapier2dCharacterBundle::rotation_locked(), // or ::default() for rotation
     Collider::capsule_y(8.0, 4.0),
+    LockedAxes::ROTATION_LOCKED, // Optional: lock rotation for simple platformers
     GravityScale(0.0), // Disable Rapier gravity
 ));
 ```
