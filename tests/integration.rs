@@ -9,7 +9,7 @@ use bevy_rapier2d::prelude::*;
 use msg_character_controller::prelude::*;
 
 #[cfg(feature = "rapier2d")]
-use msg_character_controller::rapier::{Rapier2dBackend, Rapier2dCharacterBundle};
+use msg_character_controller::rapier::Rapier2dBackend;
 
 /// Create a minimal test app with physics and character controller.
 fn create_test_app() -> App {
@@ -46,16 +46,13 @@ fn spawn_character(app: &mut App, position: Vec2) -> Entity {
 
 /// Spawn a character controller with custom config.
 fn spawn_character_with_config(app: &mut App, position: Vec2, config: ControllerConfig) -> Entity {
-    let transform = Transform::from_translation(position.extend(0.0));
     app.world_mut()
         .spawn((
-            transform,
-            GlobalTransform::from(transform),
+            Transform::from_translation(position.extend(0.0)),
             CharacterController::new(),
             config,
-            MovementIntent::default(),
-            Rapier2dCharacterBundle::rotation_locked(),
             Collider::capsule_y(8.0, 4.0),
+            LockedAxes::ROTATION_LOCKED,
             GravityScale(0.0), // Disable Rapier gravity - use controller's gravity
         ))
         .id()
@@ -63,16 +60,13 @@ fn spawn_character_with_config(app: &mut App, position: Vec2, config: Controller
 
 /// Spawn a character with custom gravity (which determines the up direction).
 fn spawn_character_with_gravity(app: &mut App, position: Vec2, gravity: Vec2) -> Entity {
-    let transform = Transform::from_translation(position.extend(0.0));
     app.world_mut()
         .spawn((
-            transform,
-            GlobalTransform::from(transform),
+            Transform::from_translation(position.extend(0.0)),
             CharacterController::with_gravity(gravity),
             ControllerConfig::default(),
-            MovementIntent::default(),
-            Rapier2dCharacterBundle::rotation_locked(),
             Collider::capsule_y(8.0, 4.0),
+            LockedAxes::ROTATION_LOCKED,
             GravityScale(0.0),
         ))
         .id()
@@ -582,13 +576,11 @@ mod upright_torque {
         app.world_mut()
             .spawn((
                 transform,
-                GlobalTransform::from(transform),
                 CharacterController::new(),
                 // Use default upright torque settings (100000 strength, 20000 damping)
                 ControllerConfig::default().with_upright_target_angle(0.0),
-                MovementIntent::default(),
-                Rapier2dCharacterBundle::new(), // Not rotation locked
                 Collider::capsule_y(8.0, 4.0),
+                // No LockedAxes::ROTATION_LOCKED - this character can rotate
                 GravityScale(0.0),
             ))
             .id()
@@ -786,16 +778,13 @@ mod gravity {
         let mut app = create_test_app();
 
         let character = {
-            let transform = Transform::from_translation(Vec2::new(0.0, 100.0).extend(0.0));
             app.world_mut()
                 .spawn((
-                    transform,
-                    GlobalTransform::from(transform),
+                    Transform::from_translation(Vec2::new(0.0, 100.0).extend(0.0)),
                     CharacterController::with_gravity(Vec2::new(0.0, -500.0)), // Custom gravity
                     ControllerConfig::default(),
-                    MovementIntent::default(),
-                    Rapier2dCharacterBundle::rotation_locked(),
                     Collider::capsule_y(8.0, 4.0),
+                    LockedAxes::ROTATION_LOCKED,
                     GravityScale(0.0),
                 ))
                 .id()
@@ -890,17 +879,14 @@ mod collision_layers {
 
         // Character in GROUP_1 - should detect ground
         let char_in_group = {
-            let transform = Transform::from_translation(Vec2::new(-20.0, 20.0).extend(0.0));
             app.world_mut()
                 .spawn((
-                    transform,
-                    GlobalTransform::from(transform),
+                    Transform::from_translation(Vec2::new(-20.0, 20.0).extend(0.0)),
                     CharacterController::new(),
                     ControllerConfig::default(),
-                    MovementIntent::default(),
-                    Rapier2dCharacterBundle::rotation_locked(),
                     Collider::capsule_y(8.0, 4.0),
                     CollisionGroups::new(Group::GROUP_1, Group::GROUP_1),
+                    LockedAxes::ROTATION_LOCKED,
                     GravityScale(0.0),
                 ))
                 .id()
@@ -908,17 +894,14 @@ mod collision_layers {
 
         // Character in GROUP_2 - should NOT detect ground
         let char_not_in_group = {
-            let transform = Transform::from_translation(Vec2::new(20.0, 20.0).extend(0.0));
             app.world_mut()
                 .spawn((
-                    transform,
-                    GlobalTransform::from(transform),
+                    Transform::from_translation(Vec2::new(20.0, 20.0).extend(0.0)),
                     CharacterController::new(),
                     ControllerConfig::default(),
-                    MovementIntent::default(),
-                    Rapier2dCharacterBundle::rotation_locked(),
                     Collider::capsule_y(8.0, 4.0),
                     CollisionGroups::new(Group::GROUP_2, Group::GROUP_2),
+                    LockedAxes::ROTATION_LOCKED,
                     GravityScale(0.0),
                 ))
                 .id()
