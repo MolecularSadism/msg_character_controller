@@ -79,6 +79,18 @@ pub struct CharacterController {
     #[reflect(ignore)]
     pub jump_spring_filter_timer: Timer,
 
+    /// Timer tracking time since last jump for early jump cancellation.
+    /// When a jump occurs, this timer is reset. Used by the fall gravity system
+    /// to determine if the player can cancel the jump early.
+    #[reflect(ignore)]
+    pub jumped_timer: Timer,
+
+    /// Timer for applying extra fall gravity after jump cancellation.
+    /// When extra fall gravity is triggered, this timer is reset and extra
+    /// gravity is applied while the timer has not finished.
+    #[reflect(ignore)]
+    pub extra_gravity_timer: Timer,
+
     // === Intent State (set by evaluate_intent, used by force systems) ===
     /// Whether the character intends to propel upward this frame.
     /// Set by evaluate_intent system based on MovementIntent.
@@ -136,6 +148,12 @@ impl Default for CharacterController {
             // Jump spring filter timer starts finished (no recent propulsion)
             // Duration is set by the system based on config.jump_spring_filter_duration
             jump_spring_filter_timer: Timer::new(Duration::ZERO, TimerMode::Once),
+            // Jumped timer starts finished (no recent jump)
+            // Duration is set by the system based on config.jump_cancel_window
+            jumped_timer: Timer::new(Duration::ZERO, TimerMode::Once),
+            // Extra gravity timer starts finished (no active extra gravity)
+            // Duration is set by the system based on config.extra_gravity_duration
+            extra_gravity_timer: Timer::new(Duration::ZERO, TimerMode::Once),
             // Intent state
             intends_upward_propulsion: false,
             // Gravity
@@ -436,6 +454,40 @@ impl CharacterController {
         !self.coyote_timer.finished()
     }
 
+    // === Fall Gravity Timer Methods ===
+
+    /// Record a jump event for fall gravity tracking.
+    /// This starts the jumped timer which tracks how long since the last jump.
+    pub fn record_jump(&mut self, jump_cancel_window: f32) {
+        if jump_cancel_window > 0.0 {
+            self.jumped_timer
+                .set_duration(Duration::from_secs_f32(jump_cancel_window));
+            self.jumped_timer.reset();
+        }
+    }
+
+    /// Check if we are within the jump cancel window.
+    /// Returns true if the jump was recent enough to be cancelled.
+    pub fn in_jump_cancel_window(&self) -> bool {
+        !self.jumped_timer.finished()
+    }
+
+    /// Trigger extra fall gravity for the specified duration.
+    /// This starts the extra gravity timer.
+    pub fn trigger_extra_fall_gravity(&mut self, extra_gravity_duration: f32) {
+        if extra_gravity_duration > 0.0 {
+            self.extra_gravity_timer
+                .set_duration(Duration::from_secs_f32(extra_gravity_duration));
+            self.extra_gravity_timer.reset();
+        }
+    }
+
+    /// Check if extra fall gravity is currently active.
+    /// Returns true if extra gravity should be applied.
+    pub fn extra_fall_gravity_active(&self) -> bool {
+        !self.extra_gravity_timer.finished()
+    }
+
     // === Force Accumulation Methods ===
 
     /// Add force to the internal accumulator (called by controller systems).
@@ -581,8 +633,19 @@ pub struct ControllerConfig {
     /// Jump buffer duration in seconds.
     pub jump_buffer_time: f32,
 
-    /// Extra gravity multiplier when falling.
+    /// Extra gravity multiplier when jump is cancelled early.
+    /// This multiplier is applied to gravity during the extra_gravity_duration
+    /// window after the player releases the jump button or crosses the zenith.
     pub extra_fall_gravity: f32,
+
+    /// Duration (seconds) after jumping during which the jump can be cancelled.
+    /// If the player releases the jump button within this window OR crosses the
+    /// zenith (starts moving downward), extra fall gravity will be triggered.
+    pub jump_cancel_window: f32,
+
+    /// Duration (seconds) for which extra fall gravity is applied after cancellation.
+    /// During this time, gravity is multiplied by extra_fall_gravity.
+    pub extra_gravity_duration: f32,
 
     // === Upright Torque Settings ===
     /// Whether to apply torque to keep the character upright.
@@ -646,7 +709,9 @@ impl Default for ControllerConfig {
             jump_speed: 120.0,
             coyote_time: 0.15,
             jump_buffer_time: 0.1,
-            extra_fall_gravity: 1.0,
+            extra_fall_gravity: 2.0,       // 2x gravity when jump is cancelled
+            jump_cancel_window: 2.0,       // 2 seconds to cancel jump
+            extra_gravity_duration: 0.3,   // 300ms of extra gravity
 
             // Upright torque settings
             upright_torque_enabled: true,
@@ -770,6 +835,20 @@ impl ControllerConfig {
     /// Builder: set extra fall gravity multiplier.
     pub fn with_extra_fall_gravity(mut self, multiplier: f32) -> Self {
         self.extra_fall_gravity = multiplier;
+        self
+    }
+
+    /// Builder: set jump cancel window duration.
+    /// Duration after jumping during which the jump can be cancelled.
+    pub fn with_jump_cancel_window(mut self, duration: f32) -> Self {
+        self.jump_cancel_window = duration;
+        self
+    }
+
+    /// Builder: set extra gravity duration.
+    /// Duration for which extra fall gravity is applied after cancellation.
+    pub fn with_extra_gravity_duration(mut self, duration: f32) -> Self {
+        self.extra_gravity_duration = duration;
         self
     }
 
