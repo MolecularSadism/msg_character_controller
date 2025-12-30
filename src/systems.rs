@@ -162,11 +162,8 @@ pub fn accumulate_spring_force<B: CharacterPhysicsBackend>(world: &mut World) {
         let target_height = controller.effective_riding_height(&config);
         let current_height = floor.distance;
 
-        // Check if we should filter downward spring forces:
-        // 1. intends_upward_propulsion - intent evaluated this frame (same-frame filtering)
-        // 2. in_jump_spring_filter_window - timer-based filter (cross-frame filtering)
-        let should_filter_downward = controller.intends_upward_propulsion
-            || controller.in_jump_spring_filter_window();
+        // Check if we should filter downward spring forces
+        let should_filter_downward = controller.upward_intent();
 
         // Only apply spring within active range, unless filtering
         // During filtering, we still process the spring but filter downward forces
@@ -323,14 +320,8 @@ pub fn accumulate_gravity<B: CharacterPhysicsBackend>(world: &mut World) {
         .collect();
 
     for (entity, controller, _config) in entities {
-        // Check if we should filter gravity during upward propulsion.
-        // This mirrors the spring force filtering to ensure jump/fly can reach
-        // their intended height without being immediately countered by gravity.
-        let should_filter_gravity = controller.intends_upward_propulsion
-            || controller.in_jump_spring_filter_window();
-
-        if should_filter_gravity {
-            // Skip gravity during upward propulsion to allow reaching intended height
+        // Skip gravity during upward propulsion to allow reaching intended height
+        if controller.upward_intent() {
             continue;
         }
 
