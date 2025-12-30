@@ -750,7 +750,19 @@ pub fn apply_walk<B: CharacterPhysicsBackend>(world: &mut World) {
 
             // Apply impulse along slope tangent: I = m * dv
             // Only the walking impulse is rotated - external velocity and spring system are unaffected
-            let walk_impulse = slope_tangent * slope_velocity_delta * mass;
+            let mut walk_impulse = slope_tangent * slope_velocity_delta * mass;
+
+            // When we just jumped (within recently_jumped protection timer),
+            // reject any upward component from the walking impulse.
+            // This prevents walking up slopes and jumping from giving too strong jumps.
+            if controller.recently_jumped() {
+                let up = controller.ideal_up();
+                let upward_component = walk_impulse.dot(up);
+                if upward_component > 0.0 {
+                    walk_impulse -= up * upward_component;
+                }
+            }
+
             B::apply_impulse(world, entity, walk_impulse);
         } else {
             // AIRBORNE: Use world-space horizontal axis
@@ -1184,10 +1196,18 @@ pub fn apply_jump<B: CharacterPhysicsBackend>(world: &mut World) {
             }
         }
 
-        // Apply jump impulse
+        // Apply jump impulse, reducing it by pre-existing upward velocity
+        // This prevents "super jumps" when jumping while already moving upward
         // jump_speed is the desired velocity change. Impulse = mass * delta_v
         // Scale by actual mass so velocity change equals jump_speed regardless of body mass.
-        let impulse = jump_direction * config.jump_speed * mass;
+        let effective_jump_speed = if vertical_velocity > 0.0 {
+            // Reduce jump speed by current upward velocity, scaled by compensation factor
+            let reduction = vertical_velocity * config.jump_upward_velocity_compensation;
+            (config.jump_speed - reduction).max(0.0)
+        } else {
+            config.jump_speed
+        };
+        let impulse = jump_direction * effective_jump_speed * mass;
         B::apply_impulse(world, entity, impulse);
 
         // Record upward propulsion for spring force filtering and fall gravity tracking
