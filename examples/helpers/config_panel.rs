@@ -152,7 +152,7 @@ pub fn movement_settings_ui(ui: &mut egui::Ui, config: &mut ControllerConfig) {
             ui.label("Friction:");
             ui.add(
                 egui::DragValue::new(&mut config.friction)
-                    .speed(0.01)
+                    .speed(0.005)
                     .range(0.0..=1.0),
             );
         });
@@ -168,8 +168,9 @@ pub fn movement_settings_ui(ui: &mut egui::Ui, config: &mut ControllerConfig) {
             ui.label("Air Friction:");
             ui.add(
                 egui::DragValue::new(&mut config.air_friction)
-                    .speed(0.01)
-                    .range(0.0..=1.0),
+                    .speed(0.005)
+                    .range(0.0..=1.0)
+                    .fixed_decimals(3),
             );
         });
         ui.checkbox(&mut config.wall_clinging, "Wall Clinging");
