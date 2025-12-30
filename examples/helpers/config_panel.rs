@@ -295,6 +295,30 @@ pub fn jump_settings_ui(ui: &mut egui::Ui, config: &mut ControllerConfig) {
     });
 }
 
+/// Renders the wall jump settings collapsible section.
+pub fn wall_jump_settings_ui(ui: &mut egui::Ui, config: &mut ControllerConfig) {
+    ui.collapsing("Wall Jump Settings", |ui| {
+        ui.checkbox(&mut config.wall_jumping, "Wall Jumping Enabled");
+        ui.add_enabled_ui(config.wall_jumping, |ui| {
+            let mut angle_deg = config.wall_jump_angle.to_degrees();
+            ui.horizontal(|ui| {
+                ui.label("Wall Jump Angle (deg):");
+                if ui
+                    .add(
+                        egui::DragValue::new(&mut angle_deg)
+                            .speed(1.0)
+                            .range(0.0..=90.0),
+                    )
+                    .changed()
+                {
+                    config.wall_jump_angle = angle_deg.to_radians();
+                }
+            });
+            ui.label("(0° = straight up, 45° = diagonal)");
+        });
+    });
+}
+
 /// Renders the upright torque settings collapsible section.
 pub fn upright_torque_settings_ui(ui: &mut egui::Ui, config: &mut ControllerConfig) {
     ui.collapsing("Upright Torque Settings", |ui| {
@@ -461,6 +485,7 @@ pub fn config_panel_ui(
         slope_settings_ui(ui, config);
         sensor_settings_ui(ui, config);
         jump_settings_ui(ui, config);
+        wall_jump_settings_ui(ui, config);
         upright_torque_settings_ui(ui, config);
         if let Some(stair_cfg) = controller.stair_config.as_mut() {
             stair_settings_ui(ui, stair_cfg);
