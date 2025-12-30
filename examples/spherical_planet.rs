@@ -68,7 +68,7 @@ fn spawn_position() -> Vec2 {
 }
 
 fn default_config() -> ControllerConfig {
-    ControllerConfig::player()
+    ControllerConfig::default()
         .with_float_height(PLAYER_HALF_HEIGHT)
         .with_ground_cast_width(PLAYER_RADIUS)
         .with_upright_torque_enabled(false) // We handle rotation via orientation

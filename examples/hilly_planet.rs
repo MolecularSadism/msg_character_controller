@@ -38,7 +38,6 @@ const PIXELS_PER_METER: f32 = 16.0;
 const GRAVITY_STRENGTH: f32 = 9.81 * PIXELS_PER_METER;
 
 // Player dimensions (in pixels)
-const PLAYER_SIZE: f32 = 16.0;
 const PLAYER_HALF_HEIGHT: f32 = 8.0;
 const PLAYER_RADIUS: f32 = 6.0;
 
@@ -88,7 +87,7 @@ fn spawn_position() -> Vec2 {
 }
 
 fn default_config() -> ControllerConfig {
-    ControllerConfig::player()
+    ControllerConfig::default()
         .with_float_height(PLAYER_HALF_HEIGHT)
         .with_ground_cast_width(PLAYER_RADIUS)
         .with_upright_torque_enabled(false) // We handle rotation via orientation

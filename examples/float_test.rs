@@ -32,7 +32,7 @@ fn spawn_position() -> Vec2 {
 }
 
 fn default_config() -> ControllerConfig {
-    ControllerConfig::player()
+    ControllerConfig::default()
         .with_float_height(2.0) // Gap between capsule bottom and ground
         .with_spring(20000.0, 500.0) // VERY strong spring
         .with_ground_cast_width(2.0 * PLAYER_RADIUS)
