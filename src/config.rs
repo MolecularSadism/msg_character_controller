@@ -922,7 +922,7 @@ impl Default for ControllerConfig {
             // Flying settings
             fly_max_speed: 150.0,                 // Same as max_speed by default
             fly_vertical_speed_ratio: 0.6,        // Same speed vertical and horizontal
-            fly_acceleration: 500.0,               // Same as acceleration by default
+            fly_acceleration: 500.0,              // Same as acceleration by default
             fly_vertical_acceleration_ratio: 0.6, // Same acceleration vertical and horizontal
             fly_gravity_compensation: 0.05,       // Full gravity compensation by default
             wall_clinging: true,                  // Allow wall clinging by default
@@ -975,22 +975,6 @@ impl ControllerConfig {
     #[inline]
     pub fn wall_cast_length(&self) -> f32 {
         self.ground_cast_width * self.wall_cast_multiplier
-    }
-
-    /// Create a config optimized for responsive player control.
-    pub fn player() -> Self {
-        Self::default()
-    }
-
-    /// Create a config for AI-controlled characters.
-    pub fn ai() -> Self {
-        Self {
-            spring_strength: 300.0,
-            spring_damping: 20.0,
-            acceleration: 600.0,
-            air_control: 0.1,
-            ..default()
-        }
     }
 
     /// Builder: set float height.
@@ -1435,7 +1419,7 @@ mod tests {
 
     #[test]
     fn config_player_preset() {
-        let player = ControllerConfig::player();
+        let player = ControllerConfig::default();
         let default = ControllerConfig::default();
         assert!(player.spring_strength >= default.spring_strength);
     }

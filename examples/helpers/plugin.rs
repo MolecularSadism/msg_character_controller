@@ -119,7 +119,7 @@ pub struct DefaultControllerSettings {
 impl Default for DefaultControllerSettings {
     fn default() -> Self {
         Self {
-            config: ControllerConfig::player(),
+            config: ControllerConfig::default(),
             gravity: Vec2::new(0.0, -980.0),
         }
     }

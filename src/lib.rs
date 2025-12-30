@@ -239,14 +239,17 @@ impl<B: backend::CharacterPhysicsBackend> Plugin for CharacterControllerPlugin<B
         // Walk and fly can run in parallel as they affect orthogonal axes
         app.add_systems(
             FixedUpdate,
-            (systems::apply_fall_gravity::<B>, systems::apply_jump::<B>)
+            (
+                systems::apply_fall_gravity::<B>,
+                systems::apply_walk::<B>,
+                systems::apply_jump::<B>,
+            )
                 .chain()
                 .in_set(CharacterControllerSet::IntentApplication),
         );
         app.add_systems(
             FixedUpdate,
             (
-                systems::apply_walk::<B>,
                 systems::apply_fly::<B>,
                 systems::apply_wall_clinging_dampening::<B>,
             )

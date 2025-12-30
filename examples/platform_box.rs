@@ -52,7 +52,7 @@ fn default_gravity() -> Vec2 {
 }
 
 fn default_config() -> ControllerConfig {
-    ControllerConfig::player().with_float_height(6.0)
+    ControllerConfig::default().with_float_height(6.0)
 }
 
 fn main() {
