@@ -738,8 +738,9 @@ pub fn apply_walk<B: CharacterPhysicsBackend>(world: &mut World) {
             // Only the walking impulse is rotated - external velocity and spring system are unaffected
             let walk_impulse = slope_tangent * slope_velocity_delta * mass;
             B::apply_impulse(world, entity, walk_impulse);
-        } else {
+        } else if intent.is_walking() {
             // AIRBORNE: Use world-space horizontal axis
+            // Only apply air control when actively walking - no friction when airborne
             let current_horizontal = current_velocity.dot(right);
 
             // Calculate velocity change toward target, clamped by max acceleration
@@ -910,8 +911,9 @@ pub fn apply_movement<B: CharacterPhysicsBackend>(world: &mut World) {
             // Only the walking impulse is rotated - external velocity and spring system are unaffected
             let walk_impulse = slope_tangent * slope_velocity_delta * mass;
             B::apply_impulse(world, entity, walk_impulse);
-        } else {
+        } else if intent.is_walking() {
             // AIRBORNE: Use world-space horizontal axis
+            // Only apply air control when actively walking - no friction when airborne
             let current_horizontal = current_velocity.dot(right);
 
             // Calculate velocity change toward target, clamped by max acceleration
