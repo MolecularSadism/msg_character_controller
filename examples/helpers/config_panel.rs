@@ -316,6 +316,23 @@ pub fn wall_jump_settings_ui(ui: &mut egui::Ui, config: &mut ControllerConfig) {
                 }
             });
             ui.label("(0° = straight up, 45° = diagonal)");
+
+            // Wall jump movement block duration (displayed in ms for user-friendliness)
+            let mut block_duration_ms = config.wall_jump_movement_block_duration * 1000.0;
+            ui.horizontal(|ui| {
+                ui.label("Movement Block (ms):");
+                if ui
+                    .add(
+                        egui::DragValue::new(&mut block_duration_ms)
+                            .speed(10.0)
+                            .range(0.0..=1000.0),
+                    )
+                    .changed()
+                {
+                    config.wall_jump_movement_block_duration = block_duration_ms / 1000.0;
+                }
+            });
+            ui.label("(blocks movement toward wall after jump)");
         });
     });
 }
