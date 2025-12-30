@@ -361,7 +361,17 @@ pub fn apply_walk<B: CharacterPhysicsBackend>(world: &mut World) {
 
         let is_grounded = controller.is_grounded(&config);
 
-        let desired_walk_speed = intent.effective_walk() * config.max_speed;
+        // Check for wall clinging rejection
+        let effective_walk = intent.effective_walk();
+        let walk_blocked = !config.wall_clinging
+            && ((effective_walk > 0.0 && controller.touching_right_wall())
+                || (effective_walk < 0.0 && controller.touching_left_wall()));
+
+        let desired_walk_speed = if walk_blocked {
+            0.0
+        } else {
+            effective_walk * config.max_speed
+        };
         let walk_accel = if is_grounded {
             config.acceleration
         } else {
@@ -370,7 +380,34 @@ pub fn apply_walk<B: CharacterPhysicsBackend>(world: &mut World) {
 
         if is_grounded && controller.ground_detected() {
             // GROUNDED: Move along slope surface using forces
-            let slope_tangent = controller.ground_tangent();
+            // Clamp the slope tangent to respect max_slope_angle
+            let slope_tangent = if controller.slope_angle <= config.max_slope_angle {
+                // Within max slope angle, use actual slope tangent
+                controller.ground_tangent()
+            } else {
+                // Slope exceeds max angle, clamp the tangent direction
+                let up = controller.ideal_up();
+                let ground_normal = controller.ground_normal();
+
+                // Determine slope tilt direction based on which way the normal leans
+                // If normal points away from right (negative dot), slope goes up when moving right
+                let slope_tilt_sign = if ground_normal.dot(right) <= 0.0 {
+                    1.0
+                } else {
+                    -1.0
+                };
+
+                // Rotate ideal_right by max_slope_angle in the tilt direction
+                let cos_a = config.max_slope_angle.cos();
+                let sin_a = config.max_slope_angle.sin() * slope_tilt_sign;
+
+                // Compute clamped tangent: right rotated by max_slope_angle in the (right, up) plane
+                Vec2::new(
+                    right.x * cos_a + up.x * sin_a,
+                    right.y * cos_a + up.y * sin_a,
+                )
+            };
+
             let current_slope_speed = current_velocity.dot(slope_tangent);
 
             // Calculate velocity change toward target, clamped by max acceleration
@@ -388,16 +425,9 @@ pub fn apply_walk<B: CharacterPhysicsBackend>(world: &mut World) {
             let slope_velocity_delta = new_slope_speed - current_slope_speed;
 
             // Apply impulse along slope tangent: I = m * dv
+            // Only the walking impulse is rotated - external velocity and spring system are unaffected
             let walk_impulse = slope_tangent * slope_velocity_delta * mass;
             B::apply_impulse(world, entity, walk_impulse);
-
-            // Dampen normal velocity: preserve 50% of downward motion, zero out upward
-            // TODO This needs to respect our configured max slope angle to walk on.
-            // We rotate the walk direction only up to the max slope angle
-            let slope_normal = controller.ground_normal();
-
-            let normal_impulse = slope_normal * mass;
-            B::apply_impulse(world, entity, normal_impulse);
         } else {
             // AIRBORNE: Use world-space horizontal axis
             let current_horizontal = current_velocity.dot(right);
@@ -522,7 +552,34 @@ pub fn apply_movement<B: CharacterPhysicsBackend>(world: &mut World) {
 
         if is_grounded && controller.ground_detected() {
             // GROUNDED: Move along slope surface using forces
-            let slope_tangent = controller.ground_tangent();
+            // Clamp the slope tangent to respect max_slope_angle
+            let slope_tangent = if controller.slope_angle <= config.max_slope_angle {
+                // Within max slope angle, use actual slope tangent
+                controller.ground_tangent()
+            } else {
+                // Slope exceeds max angle, clamp the tangent direction
+                let up = controller.ideal_up();
+                let ground_normal = controller.ground_normal();
+
+                // Determine slope tilt direction based on which way the normal leans
+                // If normal points away from right (negative dot), slope goes up when moving right
+                let slope_tilt_sign = if ground_normal.dot(right) <= 0.0 {
+                    1.0
+                } else {
+                    -1.0
+                };
+
+                // Rotate ideal_right by max_slope_angle in the tilt direction
+                let cos_a = config.max_slope_angle.cos();
+                let sin_a = config.max_slope_angle.sin() * slope_tilt_sign;
+
+                // Compute clamped tangent: right rotated by max_slope_angle in the (right, up) plane
+                Vec2::new(
+                    right.x * cos_a + up.x * sin_a,
+                    right.y * cos_a + up.y * sin_a,
+                )
+            };
+
             let current_slope_speed = current_velocity.dot(slope_tangent);
 
             // Calculate velocity change toward target, clamped by max acceleration
@@ -540,20 +597,9 @@ pub fn apply_movement<B: CharacterPhysicsBackend>(world: &mut World) {
             let slope_velocity_delta = new_slope_speed - current_slope_speed;
 
             // Apply impulse along slope tangent: I = m * dv
+            // Only the walking impulse is rotated - external velocity and spring system are unaffected
             let walk_impulse = slope_tangent * slope_velocity_delta * mass;
             B::apply_impulse(world, entity, walk_impulse);
-
-            // Dampen normal velocity: preserve 50% of downward motion, zero out upward
-            let slope_normal = controller.ground_normal();
-            let normal_velocity = current_velocity.dot(slope_normal);
-            let target_normal = if normal_velocity < 0.0 {
-                normal_velocity * 0.5
-            } else {
-                0.0
-            };
-            let normal_velocity_delta = target_normal - normal_velocity;
-            let normal_impulse = slope_normal * normal_velocity_delta * mass;
-            B::apply_impulse(world, entity, normal_impulse);
         } else {
             // AIRBORNE: Use world-space horizontal axis
             let current_horizontal = current_velocity.dot(right);
