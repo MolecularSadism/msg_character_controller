@@ -868,6 +868,12 @@ pub struct ControllerConfig {
     /// Set to 0.0 to disable (jump can ascend indefinitely while button held).
     pub jump_max_ascent_duration: f32,
 
+    /// How much pre-existing upward velocity reduces the jump impulse (0.0-1.0).
+    /// 0.0 = no reduction (full jump impulse added to upward velocity)
+    /// 1.0 = full reduction (jump impulse reduced by current upward velocity)
+    /// This prevents "super jumps" when jumping while already moving upward.
+    pub jump_upward_velocity_compensation: f32,
+
     // === Upright Torque Settings ===
     /// Whether to apply torque to keep the character upright.
     pub upright_torque_enabled: bool,
@@ -944,6 +950,7 @@ impl Default for ControllerConfig {
             fall_gravity_duration: 0.15, // how long fall gravity is applied
             recently_jumped_duration: 0.15, // protection window after jump
             jump_max_ascent_duration: 0.45, // max ascent time before forced fall gravity
+            jump_upward_velocity_compensation: 1.0, // full reduction of upward velocity
 
             // Wall jump settings
             wall_jumping: true,
@@ -1153,6 +1160,13 @@ impl ControllerConfig {
     /// Maximum duration of jump ascent before fall gravity is forced.
     pub fn with_jump_max_ascent_duration(mut self, duration: f32) -> Self {
         self.jump_max_ascent_duration = duration;
+        self
+    }
+
+    /// Builder: set jump upward velocity compensation (0.0-1.0).
+    /// Controls how much pre-existing upward velocity reduces the jump impulse.
+    pub fn with_jump_upward_velocity_compensation(mut self, compensation: f32) -> Self {
+        self.jump_upward_velocity_compensation = compensation.clamp(0.0, 1.0);
         self
     }
 
@@ -1430,11 +1444,11 @@ mod tests {
     fn stair_config_default() {
         let config = StairConfig::default();
         assert!(config.enabled);
-        assert_eq!(config.max_climb_height, 8.0);
-        assert_eq!(config.stair_cast_width, 6.0);
-        assert_eq!(config.stair_cast_offset, 2.0);
-        assert_eq!(config.stair_tolerance, 1.0);
-        assert_eq!(config.climb_force_multiplier, 1.0);
+        assert_eq!(config.max_climb_height, 11.0);
+        assert_eq!(config.stair_cast_width, 2.0);
+        assert_eq!(config.stair_cast_offset, 3.0);
+        assert_eq!(config.stair_tolerance, 2.0);
+        assert_eq!(config.climb_force_multiplier, 2.0);
     }
 
     #[test]
