@@ -40,7 +40,7 @@
 //!
 //! // Create controller components
 //! let controller = CharacterController::new();
-//! let config = ControllerConfig::player();
+//! let config = ControllerConfig::default();
 //! let movement = MovementIntent::default();
 //!
 //! // These can be spawned as a bundle with physics components
@@ -106,10 +106,9 @@ pub mod prelude {
     //!     commands.spawn((
     //!         Transform::from_xyz(0.0, 100.0, 0.0),
     //!         CharacterController::new(),
-    //!         ControllerConfig::player(),
-    //!         MovementIntent::default(),
-    //!         Rapier2dCharacterBundle::rotation_locked(),
+    //!         ControllerConfig::default(),
     //!         Collider::capsule_y(8.0, 4.0),
+    //!         LockedAxes::ROTATION_LOCKED,
     //!         GravityScale(0.0),
     //!     ));
     //! }
@@ -123,7 +122,7 @@ pub mod prelude {
     pub use crate::intent::{JumpRequest, MovementIntent};
 
     #[cfg(feature = "rapier2d")]
-    pub use crate::rapier::{Rapier2dBackend, Rapier2dCharacterBundle};
+    pub use crate::rapier::Rapier2dBackend;
 }
 
 /// Main plugin for the character controller system.

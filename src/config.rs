@@ -7,7 +7,9 @@ use bevy::prelude::*;
 use std::time::Duration;
 
 #[cfg(feature = "rapier2d")]
-use bevy_rapier2d::prelude::{ExternalForce, ExternalImpulse, ReadMassProperties};
+use bevy_rapier2d::prelude::{
+    ExternalForce, ExternalImpulse, LockedAxes, ReadMassProperties, RigidBody, Velocity,
+};
 
 use crate::{collision::CollisionData, intent::MovementIntent};
 
@@ -50,9 +52,9 @@ pub enum JumpType {
 /// forces are "isolated" and don't accumulate across frames.
 #[derive(Component, Reflect, Debug, Clone)]
 #[reflect(Component)]
-#[require(MovementIntent)]
+#[require(MovementIntent, Transform)]
 #[cfg(feature = "rapier2d")]
-#[require(ReadMassProperties, ExternalForce, ExternalImpulse)]
+#[require(RigidBody, Velocity, ReadMassProperties, ExternalForce, ExternalImpulse, LockedAxes)]
 pub struct CharacterController {
     // === Collision Data (Option<CollisionData> for each direction) ===
     /// Floor collision data. Contains distance, normal, point, and entity.

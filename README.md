@@ -49,10 +49,9 @@ fn spawn_character(mut commands: Commands) {
     commands.spawn((
         Transform::from_xyz(0.0, 100.0, 0.0),
         CharacterController::new(),
-        ControllerConfig::player(),
-        MovementIntent::default(),
-        Rapier2dCharacterBundle::rotation_locked(),
+        ControllerConfig::default(),
         Collider::capsule_y(8.0, 4.0),
+        LockedAxes::ROTATION_LOCKED, // Optional: lock rotation for simple platformers
         GravityScale(0.0), // Controller manages gravity internally
     ));
 }
@@ -77,10 +76,9 @@ fn handle_input(
 
 | Component | Purpose |
 |-----------|---------|
-| `CharacterController` | Central hub for state: collision data, timers, gravity |
+| `CharacterController` | Central hub for state: collision data, timers, gravity. Auto-inserts required Rapier components. |
 | `ControllerConfig` | Tunable parameters: float height, speeds, jump settings |
 | `MovementIntent` | Input abstraction: walk, fly, jump_pressed |
-| `Rapier2dCharacterBundle` | Physics components for Rapier2D backend |
 
 ## Configuration
 
