@@ -813,7 +813,8 @@ pub fn apply_fly<B: CharacterPhysicsBackend>(world: &mut World) {
                 !intent.is_flying_down() || current_vertical > -vertical_max_speed;
 
             if should_apply_downward {
-                let mut fly_accel = config.acceleration;
+                // Use fly_acceleration with vertical ratio as base
+                let mut fly_accel = config.fly_acceleration * config.fly_vertical_acceleration_ratio;
 
                 // Boost upward propulsion by gravity based on compensation setting
                 if fly_direction > 0.0 {
@@ -843,9 +844,8 @@ pub fn apply_fly<B: CharacterPhysicsBackend>(world: &mut World) {
             let current_horizontal = current_velocity.dot(right);
             let desired_horizontal = intent.effective_fly_horizontal() * config.fly_max_speed;
 
-            // When grounded: use walking friction and acceleration
-            // When airborne: full flying speed, no air control reduction
-            let fly_accel = config.acceleration;
+            // Use fly_acceleration for horizontal flying
+            let fly_accel = config.fly_acceleration;
 
             // Calculate velocity change toward target, clamped by max acceleration
             let velocity_diff = desired_horizontal - current_horizontal;
@@ -987,7 +987,8 @@ pub fn apply_movement<B: CharacterPhysicsBackend>(world: &mut World) {
             let current_vertical = current_velocity.dot(up);
             let desired_vertical = intent.effective_fly() * config.max_speed;
 
-            let mut fly_accel = config.acceleration;
+            // Use fly_acceleration with vertical ratio as base
+            let mut fly_accel = config.fly_acceleration * config.fly_vertical_acceleration_ratio;
             // Boost upward propulsion by gravity magnitude to counteract gravity
             if fly_direction > 0.0 {
                 fly_accel += controller.gravity.length();
