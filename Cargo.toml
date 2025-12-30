@@ -55,3 +55,8 @@ required-features = ["examples"]
 name = "hilly_planet"
 path = "examples/hilly_planet.rs"
 required-features = ["examples"]
+
+[[example]]
+name = "ballpit"
+path = "examples/ballpit.rs"
+required-features = ["examples"]

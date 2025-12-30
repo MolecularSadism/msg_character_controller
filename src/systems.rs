@@ -236,6 +236,11 @@ pub fn evaluate_intent<B: CharacterPhysicsBackend>(
 /// `grounding_strength`. This helps keep the character firmly grounded when
 /// floating slightly above the riding height.
 ///
+/// **Dynamic ground reaction**: When the spring applies an upward force to the
+/// character while standing on a dynamic rigidbody, an equal and opposite force
+/// is applied to the ground entity (Newton's 3rd law). This enables pushing down
+/// dynamic platforms, balls, etc.
+///
 /// Downward spring forces are filtered when:
 /// - `intends_upward_propulsion` is true (same-frame filtering)
 /// - Within `jump_spring_filter_duration` after propulsion (cross-frame filtering)
@@ -249,6 +254,11 @@ pub fn accumulate_spring_force<B: CharacterPhysicsBackend>(world: &mut World) {
         .collect();
 
     for (entity, config, controller) in entities {
+        // Clear any previous ground reaction force
+        if let Some(mut ctrl) = world.get_mut::<CharacterController>(entity) {
+            ctrl.clear_ground_reaction();
+        }
+
         let Some(ref floor) = controller.floor else {
             continue;
         };
@@ -342,6 +352,18 @@ pub fn accumulate_spring_force<B: CharacterPhysicsBackend>(world: &mut World) {
         // Apply force along up direction
         let force = up * final_spring_force;
         B::apply_force(world, entity, force);
+
+        // If applying an upward force (pushing player up), set up ground reaction force
+        // for dynamic ground bodies (Newton's 3rd law - equal and opposite reaction)
+        if final_spring_force > 0.0 {
+            if let Some(ground_entity) = floor.entity {
+                // Store the reaction force (opposite direction) to apply to the ground
+                let reaction_force = -force; // Opposite of the force applied to player
+                if let Some(mut ctrl) = world.get_mut::<CharacterController>(entity) {
+                    ctrl.set_ground_reaction(ground_entity, reaction_force);
+                }
+            }
+        }
     }
 }
 
