@@ -89,6 +89,12 @@ pub fn update_timers(
 
         // Tick the jump spring filter timer
         controller.jump_spring_filter_timer.tick(delta);
+
+        // Tick the jumped timer (for fall gravity tracking)
+        controller.jumped_timer.tick(delta);
+
+        // Tick the extra gravity timer
+        controller.extra_gravity_timer.tick(delta);
     }
 }
 
@@ -210,6 +216,10 @@ pub fn accumulate_spring_force<B: CharacterPhysicsBackend>(world: &mut World) {
             continue;
         };
 
+        if controller.upward_intent() {
+            continue;
+        }
+
         let up = controller.ideal_up();
         let velocity = B::get_velocity(world, entity);
         let vertical_velocity = velocity.dot(up);
@@ -225,7 +235,6 @@ pub fn accumulate_spring_force<B: CharacterPhysicsBackend>(world: &mut World) {
         // Only apply spring within active range, unless filtering
         // During filtering, we still process the spring but filter downward forces
         let max_range = target_height + config.ground_tolerance;
-        let min_range = controller.capsule_half_height();
 
         if current_height > max_range && !should_filter_downward {
             // Above max range and not filtering - skip spring entirely
@@ -374,11 +383,6 @@ pub fn accumulate_gravity<B: CharacterPhysicsBackend>(world: &mut World) {
         .collect();
 
     for (entity, controller, _config) in entities {
-        // Skip gravity during upward propulsion to allow reaching intended height
-        if controller.upward_intent() {
-            continue;
-        }
-
         // Apply gravity as an impulse: I = m * g * dt
         // This produces velocity change: dv = I / m = g * dt
         // Using impulse ensures gravity is integrated correctly with the physics step
@@ -391,6 +395,86 @@ pub fn accumulate_gravity<B: CharacterPhysicsBackend>(world: &mut World) {
 // ============================================================================
 // PHASE 5: INTENT APPLICATION
 // ============================================================================
+
+/// Apply extra fall gravity for early jump cancellation.
+///
+/// This system enables players to cancel jumps early by releasing the jump button,
+/// making jumps feel less floaty. Extra gravity is triggered when:
+///
+/// 1. We jumped recently (within `jump_cancel_window`)
+/// 2. AND either:
+///    - No jump request is pending this frame (player let go of button)
+///    - OR we're moving downward (crossed the zenith)
+///
+/// When triggered, extra fall gravity is applied for `extra_gravity_duration`,
+/// multiplying gravity by `extra_fall_gravity`.
+///
+/// This system MUST run before `apply_jump` to check for jump requests before
+/// they are consumed.
+pub fn apply_fall_gravity<B: CharacterPhysicsBackend>(world: &mut World) {
+    let dt = B::get_fixed_timestep(world);
+
+    // Collect entities that might need fall gravity
+    let entities: Vec<(Entity, ControllerConfig, CharacterController, bool)> = world
+        .query::<(
+            Entity,
+            &ControllerConfig,
+            &CharacterController,
+            &MovementIntent,
+        )>()
+        .iter(world)
+        .filter(|(_, config, controller, _)| {
+            // Only process airborne entities with extra_fall_gravity > 1.0
+            !controller.is_grounded(config) && config.extra_fall_gravity > 1.0
+        })
+        .map(|(e, config, controller, intent)| {
+            // Check if a jump request is pending (player is still holding jump)
+            let has_jump_request = intent.jump_request.is_some();
+            (e, *config, controller.clone(), has_jump_request)
+        })
+        .collect();
+
+    for (entity, config, controller, has_jump_request) in entities {
+        let up = controller.ideal_up();
+        let velocity = B::get_velocity(world, entity);
+        let vertical_velocity = velocity.dot(up);
+
+        // Check if we should trigger extra fall gravity
+        // Conditions:
+        // 1. We jumped recently (within jump_cancel_window)
+        // 2. AND either:
+        //    - No jump request pending (player let go of button)
+        //    - OR we're moving downward (crossed the zenith)
+        let should_trigger = controller.in_jump_cancel_window()
+            && (!has_jump_request || vertical_velocity < 0.0);
+
+        // Trigger extra gravity if conditions are met
+        if should_trigger && !controller.extra_fall_gravity_active() {
+            if let Some(mut ctrl) = world.get_mut::<CharacterController>(entity) {
+                ctrl.trigger_extra_fall_gravity(config.extra_gravity_duration);
+            }
+        }
+
+        // Apply extra gravity if the timer is active
+        // Re-check because we may have just triggered it
+        let is_active = if let Some(ctrl) = world.get::<CharacterController>(entity) {
+            ctrl.extra_fall_gravity_active()
+        } else {
+            false
+        };
+
+        if is_active {
+            // Apply extra gravity impulse
+            // The regular gravity system applies: gravity * mass * dt
+            // We want to add: gravity * mass * dt * (extra_fall_gravity - 1)
+            // This way total gravity becomes: gravity * mass * dt * extra_fall_gravity
+            let mass = B::get_mass(world, entity);
+            let extra_multiplier = config.extra_fall_gravity - 1.0;
+            let extra_gravity_impulse = controller.gravity * mass * dt * extra_multiplier;
+            B::apply_impulse(world, entity, extra_gravity_impulse);
+        }
+    }
+}
 
 /// Apply walking movement based on intent.
 ///
@@ -420,7 +504,17 @@ pub fn apply_walk<B: CharacterPhysicsBackend>(world: &mut World) {
 
         let is_grounded = controller.is_grounded(&config);
 
-        let desired_walk_speed = intent.effective_walk() * config.max_speed;
+        // Check for wall clinging rejection
+        let effective_walk = intent.effective_walk();
+        let walk_blocked = !config.wall_clinging
+            && ((effective_walk > 0.0 && controller.touching_right_wall())
+                || (effective_walk < 0.0 && controller.touching_left_wall()));
+
+        let desired_walk_speed = if walk_blocked {
+            0.0
+        } else {
+            effective_walk * config.max_speed
+        };
         let walk_accel = if is_grounded {
             config.acceleration
         } else {
@@ -429,7 +523,34 @@ pub fn apply_walk<B: CharacterPhysicsBackend>(world: &mut World) {
 
         if is_grounded && controller.ground_detected() {
             // GROUNDED: Move along slope surface using forces
-            let slope_tangent = controller.ground_tangent();
+            // Clamp the slope tangent to respect max_slope_angle
+            let slope_tangent = if controller.slope_angle <= config.max_slope_angle {
+                // Within max slope angle, use actual slope tangent
+                controller.ground_tangent()
+            } else {
+                // Slope exceeds max angle, clamp the tangent direction
+                let up = controller.ideal_up();
+                let ground_normal = controller.ground_normal();
+
+                // Determine slope tilt direction based on which way the normal leans
+                // If normal points away from right (negative dot), slope goes up when moving right
+                let slope_tilt_sign = if ground_normal.dot(right) <= 0.0 {
+                    1.0
+                } else {
+                    -1.0
+                };
+
+                // Rotate ideal_right by max_slope_angle in the tilt direction
+                let cos_a = config.max_slope_angle.cos();
+                let sin_a = config.max_slope_angle.sin() * slope_tilt_sign;
+
+                // Compute clamped tangent: right rotated by max_slope_angle in the (right, up) plane
+                Vec2::new(
+                    right.x * cos_a + up.x * sin_a,
+                    right.y * cos_a + up.y * sin_a,
+                )
+            };
+
             let current_slope_speed = current_velocity.dot(slope_tangent);
 
             // Calculate velocity change toward target, clamped by max acceleration
@@ -447,16 +568,9 @@ pub fn apply_walk<B: CharacterPhysicsBackend>(world: &mut World) {
             let slope_velocity_delta = new_slope_speed - current_slope_speed;
 
             // Apply impulse along slope tangent: I = m * dv
+            // Only the walking impulse is rotated - external velocity and spring system are unaffected
             let walk_impulse = slope_tangent * slope_velocity_delta * mass;
             B::apply_impulse(world, entity, walk_impulse);
-
-            // Dampen normal velocity: preserve 50% of downward motion, zero out upward
-            // TODO This needs to respect our configured max slope angle to walk on.
-            // We rotate the walk direction only up to the max slope angle
-            let slope_normal = controller.ground_normal();
-
-            let normal_impulse = slope_normal * mass;
-            B::apply_impulse(world, entity, normal_impulse);
         } else {
             // AIRBORNE: Use world-space horizontal axis
             let current_horizontal = current_velocity.dot(right);
@@ -581,7 +695,34 @@ pub fn apply_movement<B: CharacterPhysicsBackend>(world: &mut World) {
 
         if is_grounded && controller.ground_detected() {
             // GROUNDED: Move along slope surface using forces
-            let slope_tangent = controller.ground_tangent();
+            // Clamp the slope tangent to respect max_slope_angle
+            let slope_tangent = if controller.slope_angle <= config.max_slope_angle {
+                // Within max slope angle, use actual slope tangent
+                controller.ground_tangent()
+            } else {
+                // Slope exceeds max angle, clamp the tangent direction
+                let up = controller.ideal_up();
+                let ground_normal = controller.ground_normal();
+
+                // Determine slope tilt direction based on which way the normal leans
+                // If normal points away from right (negative dot), slope goes up when moving right
+                let slope_tilt_sign = if ground_normal.dot(right) <= 0.0 {
+                    1.0
+                } else {
+                    -1.0
+                };
+
+                // Rotate ideal_right by max_slope_angle in the tilt direction
+                let cos_a = config.max_slope_angle.cos();
+                let sin_a = config.max_slope_angle.sin() * slope_tilt_sign;
+
+                // Compute clamped tangent: right rotated by max_slope_angle in the (right, up) plane
+                Vec2::new(
+                    right.x * cos_a + up.x * sin_a,
+                    right.y * cos_a + up.y * sin_a,
+                )
+            };
+
             let current_slope_speed = current_velocity.dot(slope_tangent);
 
             // Calculate velocity change toward target, clamped by max acceleration
@@ -599,20 +740,9 @@ pub fn apply_movement<B: CharacterPhysicsBackend>(world: &mut World) {
             let slope_velocity_delta = new_slope_speed - current_slope_speed;
 
             // Apply impulse along slope tangent: I = m * dv
+            // Only the walking impulse is rotated - external velocity and spring system are unaffected
             let walk_impulse = slope_tangent * slope_velocity_delta * mass;
             B::apply_impulse(world, entity, walk_impulse);
-
-            // Dampen normal velocity: preserve 50% of downward motion, zero out upward
-            let slope_normal = controller.ground_normal();
-            let normal_velocity = current_velocity.dot(slope_normal);
-            let target_normal = if normal_velocity < 0.0 {
-                normal_velocity * 0.5
-            } else {
-                0.0
-            };
-            let normal_velocity_delta = target_normal - normal_velocity;
-            let normal_impulse = slope_normal * normal_velocity_delta * mass;
-            B::apply_impulse(world, entity, normal_impulse);
         } else {
             // AIRBORNE: Use world-space horizontal axis
             let current_horizontal = current_velocity.dot(right);
@@ -763,9 +893,11 @@ pub fn apply_jump<B: CharacterPhysicsBackend>(world: &mut World) {
         let impulse = jump_direction * config.jump_speed * mass;
         B::apply_impulse(world, entity, impulse);
 
-        // Record upward propulsion for spring force filtering
+        // Record upward propulsion for spring force filtering and fall gravity tracking
         if let Some(mut controller) = world.get_mut::<CharacterController>(entity) {
             controller.record_upward_propulsion(config.jump_spring_filter_duration);
+            // Record jump for fall gravity system - tracks when we can cancel the jump
+            controller.record_jump(config.jump_cancel_window);
         }
     }
 }
