@@ -85,6 +85,12 @@ pub fn update_timers(
 
         // Tick the jump spring filter timer
         controller.jump_spring_filter_timer.tick(delta);
+
+        // Tick the jumped timer (for fall gravity tracking)
+        controller.jumped_timer.tick(delta);
+
+        // Tick the extra gravity timer
+        controller.extra_gravity_timer.tick(delta);
     }
 }
 
@@ -332,6 +338,86 @@ pub fn accumulate_gravity<B: CharacterPhysicsBackend>(world: &mut World) {
 // ============================================================================
 // PHASE 5: INTENT APPLICATION
 // ============================================================================
+
+/// Apply extra fall gravity for early jump cancellation.
+///
+/// This system enables players to cancel jumps early by releasing the jump button,
+/// making jumps feel less floaty. Extra gravity is triggered when:
+///
+/// 1. We jumped recently (within `jump_cancel_window`)
+/// 2. AND either:
+///    - No jump request is pending this frame (player let go of button)
+///    - OR we're moving downward (crossed the zenith)
+///
+/// When triggered, extra fall gravity is applied for `extra_gravity_duration`,
+/// multiplying gravity by `extra_fall_gravity`.
+///
+/// This system MUST run before `apply_jump` to check for jump requests before
+/// they are consumed.
+pub fn apply_fall_gravity<B: CharacterPhysicsBackend>(world: &mut World) {
+    let dt = B::get_fixed_timestep(world);
+
+    // Collect entities that might need fall gravity
+    let entities: Vec<(Entity, ControllerConfig, CharacterController, bool)> = world
+        .query::<(
+            Entity,
+            &ControllerConfig,
+            &CharacterController,
+            &MovementIntent,
+        )>()
+        .iter(world)
+        .filter(|(_, config, controller, _)| {
+            // Only process airborne entities with extra_fall_gravity > 1.0
+            !controller.is_grounded(config) && config.extra_fall_gravity > 1.0
+        })
+        .map(|(e, config, controller, intent)| {
+            // Check if a jump request is pending (player is still holding jump)
+            let has_jump_request = intent.jump_request.is_some();
+            (e, *config, controller.clone(), has_jump_request)
+        })
+        .collect();
+
+    for (entity, config, controller, has_jump_request) in entities {
+        let up = controller.ideal_up();
+        let velocity = B::get_velocity(world, entity);
+        let vertical_velocity = velocity.dot(up);
+
+        // Check if we should trigger extra fall gravity
+        // Conditions:
+        // 1. We jumped recently (within jump_cancel_window)
+        // 2. AND either:
+        //    - No jump request pending (player let go of button)
+        //    - OR we're moving downward (crossed the zenith)
+        let should_trigger = controller.in_jump_cancel_window()
+            && (!has_jump_request || vertical_velocity < 0.0);
+
+        // Trigger extra gravity if conditions are met
+        if should_trigger && !controller.extra_fall_gravity_active() {
+            if let Some(mut ctrl) = world.get_mut::<CharacterController>(entity) {
+                ctrl.trigger_extra_fall_gravity(config.extra_gravity_duration);
+            }
+        }
+
+        // Apply extra gravity if the timer is active
+        // Re-check because we may have just triggered it
+        let is_active = if let Some(ctrl) = world.get::<CharacterController>(entity) {
+            ctrl.extra_fall_gravity_active()
+        } else {
+            false
+        };
+
+        if is_active {
+            // Apply extra gravity impulse
+            // The regular gravity system applies: gravity * mass * dt
+            // We want to add: gravity * mass * dt * (extra_fall_gravity - 1)
+            // This way total gravity becomes: gravity * mass * dt * extra_fall_gravity
+            let mass = B::get_mass(world, entity);
+            let extra_multiplier = config.extra_fall_gravity - 1.0;
+            let extra_gravity_impulse = controller.gravity * mass * dt * extra_multiplier;
+            B::apply_impulse(world, entity, extra_gravity_impulse);
+        }
+    }
+}
 
 /// Apply walking movement based on intent.
 ///
@@ -701,9 +787,11 @@ pub fn apply_jump<B: CharacterPhysicsBackend>(world: &mut World) {
         let impulse = up * config.jump_speed * mass;
         B::apply_impulse(world, entity, impulse);
 
-        // Record upward propulsion for spring force filtering
+        // Record upward propulsion for spring force filtering and fall gravity tracking
         if let Some(mut controller) = world.get_mut::<CharacterController>(entity) {
             controller.record_upward_propulsion(config.jump_spring_filter_duration);
+            // Record jump for fall gravity system - tracks when we can cancel the jump
+            controller.record_jump(config.jump_cancel_window);
         }
     }
 }

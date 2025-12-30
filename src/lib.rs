@@ -229,12 +229,18 @@ impl<B: backend::CharacterPhysicsBackend> Plugin for CharacterControllerPlugin<B
         );
 
         // Phase 5: Intent Application
-        // Apply impulses based on intent (jump, walk, fly)
-        // Jump runs first so it can consume the jump request before walk/fly
+        // Apply impulses based on intent (fall gravity, jump, walk, fly)
+        // Fall gravity runs first to check jump request before it's consumed
+        // Jump runs second to consume the jump request
         // Walk and fly can run in parallel as they affect orthogonal axes
         app.add_systems(
             FixedUpdate,
-            systems::apply_jump::<B>.in_set(CharacterControllerSet::IntentApplication),
+            (
+                systems::apply_fall_gravity::<B>,
+                systems::apply_jump::<B>,
+            )
+                .chain()
+                .in_set(CharacterControllerSet::IntentApplication),
         );
         app.add_systems(
             FixedUpdate,
