@@ -9,7 +9,7 @@ use msg_character_controller::prelude::*;
 pub fn gravity_settings_ui(ui: &mut egui::Ui, controller: &mut CharacterController) {
     ui.collapsing("Gravity Settings", |ui| {
         ui.horizontal(|ui| {
-            ui.label("Gravity X:");
+            ui.label("X:");
             ui.add(
                 egui::DragValue::new(&mut controller.gravity.x)
                     .speed(10.0)
@@ -17,7 +17,7 @@ pub fn gravity_settings_ui(ui: &mut egui::Ui, controller: &mut CharacterControll
             );
         });
         ui.horizontal(|ui| {
-            ui.label("Gravity Y:");
+            ui.label("Y:");
             ui.add(
                 egui::DragValue::new(&mut controller.gravity.y)
                     .speed(10.0)
@@ -31,7 +31,7 @@ pub fn gravity_settings_ui(ui: &mut egui::Ui, controller: &mut CharacterControll
 pub fn float_settings_ui(ui: &mut egui::Ui, config: &mut ControllerConfig) {
     ui.collapsing("Float Settings", |ui| {
         ui.horizontal(|ui| {
-            ui.label("Float Height:");
+            ui.label("Height:");
             ui.add(
                 egui::DragValue::new(&mut config.float_height)
                     .speed(0.1)
@@ -69,7 +69,7 @@ pub fn float_settings_ui(ui: &mut egui::Ui, config: &mut ControllerConfig) {
 pub fn spring_settings_ui(ui: &mut egui::Ui, config: &mut ControllerConfig) {
     ui.collapsing("Spring Settings", |ui| {
         ui.horizontal(|ui| {
-            ui.label("Spring Strength:");
+            ui.label("Strength:");
             ui.add(
                 egui::DragValue::new(&mut config.spring_strength)
                     .speed(100.0)
@@ -77,7 +77,7 @@ pub fn spring_settings_ui(ui: &mut egui::Ui, config: &mut ControllerConfig) {
             );
         });
         ui.horizontal(|ui| {
-            ui.label("Spring Damping:");
+            ui.label("Damping:");
             ui.add(
                 egui::DragValue::new(&mut config.spring_damping)
                     .speed(10.0)
@@ -167,7 +167,7 @@ pub fn movement_settings_ui(ui: &mut egui::Ui, config: &mut ControllerConfig) {
         ui.checkbox(&mut config.wall_clinging, "Wall Clinging");
         ui.add_enabled_ui(config.wall_clinging, |ui| {
             ui.horizontal(|ui| {
-                ui.label("Wall Clinging Friction:");
+                ui.label("Friction:");
                 ui.add(
                     egui::DragValue::new(&mut config.wall_clinging_friction)
                         .speed(0.01)
@@ -210,7 +210,7 @@ pub fn slope_settings_ui(ui: &mut egui::Ui, config: &mut ControllerConfig) {
 pub fn sensor_settings_ui(ui: &mut egui::Ui, config: &mut ControllerConfig) {
     ui.collapsing("Sensor Settings", |ui| {
         ui.horizontal(|ui| {
-            ui.label("Ground Cast Mult:");
+            ui.label("Ground Mult:");
             ui.add(
                 egui::DragValue::new(&mut config.ground_cast_multiplier)
                     .speed(0.1)
@@ -218,7 +218,7 @@ pub fn sensor_settings_ui(ui: &mut egui::Ui, config: &mut ControllerConfig) {
             );
         });
         ui.horizontal(|ui| {
-            ui.label("Ground Cast Width:");
+            ui.label("Ground Width:");
             ui.add(
                 egui::DragValue::new(&mut config.ground_cast_width)
                     .speed(0.1)
@@ -226,7 +226,7 @@ pub fn sensor_settings_ui(ui: &mut egui::Ui, config: &mut ControllerConfig) {
             );
         });
         ui.horizontal(|ui| {
-            ui.label("Wall Cast Mult:");
+            ui.label("Wall Mult:");
             ui.add(
                 egui::DragValue::new(&mut config.wall_cast_multiplier)
                     .speed(0.1)
@@ -234,7 +234,7 @@ pub fn sensor_settings_ui(ui: &mut egui::Ui, config: &mut ControllerConfig) {
             );
         });
         ui.horizontal(|ui| {
-            ui.label("Wall Cast Height:");
+            ui.label("Wall Height:");
             ui.add(
                 egui::DragValue::new(&mut config.wall_cast_height)
                     .speed(0.1)
@@ -242,7 +242,7 @@ pub fn sensor_settings_ui(ui: &mut egui::Ui, config: &mut ControllerConfig) {
             );
         });
         ui.horizontal(|ui| {
-            ui.label("Ceiling Cast Mult:");
+            ui.label("Ceiling Mult:");
             ui.add(
                 egui::DragValue::new(&mut config.ceiling_cast_multiplier)
                     .speed(0.1)
@@ -250,7 +250,7 @@ pub fn sensor_settings_ui(ui: &mut egui::Ui, config: &mut ControllerConfig) {
             );
         });
         ui.horizontal(|ui| {
-            ui.label("Ceiling Cast Width:");
+            ui.label("Ceiling Width:");
             ui.add(
                 egui::DragValue::new(&mut config.ceiling_cast_width)
                     .speed(0.1)
@@ -264,7 +264,7 @@ pub fn sensor_settings_ui(ui: &mut egui::Ui, config: &mut ControllerConfig) {
 pub fn jump_settings_ui(ui: &mut egui::Ui, config: &mut ControllerConfig) {
     ui.collapsing("Jump Settings", |ui| {
         ui.horizontal(|ui| {
-            ui.label("Jump Speed:");
+            ui.label("Speed:");
             ui.add(
                 egui::DragValue::new(&mut config.jump_speed)
                     .speed(100.0)
@@ -280,7 +280,7 @@ pub fn jump_settings_ui(ui: &mut egui::Ui, config: &mut ControllerConfig) {
             );
         });
         ui.horizontal(|ui| {
-            ui.label("Jump Buffer Time:");
+            ui.label("Buffer Time:");
             ui.add(
                 egui::DragValue::new(&mut config.jump_buffer_time)
                     .speed(0.01)
@@ -309,11 +309,11 @@ pub fn jump_settings_ui(ui: &mut egui::Ui, config: &mut ControllerConfig) {
 /// Renders the wall jump settings collapsible section.
 pub fn wall_jump_settings_ui(ui: &mut egui::Ui, config: &mut ControllerConfig) {
     ui.collapsing("Wall Jump Settings", |ui| {
-        ui.checkbox(&mut config.wall_jumping, "Wall Jumping Enabled");
+        ui.checkbox(&mut config.wall_jumping, "Enabled");
         ui.add_enabled_ui(config.wall_jumping, |ui| {
             let mut angle_deg = config.wall_jump_angle.to_degrees();
             ui.horizontal(|ui| {
-                ui.label("Wall Jump Angle (deg):");
+                ui.label("Angle (deg):");
                 if ui
                     .add(
                         egui::DragValue::new(&mut angle_deg)
@@ -471,7 +471,7 @@ pub fn stair_settings_ui(ui: &mut egui::Ui, stair_config: &mut StairConfig) {
             );
         });
         ui.horizontal(|ui| {
-            ui.label("Stair Cast Width:");
+            ui.label("Cast Width:");
             ui.add(
                 egui::DragValue::new(&mut stair_config.stair_cast_width)
                     .speed(0.5)
@@ -479,7 +479,7 @@ pub fn stair_settings_ui(ui: &mut egui::Ui, stair_config: &mut StairConfig) {
             );
         });
         ui.horizontal(|ui| {
-            ui.label("Stair Cast Offset:");
+            ui.label("Cast Offset:");
             ui.add(
                 egui::DragValue::new(&mut stair_config.stair_cast_offset)
                     .speed(0.1)
@@ -487,7 +487,7 @@ pub fn stair_settings_ui(ui: &mut egui::Ui, stair_config: &mut StairConfig) {
             );
         });
         ui.horizontal(|ui| {
-            ui.label("Stair Tolerance:");
+            ui.label("Tolerance:");
             ui.add(
                 egui::DragValue::new(&mut stair_config.stair_tolerance)
                     .speed(0.1)
