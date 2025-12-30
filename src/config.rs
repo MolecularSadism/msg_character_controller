@@ -118,6 +118,13 @@ pub struct CharacterController {
     #[reflect(ignore)]
     pub wall_jump_movement_block_timer: Timer,
 
+    /// Timer tracking "recently jumped" state.
+    /// When a jump occurs, this timer is reset. While active:
+    /// - Fall gravity cannot be triggered (protects against velocity flicker)
+    /// - Coyote timer will not be reset (prevents coyote time after jumping)
+    #[reflect(ignore)]
+    pub recently_jumped_timer: Timer,
+
     /// The direction that is blocked during wall jump movement blocking.
     /// Positive = block rightward movement (jumped from right wall)
     /// Negative = block leftward movement (jumped from left wall)
@@ -192,6 +199,9 @@ impl Default for CharacterController {
             // Wall jump movement block timer starts finished (no active blocking)
             // Duration is set by the system based on config.wall_jump_movement_block_duration
             wall_jump_movement_block_timer: Timer::new(Duration::ZERO, TimerMode::Once),
+            // Recently jumped timer starts finished (not recently jumped)
+            // Duration is set by the system based on config.recently_jumped_duration
+            recently_jumped_timer: Timer::new(Duration::ZERO, TimerMode::Once),
             // No direction blocked initially
             wall_jump_blocked_direction: 0.0,
             // Intent state
@@ -561,6 +571,24 @@ impl CharacterController {
         }
     }
 
+    // === Recently Jumped Timer Methods ===
+
+    /// Record that a jump just occurred.
+    /// This starts the recently_jumped timer which blocks fall gravity and coyote jumps.
+    pub fn record_recently_jumped(&mut self, recently_jumped_duration: f32) {
+        if recently_jumped_duration > 0.0 {
+            self.recently_jumped_timer
+                .set_duration(Duration::from_secs_f32(recently_jumped_duration));
+            self.recently_jumped_timer.reset();
+        }
+    }
+
+    /// Check if we recently jumped.
+    /// Returns true if fall gravity should be blocked and coyote timer should not reset.
+    pub fn recently_jumped(&self) -> bool {
+        !self.recently_jumped_timer.finished()
+    }
+
     // === Force Accumulation Methods ===
 
     /// Add force to the internal accumulator (called by controller systems).
@@ -752,6 +780,13 @@ pub struct ControllerConfig {
     /// During this time, gravity is multiplied by fall_gravity.
     pub fall_gravity_duration: f32,
 
+    /// Duration (seconds) after a jump during which the character is considered
+    /// to have "recently jumped". During this window:
+    /// - Fall gravity cannot be triggered (protects against velocity flicker)
+    /// - Coyote timer will not be reset (prevents coyote time after jumping)
+    /// Set to 0.0 to disable.
+    pub recently_jumped_duration: f32,
+
     // === Upright Torque Settings ===
     /// Whether to apply torque to keep the character upright.
     pub upright_torque_enabled: bool,
@@ -818,6 +853,7 @@ impl Default for ControllerConfig {
             fall_gravity: 2.0,             // 2x gravity when jump is cancelled
             jump_cancel_window: 2.0,       // 2 seconds to cancel jump
             fall_gravity_duration: 0.3,    // 300ms of fall gravity
+            recently_jumped_duration: 0.15, // 150ms protection after jump
 
             // Wall jump settings
             wall_jumping: false,
@@ -961,6 +997,13 @@ impl ControllerConfig {
     /// Duration for which fall gravity is applied after cancellation.
     pub fn with_fall_gravity_duration(mut self, duration: f32) -> Self {
         self.fall_gravity_duration = duration;
+        self
+    }
+
+    /// Builder: set recently jumped duration.
+    /// Duration after a jump during which fall gravity is blocked and coyote timer won't reset.
+    pub fn with_recently_jumped_duration(mut self, duration: f32) -> Self {
+        self.recently_jumped_duration = duration;
         self
     }
 
