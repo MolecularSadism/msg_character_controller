@@ -11,6 +11,23 @@ use bevy_rapier2d::prelude::{ExternalForce, ExternalImpulse, ReadMassProperties}
 
 use crate::{collision::CollisionData, intent::MovementIntent};
 
+/// Type of jump based on the surface being jumped from.
+///
+/// This determines the direction of the jump impulse:
+/// - `Ground`: Jump straight up (along ground normal)
+/// - `LeftWall`: Jump diagonally up-right (away from left wall)
+/// - `RightWall`: Jump diagonally up-left (away from right wall)
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Reflect)]
+pub enum JumpType {
+    /// Normal ground jump - impulse along ground normal or ideal up.
+    #[default]
+    Ground,
+    /// Wall jump from left wall - impulse diagonally up-right.
+    LeftWall,
+    /// Wall jump from right wall - impulse diagonally up-left.
+    RightWall,
+}
+
 /// Core character controller component.
 ///
 /// This is the **central hub** for all character controller state.
@@ -67,6 +84,10 @@ pub struct CharacterController {
     /// Coyote time is valid while the timer has not finished.
     #[reflect(ignore)]
     pub coyote_timer: Timer,
+    /// The type of jump that should be performed based on last contact.
+    /// Updated by wall contact detection system. Used by apply_jump to determine
+    /// jump direction. Ground contact takes priority over wall contact.
+    pub last_jump_type: JumpType,
 
     // === Stair Climbing State ===
     /// Active stair height when climbing. This is added to the riding height
@@ -143,6 +164,8 @@ impl Default for CharacterController {
             // Coyote timer starts finished (not grounded) - will be reset when grounded
             // Duration is set by the system based on config.coyote_time
             coyote_timer: Timer::new(Duration::ZERO, TimerMode::Once),
+            // Default to ground jump type
+            last_jump_type: JumpType::Ground,
             // Stair climbing state
             active_stair_height: 0.0,
             // Jump spring filter timer starts finished (no recent propulsion)
@@ -449,7 +472,7 @@ impl CharacterController {
     }
 
     /// Check if within coyote time window.
-    /// Returns true if the character can still jump after leaving ground.
+    /// Returns true if the character can still jump after leaving ground or wall.
     pub fn in_coyote_time(&self) -> bool {
         !self.coyote_timer.finished()
     }
@@ -638,6 +661,15 @@ pub struct ControllerConfig {
     /// window after the player releases the jump button or crosses the zenith.
     pub extra_fall_gravity: f32,
 
+    // === Wall Jump Settings ===
+    /// Whether wall jumping is enabled.
+    /// When enabled, the character can jump off walls when only touching a wall.
+    pub wall_jumping: bool,
+
+    /// Angle of wall jump from vertical (in radians).
+    /// 0 = straight up, PI/4 (45°) = diagonal.
+    /// The jump direction is angled away from the wall.
+    pub wall_jump_angle: f32,
     /// Duration (seconds) after jumping during which the jump can be cancelled.
     /// If the player releases the jump button within this window OR crosses the
     /// zenith (starts moving downward), extra fall gravity will be triggered.
@@ -712,6 +744,10 @@ impl Default for ControllerConfig {
             extra_fall_gravity: 2.0,       // 2x gravity when jump is cancelled
             jump_cancel_window: 2.0,       // 2 seconds to cancel jump
             extra_gravity_duration: 0.3,   // 300ms of extra gravity
+
+            // Wall jump settings
+            wall_jumping: false,
+            wall_jump_angle: std::f32::consts::FRAC_PI_4, // 45 degrees
 
             // Upright torque settings
             upright_torque_enabled: true,
@@ -876,6 +912,19 @@ impl ControllerConfig {
     /// Duration after jump/upward propulsion during which downward spring forces are filtered.
     pub fn with_jump_spring_filter_duration(mut self, duration: f32) -> Self {
         self.jump_spring_filter_duration = duration;
+        self
+    }
+
+    /// Builder: enable or disable wall jumping.
+    pub fn with_wall_jumping(mut self, enabled: bool) -> Self {
+        self.wall_jumping = enabled;
+        self
+    }
+
+    /// Builder: set wall jump angle (radians from vertical).
+    /// 0 = straight up, PI/4 (45°) = diagonal.
+    pub fn with_wall_jump_angle(mut self, angle: f32) -> Self {
+        self.wall_jump_angle = angle;
         self
     }
 
