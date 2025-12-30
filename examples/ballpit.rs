@@ -54,7 +54,7 @@ fn default_gravity() -> Vec2 {
 }
 
 fn default_config() -> ControllerConfig {
-    ControllerConfig::player()
+    ControllerConfig::default()
         .with_float_height(6.0)
         .with_spring(400.0, 15.0)
         .with_spring_max_force(4000.0)
