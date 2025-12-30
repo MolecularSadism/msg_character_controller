@@ -388,15 +388,11 @@ pub fn apply_walk<B: CharacterPhysicsBackend>(world: &mut World) {
             B::apply_impulse(world, entity, walk_impulse);
 
             // Dampen normal velocity: preserve 50% of downward motion, zero out upward
+            // TODO This needs to respect our configured max slope angle to walk on.
+            // We rotate the walk direction only up to the max slope angle
             let slope_normal = controller.ground_normal();
-            let normal_velocity = current_velocity.dot(slope_normal);
-            let target_normal = if normal_velocity < 0.0 {
-                normal_velocity * 0.5
-            } else {
-                0.0
-            };
-            let normal_velocity_delta = target_normal - normal_velocity;
-            let normal_impulse = slope_normal * normal_velocity_delta * mass;
+
+            let normal_impulse = slope_normal * mass;
             B::apply_impulse(world, entity, normal_impulse);
         } else {
             // AIRBORNE: Use world-space horizontal axis
