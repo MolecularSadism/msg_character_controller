@@ -612,14 +612,14 @@ impl Default for ControllerConfig {
             cling_strength: 0.5,
 
             // Spring settings
-            spring_strength: 800.0,
-            spring_damping: 5.0,
+            spring_strength: 300.0,
+            spring_damping: 13.0,
             spring_max_force: None,
             spring_max_velocity: None,
             jump_spring_filter_duration: 0.15, // 150ms
 
             // Movement settings
-            max_speed: 200.0,
+            max_speed: 150.0,
             acceleration: 800.0,
             friction: 0.1,
             air_control: 0.3,

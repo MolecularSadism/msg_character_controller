@@ -153,6 +153,10 @@ pub fn accumulate_spring_force<B: CharacterPhysicsBackend>(world: &mut World) {
             continue;
         };
 
+        if controller.upward_intent() {
+            continue;
+        }
+
         let up = controller.ideal_up();
         let velocity = B::get_velocity(world, entity);
         let vertical_velocity = velocity.dot(up);
@@ -168,7 +172,6 @@ pub fn accumulate_spring_force<B: CharacterPhysicsBackend>(world: &mut World) {
         // Only apply spring within active range, unless filtering
         // During filtering, we still process the spring but filter downward forces
         let max_range = target_height + config.ground_tolerance;
-        let min_range = controller.capsule_half_height();
 
         if current_height > max_range && !should_filter_downward {
             // Above max range and not filtering - skip spring entirely
@@ -317,11 +320,6 @@ pub fn accumulate_gravity<B: CharacterPhysicsBackend>(world: &mut World) {
         .collect();
 
     for (entity, controller, _config) in entities {
-        // Skip gravity during upward propulsion to allow reaching intended height
-        if controller.upward_intent() {
-            continue;
-        }
-
         // Apply gravity as an impulse: I = m * g * dt
         // This produces velocity change: dv = I / m = g * dt
         // Using impulse ensures gravity is integrated correctly with the physics step
