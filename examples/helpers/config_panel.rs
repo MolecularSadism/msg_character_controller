@@ -413,6 +413,15 @@ pub fn jump_settings_ui(ui: &mut egui::Ui, config: &mut ControllerConfig) {
             }
         });
         ui.label("(forces fall gravity after duration, 0 = disabled)");
+
+        ui.horizontal(|ui| {
+            ui.label("Upward Vel. Compensation:");
+            ui.add(
+                egui::Slider::new(&mut config.jump_upward_velocity_compensation, 0.0..=1.0)
+                    .fixed_decimals(2),
+            );
+        });
+        ui.label("(0 = none, 1 = full reduction of upward velocity)");
     });
 }
 
