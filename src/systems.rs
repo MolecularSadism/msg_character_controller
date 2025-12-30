@@ -305,6 +305,10 @@ pub fn accumulate_stair_climb_force<B: CharacterPhysicsBackend>(world: &mut Worl
 /// character is not grounded. Applied as an impulse each physics frame to
 /// produce the equivalent acceleration.
 ///
+/// **Important**: Gravity is filtered during upward propulsion (jump or fly up)
+/// to prevent fighting against the intended upward movement. This filtering
+/// uses the same `jump_spring_filter_window` as the spring system for consistency.
+///
 /// Note: Gravity is always applied internally by this system. To change the
 /// gravity affecting a character, modify CharacterController::gravity directly.
 pub fn accumulate_gravity<B: CharacterPhysicsBackend>(world: &mut World) {
@@ -319,6 +323,17 @@ pub fn accumulate_gravity<B: CharacterPhysicsBackend>(world: &mut World) {
         .collect();
 
     for (entity, controller, _config) in entities {
+        // Check if we should filter gravity during upward propulsion.
+        // This mirrors the spring force filtering to ensure jump/fly can reach
+        // their intended height without being immediately countered by gravity.
+        let should_filter_gravity = controller.intends_upward_propulsion
+            || controller.in_jump_spring_filter_window();
+
+        if should_filter_gravity {
+            // Skip gravity during upward propulsion to allow reaching intended height
+            continue;
+        }
+
         // Apply gravity as an impulse: I = m * g * dt
         // This produces velocity change: dv = I / m = g * dt
         // Using impulse ensures gravity is integrated correctly with the physics step
