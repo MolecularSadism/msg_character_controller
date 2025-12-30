@@ -700,9 +700,13 @@ pub fn clear_controller_forces(mut q: Query<(&mut ExternalForce, &mut CharacterC
 /// This system runs AFTER all controller force systems. It:
 /// 1. Applies accumulated forces to ExternalForce
 /// 2. Stores what we applied for next frame's subtraction
+/// 3. Applies ground reaction forces to dynamic ground bodies
 ///
 /// This ensures our forces are integrated by Rapier's physics step.
-pub fn apply_controller_forces(mut q: Query<(&mut ExternalForce, &mut CharacterController)>) {
+pub fn apply_controller_forces(
+    mut q: Query<(&mut ExternalForce, &mut CharacterController)>,
+    mut ground_forces: Query<(&mut ExternalForce, &RigidBody), Without<CharacterController>>,
+) {
     for (mut ext_force, mut controller) in &mut q {
         // Get accumulated forces and prepare for next frame
         let (force_to_apply, torque_to_apply) = controller.finalize_frame();
@@ -710,6 +714,16 @@ pub fn apply_controller_forces(mut q: Query<(&mut ExternalForce, &mut CharacterC
         // Apply our accumulated forces to ExternalForce
         ext_force.force += force_to_apply;
         ext_force.torque += torque_to_apply;
+
+        // Apply ground reaction force to dynamic ground bodies
+        if let Some((ground_entity, reaction_force)) = controller.take_ground_reaction() {
+            if let Ok((mut ground_ext_force, rigid_body)) = ground_forces.get_mut(ground_entity) {
+                // Only apply reaction force to dynamic bodies
+                if *rigid_body == RigidBody::Dynamic {
+                    ground_ext_force.force += reaction_force;
+                }
+            }
+        }
     }
 }
 
