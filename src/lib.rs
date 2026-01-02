@@ -32,6 +32,47 @@
 //! 5. **IntentApplication** - Apply jump, walk, fly based on intent
 //! 6. **FinalApplication** - Apply accumulated forces to physics
 //!
+//! All systems are members of the [`CharacterControllerSystems`] set, which can be used
+//! to apply run conditions to pause/unpause all controller processing.
+//!
+//! ## Pausing the Character Controller
+//!
+//! By default, all systems run only when the [`CharacterControllerActive`] resource is enabled.
+//! You can pause/resume processing by toggling the boolean:
+//!
+//! ```rust,no_run
+//! use bevy::prelude::*;
+//! use msg_character_controller::prelude::*;
+//!
+//! fn pause_controller(mut active: ResMut<CharacterControllerActive>) {
+//!     active.0 = false;
+//! }
+//!
+//! fn resume_controller(mut active: ResMut<CharacterControllerActive>) {
+//!     active.0 = true;
+//! }
+//! ```
+//!
+//! For custom run conditions (e.g., state-based), use [`CharacterControllerPlugin::without_default_run_condition`]
+//! and configure your own condition on [`CharacterControllerSystems`]:
+//!
+//! ```rust,ignore
+//! use bevy::prelude::*;
+//! use msg_character_controller::prelude::*;
+//!
+//! #[derive(States, Default, Debug, Clone, Copy, PartialEq, Eq, Hash)]
+//! enum GameState { #[default] Menu, Playing }
+//!
+//! fn main() {
+//!     let mut app = App::new();
+//!     app.add_plugins(CharacterControllerPlugin::<Rapier2dBackend>::without_default_run_condition());
+//!     app.configure_sets(
+//!         FixedUpdate,
+//!         CharacterControllerSystems.run_if(in_state(GameState::Playing)),
+//!     );
+//! }
+//! ```
+//!
 //! ## Usage
 //!
 //! ```rust
@@ -59,9 +100,103 @@ pub(crate) mod systems;
 #[cfg(feature = "rapier2d")]
 pub mod rapier;
 
+/// Parent system set containing all character controller systems.
+///
+/// This set can be used to apply run conditions to all character controller
+/// systems at once. By default, systems run only when [`CharacterControllerActive`]
+/// is enabled.
+///
+/// All [`CharacterControllerSet`] phases are members of this set.
+///
+/// # Pausing the Controller
+///
+/// The simplest way to pause is by setting [`CharacterControllerActive`] to disabled:
+///
+/// ```rust,no_run
+/// # use bevy::prelude::*;
+/// # use msg_character_controller::prelude::*;
+/// fn pause(mut active: ResMut<CharacterControllerActive>) {
+///     active.0 = false;
+/// }
+/// ```
+///
+/// # Custom Run Conditions
+///
+/// For custom conditions (e.g., game state-based), disable the default condition
+/// and configure your own:
+///
+/// ```rust,ignore
+/// use bevy::prelude::*;
+/// use msg_character_controller::prelude::*;
+///
+/// #[derive(States, Default, Debug, Clone, Copy, PartialEq, Eq, Hash)]
+/// enum GameState { #[default] Menu, Playing }
+///
+/// let mut app = App::new();
+/// app.add_plugins(CharacterControllerPlugin::<Rapier2dBackend>::without_default_run_condition());
+/// app.configure_sets(
+///     FixedUpdate,
+///     CharacterControllerSystems.run_if(in_state(GameState::Playing)),
+/// );
+/// ```
+#[derive(SystemSet, Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
+pub struct CharacterControllerSystems;
+
+/// Resource that controls whether character controller systems run.
+///
+/// By default, all character controller systems run only when this resource
+/// contains `true`. The resource is automatically inserted (enabled) when the
+/// plugin is added (unless [`CharacterControllerPlugin::without_default_run_condition`] is used).
+///
+/// # Pausing
+///
+/// Set to `false` to pause all character controller processing:
+///
+/// ```rust,no_run
+/// # use bevy::prelude::*;
+/// # use msg_character_controller::prelude::*;
+/// fn pause(mut active: ResMut<CharacterControllerActive>) {
+///     active.0 = false;
+/// }
+/// ```
+///
+/// # Resuming
+///
+/// Set to `true` to resume processing:
+///
+/// ```rust,no_run
+/// # use bevy::prelude::*;
+/// # use msg_character_controller::prelude::*;
+/// fn resume(mut active: ResMut<CharacterControllerActive>) {
+///     active.0 = true;
+/// }
+/// ```
+///
+/// # Toggling
+///
+/// ```rust,no_run
+/// # use bevy::prelude::*;
+/// # use msg_character_controller::prelude::*;
+/// fn toggle(mut active: ResMut<CharacterControllerActive>) {
+///     active.0 = !active.0;
+/// }
+/// ```
+#[derive(Resource, Clone, Copy, Debug)]
+pub struct CharacterControllerActive(pub bool);
+
+impl Default for CharacterControllerActive {
+    fn default() -> Self {
+        Self(true)
+    }
+}
+
 /// System sets for character controller phases.
 ///
-/// These sets define the order of operations for the character controller:
+/// These sets define the order of operations for the character controller.
+/// All sets are members of [`CharacterControllerSystems`], which can be used
+/// to apply run conditions to all phases at once.
+///
+/// ## Phases
 ///
 /// 1. **Preparation** - Clear forces from previous frame
 /// 2. **Sensors** - Collect ground/wall/ceiling data (systems can run in parallel)
@@ -114,8 +249,10 @@ pub mod prelude {
     //! }
     //! ```
 
+    pub use crate::CharacterControllerActive;
     pub use crate::CharacterControllerPlugin;
     pub use crate::CharacterControllerSet;
+    pub use crate::CharacterControllerSystems;
     pub use crate::backend::CharacterPhysicsBackend;
     pub use crate::collision::CollisionData;
     pub use crate::config::{CharacterController, ControllerConfig, JumpType, StairConfig};
@@ -133,7 +270,46 @@ pub mod prelude {
 /// # Type Parameters
 /// - `B`: The physics backend implementation (e.g., `Rapier2dBackend`)
 ///
+/// # Run Conditions
+///
+/// By default, all systems run only when the [`CharacterControllerActive`] resource is enabled.
+/// This provides an easy way to pause/unpause the controller:
+///
+/// ```rust,no_run
+/// # use bevy::prelude::*;
+/// # use msg_character_controller::prelude::*;
+/// // Pause
+/// fn pause(mut active: ResMut<CharacterControllerActive>) {
+///     active.0 = false;
+/// }
+///
+/// // Resume
+/// fn resume(mut active: ResMut<CharacterControllerActive>) {
+///     active.0 = true;
+/// }
+/// ```
+///
+/// For custom run conditions (e.g., game state-based), use
+/// [`Self::without_default_run_condition`] and configure your own condition
+/// on the [`CharacterControllerSystems`] set:
+///
+/// ```rust,ignore
+/// use bevy::prelude::*;
+/// use msg_character_controller::prelude::*;
+///
+/// #[derive(States, Default, Debug, Clone, Copy, PartialEq, Eq, Hash)]
+/// enum GameState { #[default] Menu, Playing }
+///
+/// let mut app = App::new();
+/// app.add_plugins(CharacterControllerPlugin::<Rapier2dBackend>::without_default_run_condition());
+/// app.configure_sets(
+///     FixedUpdate,
+///     CharacterControllerSystems.run_if(in_state(GameState::Playing)),
+/// );
+/// ```
+///
 /// # Gravity Handling
+///
 /// Gravity is always applied internally by this plugin as a force. Set the desired
 /// gravity vector on `CharacterController::gravity`. External application of gravity
 /// is not supported - use `CharacterController::set_gravity()` to change the gravity
@@ -154,21 +330,55 @@ pub mod prelude {
 ///     .run();
 /// ```
 pub struct CharacterControllerPlugin<B: backend::CharacterPhysicsBackend> {
+    /// Whether to use the default resource-based run condition.
+    use_default_run_condition: bool,
     _marker: std::marker::PhantomData<B>,
 }
 
 impl<B: backend::CharacterPhysicsBackend> Default for CharacterControllerPlugin<B> {
     fn default() -> Self {
         Self {
+            use_default_run_condition: true,
             _marker: std::marker::PhantomData,
         }
     }
 }
 
 impl<B: backend::CharacterPhysicsBackend> CharacterControllerPlugin<B> {
-    /// Create a new character controller plugin.
+    /// Create a new character controller plugin with default settings.
+    ///
+    /// By default, systems run only when [`CharacterControllerActive`] exists.
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// Create a plugin without the default run condition.
+    ///
+    /// Use this when you want to configure your own run condition on the
+    /// [`CharacterControllerSystems`] set. The [`CharacterControllerActive`]
+    /// resource will not be inserted automatically.
+    ///
+    /// # Example
+    ///
+    /// ```rust,ignore
+    /// use bevy::prelude::*;
+    /// use msg_character_controller::prelude::*;
+    ///
+    /// #[derive(States, Default, Debug, Clone, Copy, PartialEq, Eq, Hash)]
+    /// enum GameState { #[default] Menu, Playing }
+    ///
+    /// let mut app = App::new();
+    /// app.add_plugins(CharacterControllerPlugin::<Rapier2dBackend>::without_default_run_condition());
+    /// app.configure_sets(
+    ///     FixedUpdate,
+    ///     CharacterControllerSystems.run_if(in_state(GameState::Playing)),
+    /// );
+    /// ```
+    pub fn without_default_run_condition() -> Self {
+        Self {
+            use_default_run_condition: false,
+            _marker: std::marker::PhantomData,
+        }
     }
 }
 
@@ -184,7 +394,19 @@ impl<B: backend::CharacterPhysicsBackend> Plugin for CharacterControllerPlugin<B
         // Add the physics backend plugin
         app.add_plugins(B::plugin());
 
+        // Configure run condition on the parent set
+        // By default, systems run only when CharacterControllerActive is true
+        if self.use_default_run_condition {
+            app.init_resource::<CharacterControllerActive>();
+            app.configure_sets(
+                FixedUpdate,
+                CharacterControllerSystems
+                    .run_if(|active: Res<CharacterControllerActive>| active.0),
+            );
+        }
+
         // Configure system set ordering
+        // All phase sets are members of CharacterControllerSystems for centralized run conditions
         // Phase order: Preparation -> Sensors -> IntentEvaluation -> ForceAccumulation -> IntentApplication -> FinalApplication
         // NOTE: Sensors must run BEFORE IntentEvaluation so that intent evaluation
         // has access to current frame's floor/grounded state. This ensures that
@@ -199,7 +421,8 @@ impl<B: backend::CharacterPhysicsBackend> Plugin for CharacterControllerPlugin<B
                 CharacterControllerSet::IntentApplication,
                 CharacterControllerSet::FinalApplication,
             )
-                .chain(),
+                .chain()
+                .in_set(CharacterControllerSystems),
         );
 
         // Phase 1: Preparation
