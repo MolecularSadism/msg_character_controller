@@ -37,19 +37,19 @@
 //!
 //! ## Pausing the Character Controller
 //!
-//! By default, all systems run only when the [`CharacterControllerActive`] resource exists.
-//! You can pause processing by removing this resource:
+//! By default, all systems run only when the [`CharacterControllerActive`] resource is enabled.
+//! You can pause/resume processing by toggling the boolean:
 //!
 //! ```rust,no_run
 //! use bevy::prelude::*;
 //! use msg_character_controller::prelude::*;
 //!
-//! fn pause_controller(mut commands: Commands) {
-//!     commands.remove_resource::<CharacterControllerActive>();
+//! fn pause_controller(mut active: ResMut<CharacterControllerActive>) {
+//!     active.0 = false;
 //! }
 //!
-//! fn resume_controller(mut commands: Commands) {
-//!     commands.insert_resource(CharacterControllerActive);
+//! fn resume_controller(mut active: ResMut<CharacterControllerActive>) {
+//!     active.0 = true;
 //! }
 //! ```
 //!
@@ -104,19 +104,19 @@ pub mod rapier;
 ///
 /// This set can be used to apply run conditions to all character controller
 /// systems at once. By default, systems run only when [`CharacterControllerActive`]
-/// resource exists.
+/// is enabled.
 ///
 /// All [`CharacterControllerSet`] phases are members of this set.
 ///
 /// # Pausing the Controller
 ///
-/// The simplest way to pause is by removing the [`CharacterControllerActive`] resource:
+/// The simplest way to pause is by setting [`CharacterControllerActive`] to disabled:
 ///
 /// ```rust,no_run
 /// # use bevy::prelude::*;
 /// # use msg_character_controller::prelude::*;
-/// fn pause(mut commands: Commands) {
-///     commands.remove_resource::<CharacterControllerActive>();
+/// fn pause(mut active: ResMut<CharacterControllerActive>) {
+///     active.0 = false;
 /// }
 /// ```
 ///
@@ -142,37 +142,53 @@ pub mod rapier;
 #[derive(SystemSet, Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub struct CharacterControllerSystems;
 
-/// Marker resource that enables character controller systems.
+/// Resource that controls whether character controller systems run.
 ///
-/// By default, all character controller systems run only when this resource exists.
-/// The resource is automatically inserted when the plugin is added (unless
-/// [`CharacterControllerPlugin::without_default_run_condition`] is used).
+/// By default, all character controller systems run only when this resource
+/// contains `true`. The resource is automatically inserted (enabled) when the
+/// plugin is added (unless [`CharacterControllerPlugin::without_default_run_condition`] is used).
 ///
 /// # Pausing
 ///
-/// Remove this resource to pause all character controller processing:
+/// Set to `false` to pause all character controller processing:
 ///
 /// ```rust,no_run
 /// # use bevy::prelude::*;
 /// # use msg_character_controller::prelude::*;
-/// fn pause(mut commands: Commands) {
-///     commands.remove_resource::<CharacterControllerActive>();
+/// fn pause(mut active: ResMut<CharacterControllerActive>) {
+///     active.0 = false;
 /// }
 /// ```
 ///
 /// # Resuming
 ///
-/// Insert the resource to resume processing:
+/// Set to `true` to resume processing:
 ///
 /// ```rust,no_run
 /// # use bevy::prelude::*;
 /// # use msg_character_controller::prelude::*;
-/// fn resume(mut commands: Commands) {
-///     commands.insert_resource(CharacterControllerActive);
+/// fn resume(mut active: ResMut<CharacterControllerActive>) {
+///     active.0 = true;
 /// }
 /// ```
-#[derive(Resource, Default, Clone, Copy, Debug)]
-pub struct CharacterControllerActive;
+///
+/// # Toggling
+///
+/// ```rust,no_run
+/// # use bevy::prelude::*;
+/// # use msg_character_controller::prelude::*;
+/// fn toggle(mut active: ResMut<CharacterControllerActive>) {
+///     active.0 = !active.0;
+/// }
+/// ```
+#[derive(Resource, Clone, Copy, Debug)]
+pub struct CharacterControllerActive(pub bool);
+
+impl Default for CharacterControllerActive {
+    fn default() -> Self {
+        Self(true)
+    }
+}
 
 /// System sets for character controller phases.
 ///
@@ -256,20 +272,20 @@ pub mod prelude {
 ///
 /// # Run Conditions
 ///
-/// By default, all systems run only when the [`CharacterControllerActive`] resource exists.
+/// By default, all systems run only when the [`CharacterControllerActive`] resource is enabled.
 /// This provides an easy way to pause/unpause the controller:
 ///
 /// ```rust,no_run
 /// # use bevy::prelude::*;
 /// # use msg_character_controller::prelude::*;
-/// // Pause: remove the resource
-/// fn pause(mut commands: Commands) {
-///     commands.remove_resource::<CharacterControllerActive>();
+/// // Pause
+/// fn pause(mut active: ResMut<CharacterControllerActive>) {
+///     active.0 = false;
 /// }
 ///
-/// // Resume: insert the resource
-/// fn resume(mut commands: Commands) {
-///     commands.insert_resource(CharacterControllerActive);
+/// // Resume
+/// fn resume(mut active: ResMut<CharacterControllerActive>) {
+///     active.0 = true;
 /// }
 /// ```
 ///
@@ -379,12 +395,13 @@ impl<B: backend::CharacterPhysicsBackend> Plugin for CharacterControllerPlugin<B
         app.add_plugins(B::plugin());
 
         // Configure run condition on the parent set
-        // By default, systems run only when CharacterControllerActive exists
+        // By default, systems run only when CharacterControllerActive is true
         if self.use_default_run_condition {
             app.init_resource::<CharacterControllerActive>();
             app.configure_sets(
                 FixedUpdate,
-                CharacterControllerSystems.run_if(resource_exists::<CharacterControllerActive>),
+                CharacterControllerSystems
+                    .run_if(|active: Res<CharacterControllerActive>| active.0),
             );
         }
 
