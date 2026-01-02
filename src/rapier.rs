@@ -128,9 +128,10 @@ impl CharacterPhysicsBackend for Rapier2dBackend {
     }
 
     fn get_mass(world: &World, entity: Entity) -> f32 {
-        let props = world
-            .get::<ReadMassProperties>(entity)
-            .expect("Entity must have ReadMassProperties component for mass calculation");
+        let Some(props) = world.get::<ReadMassProperties>(entity) else {
+            // Entity doesn't have ReadMassProperties (may be despawned or not yet initialized)
+            return 0.0;
+        };
         let mass = props.mass;
         // Return 0.0 if mass is invalid (not yet computed by Rapier).
         // This can happen on the first frame before Rapier runs in PostFixedUpdate.
@@ -142,9 +143,10 @@ impl CharacterPhysicsBackend for Rapier2dBackend {
     }
 
     fn get_principal_inertia(world: &World, entity: Entity) -> f32 {
-        let props = world
-            .get::<ReadMassProperties>(entity)
-            .expect("Entity must have ReadMassProperties component for inertia calculation");
+        let Some(props) = world.get::<ReadMassProperties>(entity) else {
+            // Entity doesn't have ReadMassProperties (may be despawned or not yet initialized)
+            return 0.0;
+        };
         let inertia = props.principal_inertia;
         // Return 0.0 if inertia is invalid (not yet computed by Rapier).
         // This can happen on the first frame before Rapier runs in PostFixedUpdate.
