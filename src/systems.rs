@@ -307,6 +307,10 @@ pub fn accumulate_spring_force<B: CharacterPhysicsBackend>(world: &mut World) {
         // Get mass for force scaling
         // Scale spring force by mass so config values produce consistent acceleration
         let mass = B::get_mass(world, entity);
+        if mass <= 0.0 {
+            // Skip if mass is invalid (entity may be despawned or not yet initialized)
+            continue;
+        }
 
         let mut spring_force = (config.spring_strength * displacement
             - config.spring_damping * vertical_velocity)
@@ -405,6 +409,10 @@ pub fn accumulate_stair_climb_force<B: CharacterPhysicsBackend>(world: &mut Worl
             // Apply extra upward force to help climb the step
             // Use max_spring_force * multiplier for responsive climbing
             let mass = B::get_mass(world, entity);
+            if mass <= 0.0 {
+                // Skip if mass is invalid (entity may be despawned or not yet initialized)
+                continue;
+            }
             let gravity_magnitude = controller.gravity.length();
             let up = controller.ideal_up();
 
@@ -459,6 +467,10 @@ pub fn accumulate_gravity<B: CharacterPhysicsBackend>(world: &mut World) {
         // This produces velocity change: dv = I / m = g * dt
         // Using impulse ensures gravity is integrated correctly with the physics step
         let mass = B::get_mass(world, entity);
+        if mass <= 0.0 {
+            // Skip if mass is invalid (entity may be despawned or not yet initialized)
+            continue;
+        }
         let gravity_impulse = controller.gravity * mass * dt;
         B::apply_impulse(world, entity, gravity_impulse);
     }
@@ -542,6 +554,10 @@ pub fn apply_fall_gravity<B: CharacterPhysicsBackend>(world: &mut World) {
             // We want to add: gravity * mass * dt * (fall_gravity - 1)
             // This way total gravity becomes: gravity * mass * dt * fall_gravity
             let mass = B::get_mass(world, entity);
+            if mass <= 0.0 {
+                // Skip if mass is invalid (entity may be despawned or not yet initialized)
+                continue;
+            }
             let fall_multiplier = config.fall_gravity - 1.0;
             let fall_gravity_impulse = controller.gravity * mass * dt * fall_multiplier;
             B::apply_impulse(world, entity, fall_gravity_impulse);
@@ -632,6 +648,10 @@ pub fn apply_wall_clinging_dampening<B: CharacterPhysicsBackend>(world: &mut Wor
         // Get current velocity
         let velocity = B::get_velocity(world, entity);
         let mass = B::get_mass(world, entity);
+        if mass <= 0.0 {
+            // Skip if mass is invalid (entity may be despawned or not yet initialized)
+            continue;
+        }
 
         // Get velocity component along the wall-down direction
         let down_velocity = velocity.dot(wall_down);
@@ -690,6 +710,10 @@ pub fn apply_walk<B: CharacterPhysicsBackend>(world: &mut World) {
     for (entity, config, intent, controller) in entities {
         let current_velocity = B::get_velocity(world, entity);
         let mass = B::get_mass(world, entity);
+        if mass <= 0.0 {
+            // Skip if mass is invalid (entity may be despawned or not yet initialized)
+            continue;
+        }
         let right = controller.ideal_right();
 
         let is_grounded = controller.is_grounded(&config);
@@ -861,6 +885,10 @@ pub fn apply_fly<B: CharacterPhysicsBackend>(world: &mut World) {
         let is_grounded = controller.is_grounded(&config);
         let current_velocity = B::get_velocity(world, entity);
         let mass = B::get_mass(world, entity);
+        if mass <= 0.0 {
+            // Skip if mass is invalid (entity may be despawned or not yet initialized)
+            continue;
+        }
         let up = controller.ideal_up();
         let right = controller.ideal_right();
 
@@ -1046,6 +1074,10 @@ pub fn apply_jump<B: CharacterPhysicsBackend>(world: &mut World) {
         // Compensate for downward velocity before applying jump impulse
         // This helps the character jump with consistent height regardless of falling speed
         let mass = B::get_mass(world, entity);
+        if mass <= 0.0 {
+            // Skip if mass is invalid (entity may be despawned or not yet initialized)
+            continue;
+        }
         let velocity = B::get_velocity(world, entity);
         let ideal_up = controller.ideal_up();
         let vertical_velocity = velocity.dot(ideal_up);
@@ -1155,6 +1187,10 @@ pub fn accumulate_upright_torque<B: CharacterPhysicsBackend>(world: &mut World) 
         // Get inertia for scaling torque
         // Scale by actual inertia so torque produces consistent angular acceleration
         let inertia = B::get_principal_inertia(world, entity);
+        if inertia <= 0.0 {
+            // Skip if inertia is invalid (entity may be despawned or not yet initialized)
+            continue;
+        }
 
         // Apply simple linear spring-damper torque.
         // This is a standard second-order system: torque = -k*θ - c*ω
