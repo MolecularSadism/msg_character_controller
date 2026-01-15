@@ -495,7 +495,7 @@ impl CharacterController {
     /// Check if within the jump spring filter window.
     /// Returns true if downward spring forces should be filtered.
     pub fn in_jump_spring_filter_window(&self) -> bool {
-        !self.jump_spring_filter_timer.finished()
+        !self.jump_spring_filter_timer.is_finished()
     }
 
     /// Check if the character has upward intent (jumping or flying up).
@@ -525,7 +525,7 @@ impl CharacterController {
     /// Check if within coyote time window.
     /// Returns true if the character can still jump after leaving ground or wall.
     pub fn in_coyote_time(&self) -> bool {
-        !self.coyote_timer.finished()
+        !self.coyote_timer.is_finished()
     }
 
     // === Fall Gravity Timer Methods ===
@@ -543,7 +543,7 @@ impl CharacterController {
     /// Check if we are within the jump cancel window.
     /// Returns true if the jump was recent enough to be cancelled.
     pub fn in_jump_cancel_window(&self) -> bool {
-        !self.jumped_timer.finished()
+        !self.jumped_timer.is_finished()
     }
 
     /// Trigger fall gravity for the specified duration.
@@ -559,7 +559,7 @@ impl CharacterController {
     /// Check if fall gravity is currently active.
     /// Returns true if fall gravity should be applied.
     pub fn fall_gravity_active(&self) -> bool {
-        !self.fall_gravity_timer.finished()
+        !self.fall_gravity_timer.is_finished()
     }
 
     // === Wall Jump Movement Block Methods ===
@@ -582,7 +582,7 @@ impl CharacterController {
     /// Check if wall jump movement blocking is currently active.
     /// Returns true if movement toward the wall should be blocked.
     pub fn wall_jump_movement_blocked(&self) -> bool {
-        !self.wall_jump_movement_block_timer.finished()
+        !self.wall_jump_movement_block_timer.is_finished()
     }
 
     /// Get the direction that is currently blocked by wall jump movement blocking.
@@ -610,7 +610,7 @@ impl CharacterController {
     /// Check if we recently jumped.
     /// Returns true if fall gravity should be blocked and coyote timer should not reset.
     pub fn recently_jumped(&self) -> bool {
-        !self.recently_jumped_timer.finished()
+        !self.recently_jumped_timer.is_finished()
     }
 
     // === Jump Max Ascent Timer Methods ===
@@ -628,7 +628,7 @@ impl CharacterController {
     /// Check if within the max ascent window.
     /// Returns true if the jump is still in its max ascent period.
     pub fn in_jump_max_ascent_window(&self) -> bool {
-        !self.jump_max_ascent_timer.finished()
+        !self.jump_max_ascent_timer.is_finished()
     }
 
     /// Check if the max ascent timer just finished this frame.

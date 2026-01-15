@@ -280,7 +280,7 @@ impl JumpRequest {
 
     /// Check if the request is still valid (timer hasn't finished).
     pub fn is_valid(&self) -> bool {
-        !self.buffer_timer.finished()
+        !self.buffer_timer.is_finished()
     }
 }
 
