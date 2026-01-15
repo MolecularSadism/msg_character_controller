@@ -12,15 +12,15 @@ use crate::backend::CharacterPhysicsBackend;
 use crate::collision::CollisionData;
 use crate::config::{CharacterController, ControllerConfig, StairConfig};
 
-/// Event fired when a reactive force (Newton's 3rd law) is applied to an entity.
+/// Message fired when a reactive force (Newton's 3rd law) is applied to an entity.
 ///
-/// This event is used to track forces applied to ground entities so they can be
+/// This message is used to track forces applied to ground entities so they can be
 /// properly cleared in the next frame. Without this, forces would accumulate
 /// indefinitely on entities that characters stand on.
 ///
 /// Uses `ExternalForce` directly to stay consistent with Rapier's API and allow
 /// easy extension if the component gains more fields in the future.
-#[derive(Event, Debug, Clone)]
+#[derive(Message, Debug, Clone)]
 pub struct ReactiveForceApplied {
     /// The entity that received the reactive force.
     pub entity: Entity,
@@ -187,8 +187,8 @@ impl Plugin for Rapier2dBackendPlugin {
     fn build(&self, app: &mut App) {
         use crate::CharacterControllerSet;
 
-        // Register the reactive force event
-        app.add_event::<ReactiveForceApplied>();
+        // Register the reactive force message
+        app.add_message::<ReactiveForceApplied>();
 
         // Phase 1: Preparation - Clear forces from previous frame
         // Both controller forces and reactive forces (ground reactions) are cleared here
@@ -691,18 +691,18 @@ pub fn clear_controller_forces(mut q: Query<(&mut ExternalForce, &mut CharacterC
 /// Clear reactive forces (ground reaction forces) from the previous frame.
 ///
 /// This system runs in the Preparation phase alongside clear_controller_forces.
-/// It reads ReactiveForceApplied events from the previous frame and subtracts
+/// It reads ReactiveForceApplied messages from the previous frame and subtracts
 /// those forces from the corresponding entities' ExternalForce components.
 ///
 /// This ensures that ground entities don't accumulate forces indefinitely
 /// when characters stand on them.
 pub fn clear_reactive_forces(
-    mut events: EventReader<ReactiveForceApplied>,
+    mut messages: MessageReader<ReactiveForceApplied>,
     mut forces: Query<&mut ExternalForce>,
 ) {
     const EPSILON: f32 = 1e-6;
 
-    for event in events.read() {
+    for event in messages.read() {
         let Ok(mut ext_force) = forces.get_mut(event.entity) else {
             continue;
         };
@@ -730,13 +730,13 @@ pub fn clear_reactive_forces(
 /// 1. Applies accumulated forces to ExternalForce
 /// 2. Stores what we applied for next frame's subtraction
 /// 3. Applies ground reaction forces to dynamic ground bodies
-/// 4. Fires ReactiveForceApplied events for ground reaction forces
+/// 4. Fires ReactiveForceApplied messages for ground reaction forces
 ///
 /// This ensures our forces are integrated by Rapier's physics step.
 pub fn apply_controller_forces(
     mut q: Query<(&mut ExternalForce, &mut CharacterController)>,
     mut ground_forces: Query<(&mut ExternalForce, &RigidBody), Without<CharacterController>>,
-    mut reactive_events: EventWriter<ReactiveForceApplied>,
+    mut reactive_messages: MessageWriter<ReactiveForceApplied>,
 ) {
     for (mut ext_force, mut controller) in &mut q {
         // Get accumulated forces and prepare for next frame
@@ -753,8 +753,8 @@ pub fn apply_controller_forces(
                 if *rigid_body == RigidBody::Dynamic {
                     ground_ext_force.force += reaction_force;
 
-                    // Fire event so the force can be cleared next frame
-                    reactive_events.write(ReactiveForceApplied {
+                    // Fire message so the force can be cleared next frame
+                    reactive_messages.write(ReactiveForceApplied {
                         entity: ground_entity,
                         external_force: ExternalForce {
                             force: reaction_force,
