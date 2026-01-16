@@ -9,7 +9,7 @@ An advanced 2D **floating rigidbody character controller** for the [Bevy](https:
 ## Features
 
 - **Floating rigidbody** - Hovers above ground using a spring-damper system rather than resting directly on surfaces
-- **Physics backend abstraction** - Currently supports [Rapier2D](https://rapier.rs/) via `bevy_rapier2d`
+- **Physics backend abstraction** - Supports [Avian2D](https://github.com/Jondolf/avian) (default) and [Rapier2D](https://rapier.rs/)
 - **Movement system** - Walking with slope handling, flying/jetpack propulsion
 - **Jumping** - With coyote time, input buffering, and variable height (hold to jump higher)
 - **Wall mechanics** - Wall jumping and wall clinging with configurable dampening
@@ -18,17 +18,66 @@ An advanced 2D **floating rigidbody character controller** for the [Bevy](https:
 
 ## Installation
 
-Add to your `Cargo.toml`:
+### With Avian2D (default)
 
 ```toml
 [dependencies]
 msg_character_controller = "0.1"
-bevy_rapier2d = "0.31"
+avian2d = "0.4"
 ```
 
-The `rapier2d` feature is enabled by default.
+### With Rapier2D
+
+```toml
+[dependencies]
+msg_character_controller = { version = "0.1", default-features = false, features = ["rapier2d"] }
+bevy_rapier2d = "0.32"
+```
 
 ## Quick Start
+
+### With Avian2D
+
+```rust
+use bevy::prelude::*;
+use avian2d::prelude::*;
+use msg_character_controller::prelude::*;
+
+fn main() {
+    App::new()
+        .add_plugins(DefaultPlugins)
+        .add_plugins(PhysicsPlugins::default())
+        .add_plugins(CharacterControllerPlugin::<Avian2dBackend>::default())
+        .add_systems(Startup, spawn_character)
+        .add_systems(Update, handle_input)
+        .run();
+}
+
+fn spawn_character(mut commands: Commands) {
+    commands.spawn((
+        Transform::from_xyz(0.0, 100.0, 0.0),
+        CharacterController::new(),
+        ControllerConfig::default(),
+        Collider::capsule(4.0, 8.0),
+        LockedAxes::ROTATION_LOCKED,
+        GravityScale(0.0), // Controller manages gravity internally
+    ));
+}
+
+fn handle_input(
+    keyboard: Res<ButtonInput<KeyCode>>,
+    mut query: Query<&mut MovementIntent>,
+) {
+    for mut intent in &mut query {
+        let walk = keyboard.pressed(KeyCode::KeyD) as i32
+                 - keyboard.pressed(KeyCode::KeyA) as i32;
+        intent.set_walk(walk as f32);
+        intent.set_jump_pressed(keyboard.pressed(KeyCode::Space));
+    }
+}
+```
+
+### With Rapier2D
 
 ```rust
 use bevy::prelude::*;
@@ -51,8 +100,8 @@ fn spawn_character(mut commands: Commands) {
         CharacterController::new(),
         ControllerConfig::default(),
         Collider::capsule_y(8.0, 4.0),
-        LockedAxes::ROTATION_LOCKED, // Optional: lock rotation for simple platformers
-        GravityScale(0.0), // Controller manages gravity internally
+        LockedAxes::ROTATION_LOCKED,
+        GravityScale(0.0),
     ));
 }
 
@@ -61,12 +110,9 @@ fn handle_input(
     mut query: Query<&mut MovementIntent>,
 ) {
     for mut intent in &mut query {
-        // Walking: A/D keys
         let walk = keyboard.pressed(KeyCode::KeyD) as i32
                  - keyboard.pressed(KeyCode::KeyA) as i32;
         intent.set_walk(walk as f32);
-
-        // Jumping: Space key (controller handles buffering, coyote time, etc.)
         intent.set_jump_pressed(keyboard.pressed(KeyCode::Space));
     }
 }
@@ -76,7 +122,7 @@ fn handle_input(
 
 | Component | Purpose |
 |-----------|---------|
-| `CharacterController` | Central hub for state: collision data, timers, gravity. Auto-inserts required Rapier components. |
+| `CharacterController` | Central hub for state: collision data, timers, gravity. Auto-inserts required physics components. |
 | `ControllerConfig` | Tunable parameters: float height, speeds, jump settings |
 | `MovementIntent` | Input abstraction: walk, fly, jump_pressed |
 
@@ -96,7 +142,7 @@ let config = ControllerConfig::default()
 
 ## Gravity
 
-The controller manages gravity internally through `CharacterController::gravity`. Disable Rapier's gravity with `GravityScale(0.0)`:
+The controller manages gravity internally through `CharacterController::gravity`. Disable the physics engine's gravity with `GravityScale(0.0)`:
 
 ```rust
 // Standard downward gravity (default)
@@ -129,9 +175,10 @@ cargo run --example spherical_planet --features examples
 
 ## Bevy Compatibility
 
-| Bevy | msg_character_controller |
-|------|--------------------------|
-| 0.16 | 0.1                      |
+| Bevy | bevy_rapier2d | avian2d | msg_character_controller |
+|------|---------------|---------|--------------------------|
+| 0.17 | 0.32          | 0.4     | 0.2                      |
+| 0.16 | 0.31          | -       | 0.1                      |
 
 ## License
 
