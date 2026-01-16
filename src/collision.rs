@@ -45,7 +45,7 @@ mod tests {
 
     #[test]
     fn sensor_cast_with_entity() {
-        let entity = Entity::from_raw(42);
+        let entity = Entity::from_bits(42);
         let cast = CollisionData::new(3.0, Vec2::X, Vec2::ZERO, Some(entity));
 
         assert_eq!(cast.entity, Some(entity));
