@@ -17,7 +17,6 @@
 mod helpers;
 
 use bevy::prelude::*;
-use bevy::sprite::ColorMaterial;
 use bevy_egui::EguiPlugin;
 use bevy_rapier2d::prelude::*;
 use helpers::{
@@ -60,7 +59,7 @@ fn main() {
         .add_plugins(DefaultPlugins.set(WindowPlugin {
             primary_window: Some(Window {
                 title: "Platform Box - Character Controller Example".into(),
-                resolution: (1280.0, 720.0).into(),
+                resolution: (1280, 720).into(),
                 ..default()
             }),
             ..default()

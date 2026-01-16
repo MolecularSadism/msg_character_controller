@@ -109,8 +109,11 @@ pub mod collision;
 pub mod config;
 pub mod intent;
 
-// Systems are internal - they're added automatically by the plugin
-pub(crate) mod systems;
+/// Character controller systems.
+///
+/// These are registered automatically by the plugin, but are public so that
+/// you can order your own systems relative to them (e.g., for custom gravity).
+pub mod systems;
 
 #[cfg(feature = "rapier2d")]
 pub mod rapier;

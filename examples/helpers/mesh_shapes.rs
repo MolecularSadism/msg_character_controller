@@ -4,8 +4,9 @@
 //! of physics colliders (capsules, circles, triangles, rectangles).
 
 use bevy::prelude::*;
-use bevy::render::mesh::Indices;
+use bevy::mesh::Indices;
 use bevy::render::render_resource::PrimitiveTopology;
+use bevy::asset::RenderAssetUsages;
 use std::f32::consts::PI;
 
 /// Creates a 2D capsule mesh (stadium shape).
@@ -71,7 +72,7 @@ pub fn create_capsule_mesh(half_height: f32, radius: f32, segments: usize) -> Me
 
     let mut mesh = Mesh::new(
         PrimitiveTopology::TriangleList,
-        bevy::render::render_asset::RenderAssetUsages::default(),
+        RenderAssetUsages::default(),
     );
     mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, positions);
     mesh.insert_attribute(Mesh::ATTRIBUTE_NORMAL, normals);
@@ -118,7 +119,7 @@ pub fn create_circle_mesh(radius: f32, segments: usize) -> Mesh {
 
     let mut mesh = Mesh::new(
         PrimitiveTopology::TriangleList,
-        bevy::render::render_asset::RenderAssetUsages::default(),
+        RenderAssetUsages::default(),
     );
     mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, positions);
     mesh.insert_attribute(Mesh::ATTRIBUTE_NORMAL, normals);
@@ -170,7 +171,7 @@ pub fn create_triangle_mesh(vertices: &[Vec2; 3]) -> Mesh {
 
     let mut mesh = Mesh::new(
         PrimitiveTopology::TriangleList,
-        bevy::render::render_asset::RenderAssetUsages::default(),
+        RenderAssetUsages::default(),
     );
     mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, positions);
     mesh.insert_attribute(Mesh::ATTRIBUTE_NORMAL, normals);
@@ -189,7 +190,7 @@ pub fn create_polygon_mesh(vertices: &[Vec2]) -> Mesh {
         // Return a degenerate mesh for invalid input
         let mut mesh = Mesh::new(
             PrimitiveTopology::TriangleList,
-            bevy::render::render_asset::RenderAssetUsages::default(),
+            RenderAssetUsages::default(),
         );
         mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, Vec::<[f32; 3]>::new());
         mesh.insert_attribute(Mesh::ATTRIBUTE_NORMAL, Vec::<[f32; 3]>::new());
@@ -269,7 +270,7 @@ pub fn create_polygon_mesh(vertices: &[Vec2]) -> Mesh {
 
     let mut mesh = Mesh::new(
         PrimitiveTopology::TriangleList,
-        bevy::render::render_asset::RenderAssetUsages::default(),
+        RenderAssetUsages::default(),
     );
     mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, positions);
     mesh.insert_attribute(Mesh::ATTRIBUTE_NORMAL, normals);
@@ -298,7 +299,7 @@ pub fn create_rectangle_mesh(half_width: f32, half_height: f32) -> Mesh {
 
     let mut mesh = Mesh::new(
         PrimitiveTopology::TriangleList,
-        bevy::render::render_asset::RenderAssetUsages::default(),
+        RenderAssetUsages::default(),
     );
     mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, positions);
     mesh.insert_attribute(Mesh::ATTRIBUTE_NORMAL, normals);

@@ -33,6 +33,7 @@ rapier2d = ["dep:bevy_rapier2d"]
 examples = [
     "bevy/bevy_core_pipeline",
     "bevy/bevy_sprite",
+    "bevy/bevy_sprite_render",
     "bevy/bevy_text",
     "bevy/bevy_ui",
     "bevy/bevy_winit",
@@ -51,28 +52,54 @@ version = "0.32.0"
 features = ["simd-stable", "debug-render-2d"]
 optional = true
 
-# Examples - run with: cargo run --example platform_box --features examples
+# Rapier2D Examples - run with: cargo run --example platform_box --features "examples,rapier2d" --no-default-features
 [[example]]
 name = "platform_box"
 path = "examples/platform_box.rs"
-required-features = ["examples"]
+required-features = ["examples", "rapier2d"]
 
 [[example]]
 name = "spherical_planet"
 path = "examples/spherical_planet.rs"
-required-features = ["examples"]
+required-features = ["examples", "rapier2d"]
 
 [[example]]
 name = "float_test"
 path = "examples/float_test.rs"
-required-features = ["examples"]
+required-features = ["examples", "rapier2d"]
 
 [[example]]
 name = "hilly_planet"
 path = "examples/hilly_planet.rs"
-required-features = ["examples"]
+required-features = ["examples", "rapier2d"]
 
 [[example]]
 name = "ballpit"
 path = "examples/ballpit.rs"
-required-features = ["examples"]
+required-features = ["examples", "rapier2d"]
+
+# Avian2D Examples - run with: cargo run --example platform_box_avian --features examples
+[[example]]
+name = "platform_box_avian"
+path = "examples/platform_box_avian.rs"
+required-features = ["examples", "avian2d"]
+
+[[example]]
+name = "spherical_planet_avian"
+path = "examples/spherical_planet_avian.rs"
+required-features = ["examples", "avian2d"]
+
+[[example]]
+name = "float_test_avian"
+path = "examples/float_test_avian.rs"
+required-features = ["examples", "avian2d"]
+
+[[example]]
+name = "hilly_planet_avian"
+path = "examples/hilly_planet_avian.rs"
+required-features = ["examples", "avian2d"]
+
+[[example]]
+name = "ballpit_avian"
+path = "examples/ballpit_avian.rs"
+required-features = ["examples", "avian2d"]

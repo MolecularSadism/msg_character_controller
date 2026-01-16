@@ -6,11 +6,17 @@
 
 use bevy::prelude::*;
 use bevy_egui::{EguiContexts, EguiPrimaryContextPass, egui};
-use bevy_rapier2d::prelude::{ExternalForce, ExternalImpulse, Velocity};
 use msg_character_controller::prelude::*;
 use std::marker::PhantomData;
 
 use super::{DiagnosticsData, config_panel_ui, diagnostics_panel_ui, respawn_player};
+
+// Backend-specific velocity types
+#[cfg(feature = "rapier2d")]
+use bevy_rapier2d::prelude::{ExternalForce as RapierExternalForce, ExternalImpulse as RapierExternalImpulse, Velocity as RapierVelocity};
+
+#[cfg(feature = "avian2d")]
+use avian2d::prelude::{ConstantForce as AvianConstantForce, LinearVelocity as AvianLinearVelocity};
 
 /// Resource containing the UI panel state.
 #[derive(Resource)]
@@ -314,16 +320,33 @@ impl<M: Component> Plugin for CharacterControllerUiPlugin<M> {
         app.init_resource::<SpawnConfig>();
         app.init_resource::<DefaultControllerSettings>();
 
-        // Add the UI systems
+        // Add the UI systems - use backend-specific implementations
         app.add_systems(
             EguiPrimaryContextPass,
             (
                 toggle_panels_visibility,
                 show_help_text,
-                character_controller_settings_ui_system::<M>,
-                character_controller_diagnostics_ui_system::<M>,
+            ),
+        );
+
+        #[cfg(feature = "rapier2d")]
+        app.add_systems(
+            EguiPrimaryContextPass,
+            (
+                character_controller_settings_ui_system_rapier::<M>,
+                character_controller_diagnostics_ui_system_rapier::<M>,
             )
-                .chain(),
+                .after(show_help_text),
+        );
+
+        #[cfg(feature = "avian2d")]
+        app.add_systems(
+            EguiPrimaryContextPass,
+            (
+                character_controller_settings_ui_system_avian::<M>,
+                character_controller_diagnostics_ui_system_avian::<M>,
+            )
+                .after(show_help_text),
         );
     }
 }
@@ -370,17 +393,19 @@ fn show_help_text(mut contexts: EguiContexts, ui_state: Res<CharacterControllerU
         });
 }
 
-/// System that renders the settings panel.
-fn character_controller_settings_ui_system<M: Component>(
+// ==================== Rapier2D Backend Systems ====================
+
+#[cfg(feature = "rapier2d")]
+fn character_controller_settings_ui_system_rapier<M: Component>(
     mut contexts: EguiContexts,
     mut config_query: Query<
         (
             &mut ControllerConfig,
             &mut CharacterController,
             &mut Transform,
-            &mut Velocity,
-            &mut ExternalImpulse,
-            &mut ExternalForce,
+            &mut RapierVelocity,
+            &mut RapierExternalImpulse,
+            &mut RapierExternalForce,
             &mut MovementIntent,
         ),
         With<M>,
@@ -390,23 +415,13 @@ fn character_controller_settings_ui_system<M: Component>(
     spawn_config: Res<SpawnConfig>,
     default_settings: Res<DefaultControllerSettings>,
 ) {
-    // Skip the first few frames to ensure egui is fully initialized
-    if ui_state.frame_count <= 2 {
-        return;
-    }
-
-    if !ui_state.show_panels {
+    if ui_state.frame_count <= 2 || !ui_state.show_panels || !panel_config.show_config_panel {
         return;
     }
 
     let Ok(ctx) = contexts.ctx_mut() else {
         return;
     };
-
-    // Settings panel
-    if !panel_config.show_config_panel {
-        return;
-    }
 
     let Ok((
         mut config,
@@ -429,7 +444,6 @@ fn character_controller_settings_ui_system<M: Component>(
         .resizable(true)
         .show(ctx, |ui| {
             egui::ScrollArea::vertical().show(ui, |ui| {
-                // Reset and Respawn buttons at the top
                 ui.horizontal(|ui| {
                     if ui.button("Reset to Defaults").clicked() {
                         *config = default_settings.config.clone();
@@ -439,46 +453,42 @@ fn character_controller_settings_ui_system<M: Component>(
                         respawn_player(
                             spawn_config.get_position(),
                             &mut transform,
-                            &mut velocity,
-                            &mut external_impulse,
-                            &mut external_force,
                             &mut controller,
                             &mut movement_intent,
                         );
+                        velocity.linvel = Vec2::ZERO;
+                        velocity.angvel = 0.0;
+                        external_impulse.impulse = Vec2::ZERO;
+                        external_impulse.torque_impulse = 0.0;
+                        external_force.force = Vec2::ZERO;
+                        external_force.torque = 0.0;
                     }
                 });
                 ui.add_space(8.0);
-
-                // Standard config panel
                 config_panel_ui(ui, &mut config, &mut controller);
             });
         });
 }
 
-/// System that renders the diagnostics panel.
-fn character_controller_diagnostics_ui_system<M: Component>(
+#[cfg(feature = "rapier2d")]
+fn character_controller_diagnostics_ui_system_rapier<M: Component>(
     mut contexts: EguiContexts,
     diagnostics_query: Query<
         (
             &ControllerConfig,
             &CharacterController,
             &Transform,
-            &Velocity,
+            &RapierVelocity,
             Option<&MovementIntent>,
-            Option<&ExternalForce>,
-            Option<&ExternalImpulse>,
+            Option<&RapierExternalForce>,
+            Option<&RapierExternalImpulse>,
         ),
         With<M>,
     >,
     ui_state: Res<CharacterControllerUiState>,
     panel_config: Res<CharacterControllerUiPanelConfig>,
 ) {
-    // Skip the first few frames to ensure egui is fully initialized
-    if ui_state.frame_count <= 2 {
-        return;
-    }
-
-    if !ui_state.show_panels {
+    if ui_state.frame_count <= 2 || !ui_state.show_panels || !panel_config.show_diagnostics_panel {
         return;
     }
 
@@ -486,20 +496,8 @@ fn character_controller_diagnostics_ui_system<M: Component>(
         return;
     };
 
-    // Diagnostics panel
-    if !panel_config.show_diagnostics_panel {
-        return;
-    }
-
-    let Ok((
-        config_ref,
-        controller_ref,
-        transform_ref,
-        velocity_ref,
-        movement,
-        ext_force,
-        ext_impulse,
-    )) = diagnostics_query.single()
+    let Ok((config_ref, controller_ref, transform_ref, velocity_ref, movement, ext_force, ext_impulse)) =
+        diagnostics_query.single()
     else {
         return;
     };
@@ -515,10 +513,134 @@ fn character_controller_diagnostics_ui_system<M: Component>(
                 controller: controller_ref,
                 config: config_ref,
                 transform: transform_ref,
-                velocity: velocity_ref,
+                velocity: velocity_ref.linvel,
+                angular_velocity: velocity_ref.angvel,
                 movement_intent: movement,
-                external_force: ext_force,
-                external_impulse: ext_impulse,
+                external_force: ext_force.map(|f| f.force),
+                external_impulse: ext_impulse.map(|i| i.impulse),
+            };
+            diagnostics_panel_ui(ui, &data);
+        });
+}
+
+// ==================== Avian2D Backend Systems ====================
+
+#[cfg(feature = "avian2d")]
+fn character_controller_settings_ui_system_avian<M: Component>(
+    mut contexts: EguiContexts,
+    mut config_query: Query<
+        (
+            &mut ControllerConfig,
+            &mut CharacterController,
+            &mut Transform,
+            &mut AvianLinearVelocity,
+            &mut AvianConstantForce,
+            &mut MovementIntent,
+        ),
+        With<M>,
+    >,
+    ui_state: Res<CharacterControllerUiState>,
+    panel_config: Res<CharacterControllerUiPanelConfig>,
+    spawn_config: Res<SpawnConfig>,
+    default_settings: Res<DefaultControllerSettings>,
+) {
+    if ui_state.frame_count <= 2 || !ui_state.show_panels || !panel_config.show_config_panel {
+        return;
+    }
+
+    let Ok(ctx) = contexts.ctx_mut() else {
+        return;
+    };
+
+    let Ok((
+        mut config,
+        mut controller,
+        mut transform,
+        mut velocity,
+        mut constant_force,
+        mut movement_intent,
+    )) = config_query.single_mut()
+    else {
+        return;
+    };
+
+    egui::Window::new("Controller Settings")
+        .default_pos(panel_config.config_window_pos)
+        .default_width(300.0)
+        .default_height(400.0)
+        .collapsible(true)
+        .resizable(true)
+        .show(ctx, |ui| {
+            egui::ScrollArea::vertical().show(ui, |ui| {
+                ui.horizontal(|ui| {
+                    if ui.button("Reset to Defaults").clicked() {
+                        *config = default_settings.config.clone();
+                        controller.gravity = default_settings.gravity;
+                    }
+                    if ui.button("Respawn Player").clicked() {
+                        respawn_player(
+                            spawn_config.get_position(),
+                            &mut transform,
+                            &mut controller,
+                            &mut movement_intent,
+                        );
+                        velocity.0 = Vec2::ZERO;
+                        constant_force.0 = Vec2::ZERO;
+                    }
+                });
+                ui.add_space(8.0);
+                config_panel_ui(ui, &mut config, &mut controller);
+            });
+        });
+}
+
+#[cfg(feature = "avian2d")]
+fn character_controller_diagnostics_ui_system_avian<M: Component>(
+    mut contexts: EguiContexts,
+    diagnostics_query: Query<
+        (
+            &ControllerConfig,
+            &CharacterController,
+            &Transform,
+            &AvianLinearVelocity,
+            Option<&MovementIntent>,
+            Option<&AvianConstantForce>,
+        ),
+        With<M>,
+    >,
+    ui_state: Res<CharacterControllerUiState>,
+    panel_config: Res<CharacterControllerUiPanelConfig>,
+) {
+    if ui_state.frame_count <= 2 || !ui_state.show_panels || !panel_config.show_diagnostics_panel {
+        return;
+    }
+
+    let Ok(ctx) = contexts.ctx_mut() else {
+        return;
+    };
+
+    let Ok((config_ref, controller_ref, transform_ref, velocity_ref, movement, constant_force)) =
+        diagnostics_query.single()
+    else {
+        return;
+    };
+
+    egui::Window::new("Diagnostics")
+        .default_pos(panel_config.diagnostics_window_pos)
+        .default_width(280.0)
+        .default_height(400.0)
+        .collapsible(true)
+        .resizable(true)
+        .show(ctx, |ui| {
+            let data = DiagnosticsData {
+                controller: controller_ref,
+                config: config_ref,
+                transform: transform_ref,
+                velocity: velocity_ref.0,
+                angular_velocity: 0.0, // Avian uses separate AngularVelocity component
+                movement_intent: movement,
+                external_force: constant_force.map(|f| f.0),
+                external_impulse: None, // Avian 0.4 doesn't have persistent impulses
             };
             diagnostics_panel_ui(ui, &data);
         });
