@@ -1,13 +1,10 @@
-//! Ballpit Example
+//! Platform Box Example (Avian2D Backend)
 //!
-//! A playable example demonstrating dynamic ground interaction.
-//! The character can stand on dynamic balls and push them down through
-//! the spring force reaction system (Newton's 3rd law).
-//!
-//! ## Features
-//! - Dynamic balls that respond to the player standing on them
-//! - Walls to contain the balls
-//! - A floor that the balls rest on
+//! A playable example with a character in a box environment featuring:
+//! - A floor
+//! - Walls on both sides
+//! - A platform in the middle
+//! - A triangle slope on the right
 //!
 //! ## Controls
 //! - **A/D** or **Left/Right**: Move horizontally
@@ -19,12 +16,12 @@
 
 mod helpers;
 
+use avian2d::prelude::*;
 use bevy::prelude::*;
 use bevy_egui::EguiPlugin;
-use bevy_rapier2d::prelude::*;
 use helpers::{
     CharacterControllerUiPlugin, ControlsPlugin, DefaultControllerSettings, Player, SpawnConfig,
-    create_capsule_mesh, create_circle_mesh, create_rectangle_mesh,
+    create_capsule_mesh, create_circle_mesh, create_rectangle_mesh, create_triangle_mesh,
 };
 use msg_character_controller::prelude::*;
 
@@ -33,19 +30,20 @@ use msg_character_controller::prelude::*;
 const PLAYER_HALF_HEIGHT: f32 = 8.0;
 const PLAYER_RADIUS: f32 = 6.0;
 
-const BOX_WIDTH: f32 = 600.0;
-const BOX_HEIGHT: f32 = 400.0;
+const BOX_WIDTH: f32 = 800.0;
+const BOX_HEIGHT: f32 = 600.0;
 const WALL_THICKNESS: f32 = 20.0;
 
-const BALL_RADIUS: f32 = 12.0;
-const BALL_COUNT: usize = 40;
+const PLATFORM_WIDTH: f32 = 200.0;
+const PLATFORM_HEIGHT: f32 = 20.0;
+const PLATFORM_Y: f32 = 100.0;
 
-const PX_PER_M: f32 = 10.0; // Pixels per meter for Rapier
+const PX_PER_M: f32 = 10.0; // Pixels per meter
 
 // ==================== Main ====================
 
 fn spawn_position() -> Vec2 {
-    Vec2::new(0.0, BOX_HEIGHT / 2.0 - 50.0)
+    Vec2::new(-200.0, -BOX_HEIGHT / 2.0 + WALL_THICKNESS + 50.0)
 }
 
 fn default_gravity() -> Vec2 {
@@ -53,29 +51,24 @@ fn default_gravity() -> Vec2 {
 }
 
 fn default_config() -> ControllerConfig {
-    ControllerConfig::default()
-        .with_float_height(6.0)
-        .with_spring(400.0, 15.0)
-        .with_spring_max_force(4000.0)
+    ControllerConfig::default().with_float_height(6.0)
 }
 
 fn main() {
     App::new()
         .add_plugins(DefaultPlugins.set(WindowPlugin {
             primary_window: Some(Window {
-                title: "Ballpit - Dynamic Ground Reaction Example".into(),
+                title: "Platform Box (Avian2D) - Character Controller Example".into(),
                 resolution: (1280, 720).into(),
                 ..default()
             }),
             ..default()
         }))
         // Physics
-        .add_plugins(RapierPhysicsPlugin::<NoUserData>::pixels_per_meter(
-            PX_PER_M,
-        ))
-        .add_plugins(RapierDebugRenderPlugin::default())
+        .add_plugins(PhysicsPlugins::default().with_length_unit(PX_PER_M))
+        .add_plugins(PhysicsDebugPlugin::default())
         // Character controller
-        .add_plugins(CharacterControllerPlugin::<Rapier2dBackend>::default())
+        .add_plugins(CharacterControllerPlugin::<Avian2dBackend>::default())
         // Controls (input handling and camera follow)
         .add_plugins(ControlsPlugin::default())
         // Egui for settings UI
@@ -102,14 +95,15 @@ fn setup(
 ) {
     // Spawn environment
     spawn_box(&mut commands, &mut meshes, &mut materials);
-    spawn_balls(&mut commands, &mut meshes, &mut materials);
+    spawn_obstacles(&mut commands, &mut meshes, &mut materials);
+    spawn_slope(&mut commands, &mut meshes, &mut materials);
 
     // Spawn player
     spawn_player(&mut commands, &mut meshes, &mut materials);
 
     // UI instructions - use Pickable::IGNORE to prevent blocking mouse events
     commands.spawn((
-        Text::new("A/D: Move | W: Jump | Space: Propel Up | S: Propel Down\nStand on balls to push them down!"),
+        Text::new("A/D: Move | W: Jump | Space: Propel Up | S: Propel Down"),
         TextFont {
             font_size: 20.0,
             ..default()
@@ -175,48 +169,93 @@ fn spawn_box(
     );
 }
 
-fn spawn_balls(
+fn spawn_obstacles(
     commands: &mut Commands,
     meshes: &mut ResMut<Assets<Mesh>>,
     materials: &mut ResMut<Assets<ColorMaterial>>,
 ) {
-    let half_width = BOX_WIDTH / 2.0 - WALL_THICKNESS - BALL_RADIUS - 5.0;
-    let base_y = -BOX_HEIGHT / 2.0 + BALL_RADIUS + 5.0;
+    spawn_static_collider(
+        commands,
+        meshes,
+        materials,
+        Vec2::new(0.0, PLATFORM_Y),
+        Vec2::new(PLATFORM_WIDTH / 2.0, PLATFORM_HEIGHT / 2.0),
+        Color::srgb(0.4, 0.5, 0.3),
+    );
 
-    // Spawn balls in a grid pattern
-    let cols = 8;
-    let rows = BALL_COUNT / cols + 1;
-    let spacing_x = (half_width * 2.0) / (cols as f32);
-    let spacing_y = BALL_RADIUS * 2.5;
-
-    let mut count = 0;
-    for row in 0..rows {
-        for col in 0..cols {
-            if count >= BALL_COUNT {
-                break;
-            }
-
-            // Offset every other row for a more natural look
-            let x_offset = if row % 2 == 0 { 0.0 } else { spacing_x / 2.0 };
-            let x = -half_width + spacing_x / 2.0 + col as f32 * spacing_x + x_offset;
-            let y = base_y + row as f32 * spacing_y;
-
-            // Vary ball color slightly for visual interest
-            let hue = (count as f32 / BALL_COUNT as f32) * 0.3 + 0.55; // Blue to purple range
-            let color = Color::hsl(hue * 360.0, 0.7, 0.5);
-
-            spawn_dynamic_ball(
-                commands,
-                meshes,
-                materials,
-                Vec2::new(x, y),
-                BALL_RADIUS,
-                color,
-            );
-
-            count += 1;
-        }
+    for i in 0..=5 {
+        spawn_ball_static_collider(
+            commands,
+            meshes,
+            materials,
+            Vec2::new(50.0 + 13.0 * i as f32, -BOX_HEIGHT / 2.0 + 10.0 * i as f32),
+            5.0,
+            Color::srgb(0.8, 0.2, 0.2),
+        );
     }
+
+    for i in 0..=5 {
+        spawn_ball_static_collider(
+            commands,
+            meshes,
+            materials,
+            Vec2::new(
+                -BOX_WIDTH / 2.0 + WALL_THICKNESS + 150.0 + 20.0 * i as f32,
+                -BOX_HEIGHT / 2.0 + 5.0,
+            ),
+            5.0,
+            Color::srgb(0.8, 0.2, 0.2),
+        );
+    }
+
+    for i in 0..=5 {
+        spawn_ball_static_collider(
+            commands,
+            meshes,
+            materials,
+            Vec2::new(
+                -BOX_WIDTH / 2.0 + WALL_THICKNESS + 20.0 + 20.0 * i as f32,
+                -BOX_HEIGHT / 2.0,
+            ),
+            5.0,
+            Color::srgb(0.8, 0.2, 0.2),
+        );
+    }
+}
+
+fn spawn_slope(
+    commands: &mut Commands,
+    meshes: &mut ResMut<Assets<Mesh>>,
+    materials: &mut ResMut<Assets<ColorMaterial>>,
+) {
+    // Create a triangle slope using a convex hull collider
+    // Position it on the right side of the box
+    let slope_x = 250.0;
+    let slope_y = -BOX_HEIGHT / 2.0;
+
+    // Triangle vertices (relative to center)
+    let vertices = vec![
+        Vec2::new(-80.0, 0.0),  // Bottom left
+        Vec2::new(80.0, 0.0),   // Bottom right
+        Vec2::new(80.0, 100.0), // Top right
+    ];
+
+    // Use convex_hull which works well for triangles
+    let collider = Collider::convex_hull(vertices.clone()).expect("Failed to create slope collider");
+
+    // Create a triangle mesh that matches the collider
+    let triangle_vertices = [vertices[0], vertices[1], vertices[2]];
+    let mesh = meshes.add(create_triangle_mesh(&triangle_vertices));
+    let material = materials.add(ColorMaterial::from_color(Color::srgb(0.5, 0.4, 0.3)));
+
+    commands.spawn((
+        Transform::from_translation(Vec3::new(slope_x, slope_y, 0.0)),
+        GlobalTransform::default(),
+        RigidBody::Static,
+        collider,
+        Mesh2d(mesh),
+        MeshMaterial2d(material),
+    ));
 }
 
 fn spawn_static_collider(
@@ -233,14 +272,14 @@ fn spawn_static_collider(
     commands.spawn((
         Transform::from_translation(position.extend(0.0)),
         GlobalTransform::default(),
-        RigidBody::Fixed,
-        Collider::cuboid(half_size.x, half_size.y),
+        RigidBody::Static,
+        Collider::rectangle(half_size.x * 2.0, half_size.y * 2.0),
         Mesh2d(mesh),
         MeshMaterial2d(material),
     ));
 }
 
-fn spawn_dynamic_ball(
+fn spawn_ball_static_collider(
     commands: &mut Commands,
     meshes: &mut ResMut<Assets<Mesh>>,
     materials: &mut ResMut<Assets<ColorMaterial>>,
@@ -254,20 +293,8 @@ fn spawn_dynamic_ball(
     commands.spawn((
         Transform::from_translation(position.extend(0.0)),
         GlobalTransform::default(),
-        RigidBody::Dynamic,
-        Collider::ball(radius),
-        // ExternalForce is required for receiving the reaction force
-        ExternalForce::default(),
-        Velocity::default(),
-        // Add some restitution for bouncy behavior
-        Restitution::coefficient(0.3),
-        // Moderate friction
-        Friction::coefficient(0.5),
-        // Lower damping for more lively balls
-        Damping {
-            linear_damping: 0.2,
-            angular_damping: 0.5,
-        },
+        RigidBody::Static,
+        Collider::circle(radius),
         Mesh2d(mesh),
         MeshMaterial2d(material),
     ));
@@ -299,16 +326,8 @@ fn spawn_player(
             MovementIntent::default(),
         ))
         .insert((
-            // Physics
-            RigidBody::Dynamic,
-            Velocity::default(),
-            ExternalForce::default(),
-            ExternalImpulse::default(),
-            Collider::capsule_y(PLAYER_HALF_HEIGHT, PLAYER_RADIUS),
+            // Physics - RigidBody::Dynamic and other components are auto-inserted via #[require]
+            Collider::capsule(PLAYER_RADIUS, PLAYER_HALF_HEIGHT),
             GravityScale(0.0), // Gravity is applied internally by the controller
-            Damping {
-                linear_damping: 0.0,
-                angular_damping: 0.0,
-            },
         ));
 }

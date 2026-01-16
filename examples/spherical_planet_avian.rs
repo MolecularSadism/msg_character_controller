@@ -1,4 +1,4 @@
-//! Spherical Planet Example
+//! Spherical Planet Example (Avian2D Backend)
 //!
 //! A playable example with a character walking on a spherical planet featuring:
 //! - A circular planet with radial gravity
@@ -17,9 +17,9 @@
 
 mod helpers;
 
+use avian2d::prelude::*;
 use bevy::prelude::*;
 use bevy_egui::{EguiContexts, EguiPlugin, EguiPrimaryContextPass, egui};
-use bevy_rapier2d::prelude::*;
 use helpers::{
     CharacterControllerUiPlugin, CharacterControllerUiState, ControlsPlugin,
     DefaultControllerSettings, Player, SpawnConfig, create_capsule_mesh, create_circle_mesh,
@@ -79,17 +79,17 @@ fn main() {
     App::new()
         .add_plugins(DefaultPlugins.set(WindowPlugin {
             primary_window: Some(Window {
-                title: "Spherical Planet - Character Controller Example".into(),
+                title: "Spherical Planet (Avian2D) - Character Controller Example".into(),
                 resolution: (1280, 720).into(),
                 ..default()
             }),
             ..default()
         }))
         // Physics
-        .add_plugins(RapierPhysicsPlugin::<NoUserData>::pixels_per_meter(100.0))
-        .add_plugins(RapierDebugRenderPlugin::default())
+        .add_plugins(PhysicsPlugins::default().with_length_unit(100.0))
+        .add_plugins(PhysicsDebugPlugin::default())
         // Character controller
-        .add_plugins(CharacterControllerPlugin::<Rapier2dBackend>::default())
+        .add_plugins(CharacterControllerPlugin::<Avian2dBackend>::default())
         // Controls (input handling only - we have custom camera follow for planet)
         .add_plugins(ControlsPlugin::default())
         // Egui for settings UI
@@ -111,7 +111,7 @@ fn main() {
             FixedUpdate,
             // Update orientation and gravity before controller systems
             update_player_orientation_and_gravity.before(
-                msg_character_controller::systems::accumulate_spring_force::<Rapier2dBackend>,
+                msg_character_controller::systems::accumulate_spring_force::<Avian2dBackend>,
             ),
         )
         // Extra settings UI for planet-specific configuration
@@ -190,16 +190,15 @@ fn spawn_planet(
     meshes: &mut ResMut<Assets<Mesh>>,
     materials: &mut ResMut<Assets<ColorMaterial>>,
 ) {
-    // Create planet as a circle collider (ball)
-    // This is simpler and more efficient than a trimesh for a circle
+    // Create planet as a circle collider
     let mesh = meshes.add(create_circle_mesh(PLANET_RADIUS, 64));
     let material = materials.add(ColorMaterial::from_color(Color::srgb(0.25, 0.35, 0.25)));
 
     commands.spawn((
         Transform::from_translation(PLANET_CENTER.extend(0.0)),
         GlobalTransform::default(),
-        RigidBody::Fixed,
-        Collider::ball(PLANET_RADIUS),
+        RigidBody::Static,
+        Collider::circle(PLANET_RADIUS),
         Mesh2d(mesh),
         MeshMaterial2d(material),
     ));
@@ -228,8 +227,8 @@ fn spawn_surface_platform(
     commands.spawn((
         Transform::from_translation(position.extend(0.0)).with_rotation(rotation),
         GlobalTransform::default(),
-        RigidBody::Fixed,
-        Collider::cuboid(width / 2.0, height / 2.0),
+        RigidBody::Static,
+        Collider::rectangle(width, height),
         Mesh2d(mesh),
         MeshMaterial2d(material),
     ));
@@ -258,7 +257,7 @@ fn spawn_surface_slope(
     ];
 
     // Use convex_hull which works well for triangles
-    let collider = Collider::convex_hull(&vertices).expect("Failed to create slope collider");
+    let collider = Collider::convex_hull(vertices.clone()).expect("Failed to create slope collider");
 
     // Create triangle mesh matching the collider
     let triangle_vertices = [vertices[0], vertices[1], vertices[2]];
@@ -268,7 +267,7 @@ fn spawn_surface_slope(
     commands.spawn((
         Transform::from_translation(position.extend(0.0)).with_rotation(rotation),
         GlobalTransform::default(),
-        RigidBody::Fixed,
+        RigidBody::Static,
         collider,
         Mesh2d(mesh),
         MeshMaterial2d(material),
@@ -312,17 +311,10 @@ fn spawn_player(
             MovementIntent::default(),
         ))
         .insert((
-            // Physics
-            RigidBody::Dynamic,
-            Velocity::default(),
-            ExternalForce::default(),
-            ExternalImpulse::default(),
-            Collider::capsule_y(PLAYER_HALF_HEIGHT / 2.0, PLAYER_RADIUS),
+            // Physics - RigidBody::Dynamic and other components are auto-inserted via #[require]
+            Collider::capsule(PLAYER_RADIUS, PLAYER_HALF_HEIGHT / 2.0),
             GravityScale(0.0), // Gravity is applied internally by the controller
-            Damping {
-                linear_damping: 0.0,
-                angular_damping: 5.0, // Some angular damping for stability
-            },
+            AngularDamping(5.0), // Some angular damping for stability
         ));
 }
 

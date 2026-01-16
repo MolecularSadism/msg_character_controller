@@ -1,4 +1,4 @@
-//! Float Test Example
+//! Float Test Example (Avian2D Backend)
 //!
 //! This example specifically tests if the character controller's floating spring
 //! system is working. It spawns a character high in the air above a platform.
@@ -14,9 +14,9 @@
 
 mod helpers;
 
+use avian2d::prelude::*;
 use bevy::prelude::*;
 use bevy_egui::EguiPlugin;
-use bevy_rapier2d::prelude::*;
 use helpers::{
     CharacterControllerUiPlugin, ControlsPlugin, DefaultControllerSettings, Player, SpawnConfig,
     create_capsule_mesh, create_rectangle_mesh,
@@ -41,17 +41,17 @@ fn main() {
     App::new()
         .add_plugins(DefaultPlugins.set(WindowPlugin {
             primary_window: Some(Window {
-                title: "Float Test - Character Controller".into(),
+                title: "Float Test (Avian2D) - Character Controller".into(),
                 resolution: (1280, 720).into(),
                 ..default()
             }),
             ..default()
         }))
         // Physics
-        .add_plugins(RapierPhysicsPlugin::<NoUserData>::pixels_per_meter(100.0))
-        .add_plugins(RapierDebugRenderPlugin::default())
+        .add_plugins(PhysicsPlugins::default().with_length_unit(100.0))
+        .add_plugins(PhysicsDebugPlugin::default())
         // Character controller
-        .add_plugins(CharacterControllerPlugin::<Rapier2dBackend>::default())
+        .add_plugins(CharacterControllerPlugin::<Avian2dBackend>::default())
         // Controls (input handling and camera follow)
         .add_plugins(ControlsPlugin::default())
         // Egui for settings UI
@@ -103,8 +103,8 @@ fn setup(
     commands.spawn((
         Transform::from_translation(Vec3::new(0.0, -200.0, 0.0)),
         GlobalTransform::default(),
-        RigidBody::Fixed,
-        Collider::cuboid(400.0, 20.0),
+        RigidBody::Static,
+        Collider::rectangle(800.0, 40.0),
         Mesh2d(platform_mesh),
         MeshMaterial2d(platform_material),
     ));
@@ -152,18 +152,10 @@ fn setup(
             MovementIntent::default(),
         ))
         .insert((
-            // Physics
-            RigidBody::Dynamic,
-            Velocity::default(),
-            ExternalForce::default(),
-            ExternalImpulse::default(),
+            // Physics - RigidBody::Dynamic and other components are auto-inserted via #[require]
             LockedAxes::ROTATION_LOCKED,
-            Collider::capsule_y(PLAYER_HALF_HEIGHT / 2.0, PLAYER_RADIUS),
+            Collider::capsule(PLAYER_RADIUS, PLAYER_HALF_HEIGHT / 2.0),
             GravityScale(0.0), // Gravity is applied internally by the controller
-            Damping {
-                linear_damping: 0.0,
-                angular_damping: 0.0,
-            },
         ));
 }
 
@@ -172,7 +164,7 @@ fn debug_floating(
     player_query: Query<
         (
             &Transform,
-            &Velocity,
+            &LinearVelocity,
             &CharacterController,
             &ControllerConfig,
         ),
@@ -212,7 +204,7 @@ fn debug_floating(
         transform.translation.y,
         capsule_bottom_y,
         gap_from_ground,
-        velocity.linvel.y,
+        velocity.y,
         controller.ground_detected(),
         controller.ground_distance(),
         grounded_str,
@@ -220,7 +212,7 @@ fn debug_floating(
     );
 
     // Color based on floating state (gap should be around 2 pixels)
-    if gap_from_ground > 0.0 && gap_from_ground < 5.0 && velocity.linvel.y.abs() < 50.0 {
+    if gap_from_ground > 0.0 && gap_from_ground < 5.0 && velocity.y.abs() < 50.0 {
         color.0 = Color::srgb(0.2, 0.8, 0.2); // Green - stable floating
     } else if controller.ground_detected() {
         color.0 = Color::srgb(0.9, 0.9, 0.2); // Yellow - ground detected but not stable

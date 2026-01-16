@@ -18,7 +18,6 @@
 mod helpers;
 
 use bevy::prelude::*;
-use bevy::sprite::ColorMaterial;
 use bevy_egui::{EguiContexts, EguiPlugin, EguiPrimaryContextPass, egui};
 use bevy_rapier2d::prelude::*;
 use helpers::{
@@ -100,7 +99,7 @@ fn main() {
         .add_plugins(DefaultPlugins.set(WindowPlugin {
             primary_window: Some(Window {
                 title: "Hilly Planet - 16px/m Physics".into(),
-                resolution: (1280.0, 720.0).into(),
+                resolution: (1280, 720).into(),
                 ..default()
             }),
             ..default()

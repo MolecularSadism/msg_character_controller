@@ -5,22 +5,23 @@
 
 use bevy::prelude::*;
 use bevy_egui::egui;
-use bevy_rapier2d::prelude::{ExternalForce, ExternalImpulse, Velocity};
 use msg_character_controller::prelude::*;
 
 /// Data needed for the diagnostics panel.
+/// Uses plain Vec2/f32 for velocity to be backend-agnostic.
 pub struct DiagnosticsData<'a> {
     pub controller: &'a CharacterController,
     pub config: &'a ControllerConfig,
     pub transform: &'a Transform,
-    pub velocity: &'a Velocity,
+    pub velocity: Vec2,
+    pub angular_velocity: f32,
     pub movement_intent: Option<&'a MovementIntent>,
-    pub external_force: Option<&'a ExternalForce>,
-    pub external_impulse: Option<&'a ExternalImpulse>,
+    pub external_force: Option<Vec2>,
+    pub external_impulse: Option<Vec2>,
 }
 
 /// Renders the position and velocity section.
-pub fn position_velocity_ui(ui: &mut egui::Ui, transform: &Transform, velocity: &Velocity) {
+pub fn position_velocity_ui(ui: &mut egui::Ui, transform: &Transform, velocity: Vec2, angular_velocity: f32) {
     ui.collapsing("Position & Velocity", |ui| {
         ui.horizontal(|ui| {
             ui.label("Position:");
@@ -40,16 +41,16 @@ pub fn position_velocity_ui(ui: &mut egui::Ui, transform: &Transform, velocity: 
             ui.label("Velocity:");
             ui.label(format!(
                 "({:.1}, {:.1})",
-                velocity.linvel.x, velocity.linvel.y
+                velocity.x, velocity.y
             ));
         });
         ui.horizontal(|ui| {
             ui.label("Speed:");
-            ui.label(format!("{:.1}", velocity.linvel.length()));
+            ui.label(format!("{:.1}", velocity.length()));
         });
         ui.horizontal(|ui| {
             ui.label("Angular Vel:");
-            ui.label(format!("{:.2} rad/s", velocity.angvel));
+            ui.label(format!("{:.2} rad/s", angular_velocity));
         });
     });
 }
@@ -372,16 +373,16 @@ pub fn internal_state_ui(ui: &mut egui::Ui, controller: &CharacterController) {
 /// Renders the external forces section.
 pub fn external_forces_ui(
     ui: &mut egui::Ui,
-    external_force: Option<&ExternalForce>,
-    external_impulse: Option<&ExternalImpulse>,
+    external_force: Option<Vec2>,
+    external_impulse: Option<Vec2>,
 ) {
     ui.collapsing("External Forces", |ui| {
         // External Force
         ui.label("Force:");
-        if let Some(ext_force) = external_force {
+        if let Some(force) = external_force {
             ui.horizontal(|ui| {
                 ui.label("  Linear:");
-                let force_mag = ext_force.force.length();
+                let force_mag = force.length();
                 let color = if force_mag > 0.01 {
                     egui::Color32::from_rgb(100, 200, 100)
                 } else {
@@ -389,17 +390,8 @@ pub fn external_forces_ui(
                 };
                 ui.colored_label(
                     color,
-                    format!("({:.1}, {:.1})", ext_force.force.x, ext_force.force.y),
+                    format!("({:.1}, {:.1})", force.x, force.y),
                 );
-            });
-            ui.horizontal(|ui| {
-                ui.label("  Torque:");
-                let color = if ext_force.torque.abs() > 0.01 {
-                    egui::Color32::from_rgb(100, 200, 100)
-                } else {
-                    egui::Color32::from_rgb(150, 150, 150)
-                };
-                ui.colored_label(color, format!("{:.2}", ext_force.torque));
             });
         } else {
             ui.label("  No ExternalForce component");
@@ -409,10 +401,10 @@ pub fn external_forces_ui(
 
         // External Impulse
         ui.label("Impulse:");
-        if let Some(ext_impulse) = external_impulse {
+        if let Some(impulse) = external_impulse {
             ui.horizontal(|ui| {
                 ui.label("  Linear:");
-                let impulse_mag = ext_impulse.impulse.length();
+                let impulse_mag = impulse.length();
                 let color = if impulse_mag > 0.01 {
                     egui::Color32::from_rgb(200, 150, 100)
                 } else {
@@ -422,18 +414,9 @@ pub fn external_forces_ui(
                     color,
                     format!(
                         "({:.1}, {:.1})",
-                        ext_impulse.impulse.x, ext_impulse.impulse.y
+                        impulse.x, impulse.y
                     ),
                 );
-            });
-            ui.horizontal(|ui| {
-                ui.label("  Torque:");
-                let color = if ext_impulse.torque_impulse.abs() > 0.01 {
-                    egui::Color32::from_rgb(200, 150, 100)
-                } else {
-                    egui::Color32::from_rgb(150, 150, 150)
-                };
-                ui.colored_label(color, format!("{:.2}", ext_impulse.torque_impulse));
             });
         } else {
             ui.label("  No ExternalImpulse component");
@@ -447,7 +430,7 @@ pub fn external_forces_ui(
 /// in a single scrollable area.
 pub fn diagnostics_panel_ui(ui: &mut egui::Ui, data: &DiagnosticsData) {
     egui::ScrollArea::vertical().show(ui, |ui| {
-        position_velocity_ui(ui, data.transform, data.velocity);
+        position_velocity_ui(ui, data.transform, data.velocity, data.angular_velocity);
         ground_detection_ui(ui, data.controller, data.config);
         wall_ceiling_ui(ui, data.controller);
         stair_climbing_ui(ui, data.controller);

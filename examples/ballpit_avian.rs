@@ -1,4 +1,4 @@
-//! Ballpit Example
+//! Ballpit Example (Avian2D Backend)
 //!
 //! A playable example demonstrating dynamic ground interaction.
 //! The character can stand on dynamic balls and push them down through
@@ -19,9 +19,9 @@
 
 mod helpers;
 
+use avian2d::prelude::*;
 use bevy::prelude::*;
 use bevy_egui::EguiPlugin;
-use bevy_rapier2d::prelude::*;
 use helpers::{
     CharacterControllerUiPlugin, ControlsPlugin, DefaultControllerSettings, Player, SpawnConfig,
     create_capsule_mesh, create_circle_mesh, create_rectangle_mesh,
@@ -40,7 +40,7 @@ const WALL_THICKNESS: f32 = 20.0;
 const BALL_RADIUS: f32 = 12.0;
 const BALL_COUNT: usize = 40;
 
-const PX_PER_M: f32 = 10.0; // Pixels per meter for Rapier
+const PX_PER_M: f32 = 10.0; // Pixels per meter
 
 // ==================== Main ====================
 
@@ -63,19 +63,17 @@ fn main() {
     App::new()
         .add_plugins(DefaultPlugins.set(WindowPlugin {
             primary_window: Some(Window {
-                title: "Ballpit - Dynamic Ground Reaction Example".into(),
+                title: "Ballpit (Avian2D) - Dynamic Ground Reaction Example".into(),
                 resolution: (1280, 720).into(),
                 ..default()
             }),
             ..default()
         }))
         // Physics
-        .add_plugins(RapierPhysicsPlugin::<NoUserData>::pixels_per_meter(
-            PX_PER_M,
-        ))
-        .add_plugins(RapierDebugRenderPlugin::default())
+        .add_plugins(PhysicsPlugins::default().with_length_unit(PX_PER_M))
+        .add_plugins(PhysicsDebugPlugin::default())
         // Character controller
-        .add_plugins(CharacterControllerPlugin::<Rapier2dBackend>::default())
+        .add_plugins(CharacterControllerPlugin::<Avian2dBackend>::default())
         // Controls (input handling and camera follow)
         .add_plugins(ControlsPlugin::default())
         // Egui for settings UI
@@ -233,8 +231,8 @@ fn spawn_static_collider(
     commands.spawn((
         Transform::from_translation(position.extend(0.0)),
         GlobalTransform::default(),
-        RigidBody::Fixed,
-        Collider::cuboid(half_size.x, half_size.y),
+        RigidBody::Static,
+        Collider::rectangle(half_size.x * 2.0, half_size.y * 2.0),
         Mesh2d(mesh),
         MeshMaterial2d(material),
     ));
@@ -255,19 +253,16 @@ fn spawn_dynamic_ball(
         Transform::from_translation(position.extend(0.0)),
         GlobalTransform::default(),
         RigidBody::Dynamic,
-        Collider::ball(radius),
-        // ExternalForce is required for receiving the reaction force
-        ExternalForce::default(),
-        Velocity::default(),
+        Collider::circle(radius),
+        // ConstantForce is required for receiving the reaction force in Avian
+        ConstantForce::default(),
         // Add some restitution for bouncy behavior
-        Restitution::coefficient(0.3),
+        Restitution::new(0.3),
         // Moderate friction
-        Friction::coefficient(0.5),
+        Friction::new(0.5),
         // Lower damping for more lively balls
-        Damping {
-            linear_damping: 0.2,
-            angular_damping: 0.5,
-        },
+        LinearDamping(0.2),
+        AngularDamping(0.5),
         Mesh2d(mesh),
         MeshMaterial2d(material),
     ));
@@ -299,16 +294,8 @@ fn spawn_player(
             MovementIntent::default(),
         ))
         .insert((
-            // Physics
-            RigidBody::Dynamic,
-            Velocity::default(),
-            ExternalForce::default(),
-            ExternalImpulse::default(),
-            Collider::capsule_y(PLAYER_HALF_HEIGHT, PLAYER_RADIUS),
+            // Physics - RigidBody::Dynamic and other components are auto-inserted via #[require]
+            Collider::capsule(PLAYER_RADIUS, PLAYER_HALF_HEIGHT),
             GravityScale(0.0), // Gravity is applied internally by the controller
-            Damping {
-                linear_damping: 0.0,
-                angular_damping: 0.0,
-            },
         ));
 }
