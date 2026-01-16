@@ -14,14 +14,20 @@ categories = ["game-development", "game-engines"]
 exclude = [".github/", "CLAUDE.md"]
 
 [dependencies]
-bevy = { version = "0.17", default-features = false, features = ["bevy_render", "bevy_asset"] }
+bevy = { version = "0.17", default-features = false }
 
 [dev-dependencies]
+avian2d = "0.4"
 bevy_rapier2d = { version = "0.32.0", features = ["simd-stable", "debug-render-2d"] }
 bevy_egui = "0.37"
 
 [features]
-default = ["rapier2d"]
+default = ["avian2d"]
+# Physics backend: avian2d (Avian physics engine, formerly XPBD)
+# Usage: CharacterControllerPlugin::<Avian2dBackend>::default()
+avian2d = ["dep:avian2d"]
+# Physics backend: bevy_rapier2d (Rapier2D physics engine)
+# Usage: CharacterControllerPlugin::<Rapier2dBackend>::default()
 rapier2d = ["dep:bevy_rapier2d"]
 # Feature for running examples (requires platform windowing libs)
 examples = [
@@ -35,6 +41,10 @@ examples = [
     "bevy/png",
     "bevy/x11",
 ]
+
+[dependencies.avian2d]
+version = "0.4"
+optional = true
 
 [dependencies.bevy_rapier2d]
 version = "0.32.0"
