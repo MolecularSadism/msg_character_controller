@@ -14,11 +14,11 @@ categories = ["game-development", "game-engines"]
 exclude = [".github/", "CLAUDE.md"]
 
 [dependencies]
-bevy = { version = "0.16", default-features = false, features = ["bevy_render", "bevy_asset"] }
+bevy = { version = "0.17", default-features = false, features = ["bevy_render", "bevy_asset"] }
 
 [dev-dependencies]
-bevy_rapier2d = { version = "0.31.0", features = ["simd-stable", "debug-render-2d"] }
-bevy_egui = "0.36"
+bevy_rapier2d = { version = "0.32.0", features = ["simd-stable", "debug-render-2d"] }
+bevy_egui = "0.37"
 
 [features]
 default = ["rapier2d"]
@@ -37,7 +37,7 @@ examples = [
 ]
 
 [dependencies.bevy_rapier2d]
-version = "0.31.0"
+version = "0.32.0"
 features = ["simd-stable", "debug-render-2d"]
 optional = true
 
