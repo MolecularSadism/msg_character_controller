@@ -11,6 +11,11 @@ use bevy_rapier2d::prelude::{
     ExternalForce, ExternalImpulse, LockedAxes, ReadMassProperties, RigidBody, Velocity,
 };
 
+#[cfg(feature = "avian2d")]
+use avian2d::prelude::{
+    ConstantForce, ConstantTorque, LockedAxes as AvianLockedAxes, RigidBody as AvianRigidBody,
+};
+
 use crate::{collision::CollisionData, intent::MovementIntent};
 
 /// Type of jump based on the surface being jumped from.
@@ -53,8 +58,8 @@ pub enum JumpType {
 #[derive(Component, Reflect, Debug, Clone)]
 #[reflect(Component)]
 #[require(MovementIntent, Transform)]
-#[cfg(feature = "rapier2d")]
-#[require(RigidBody, Velocity, ReadMassProperties, ExternalForce, ExternalImpulse, LockedAxes)]
+#[cfg_attr(feature = "rapier2d", require(RigidBody, Velocity, ReadMassProperties, ExternalForce, ExternalImpulse, LockedAxes))]
+#[cfg_attr(feature = "avian2d", require(AvianRigidBody, ConstantForce, ConstantTorque, AvianLockedAxes))]
 pub struct CharacterController {
     // === Collision Data (Option<CollisionData> for each direction) ===
     /// Floor collision data. Contains distance, normal, point, and entity.

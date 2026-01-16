@@ -10,7 +10,22 @@
 //! - Distinct jump functionality with coyote time and input buffering
 //! - Handles stair stepping with multi-raycast detection
 //! - Detects wall contact for advanced movement
-//! - Abstracts physics backend for easy swapping (Rapier2D included)
+//! - Abstracts physics backend for easy swapping (Avian2D and Rapier2D supported)
+//!
+//! ## Physics Backends
+//!
+//! The crate supports multiple physics backends via feature flags:
+//!
+//! - `avian2d` (default): Uses `avian2d` for physics
+//! - `rapier2d`: Uses `bevy_rapier2d` for physics
+//!
+//! ```toml
+//! # Use Avian2D (default)
+//! msg_character_controller = "0.1"
+//!
+//! # Use Rapier2D instead
+//! msg_character_controller = { version = "0.1", default-features = false, features = ["rapier2d"] }
+//! ```
 //!
 //! ## Architecture
 //!
@@ -99,6 +114,9 @@ pub(crate) mod systems;
 
 #[cfg(feature = "rapier2d")]
 pub mod rapier;
+
+#[cfg(feature = "avian2d")]
+pub mod avian;
 
 /// Parent system set containing all character controller systems.
 ///
@@ -260,6 +278,9 @@ pub mod prelude {
 
     #[cfg(feature = "rapier2d")]
     pub use crate::rapier::Rapier2dBackend;
+
+    #[cfg(feature = "avian2d")]
+    pub use crate::avian::Avian2dBackend;
 }
 
 /// Main plugin for the character controller system.
@@ -318,7 +339,7 @@ pub mod prelude {
 /// # Examples
 ///
 /// With Rapier2D backend:
-/// ```rust,no_run
+/// ```rust,ignore
 /// use bevy::prelude::*;
 /// use bevy_rapier2d::prelude::*;
 /// use msg_character_controller::prelude::*;
@@ -327,6 +348,19 @@ pub mod prelude {
 ///     .add_plugins(DefaultPlugins)
 ///     .add_plugins(RapierPhysicsPlugin::<NoUserData>::default())
 ///     .add_plugins(CharacterControllerPlugin::<Rapier2dBackend>::default())
+///     .run();
+/// ```
+///
+/// With Avian2D backend:
+/// ```rust,ignore
+/// use bevy::prelude::*;
+/// use avian2d::prelude::*;
+/// use msg_character_controller::prelude::*;
+///
+/// App::new()
+///     .add_plugins(DefaultPlugins)
+///     .add_plugins(PhysicsPlugins::default())
+///     .add_plugins(CharacterControllerPlugin::<Avian2dBackend>::default())
 ///     .run();
 /// ```
 pub struct CharacterControllerPlugin<B: backend::CharacterPhysicsBackend> {
