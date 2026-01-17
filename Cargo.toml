@@ -52,54 +52,30 @@ version = "0.32.0"
 features = ["simd-stable", "debug-render-2d"]
 optional = true
 
-# Rapier2D Examples - run with: cargo run --example platform_box --features "examples,rapier2d" --no-default-features
+# Examples - work with either physics backend:
+# - Avian2D (default): cargo run --example platform_box --features examples
+# - Rapier2D: cargo run --example platform_box --features "examples,rapier2d" --no-default-features
 [[example]]
 name = "platform_box"
 path = "examples/platform_box.rs"
-required-features = ["examples", "rapier2d"]
+required-features = ["examples"]
 
 [[example]]
 name = "spherical_planet"
 path = "examples/spherical_planet.rs"
-required-features = ["examples", "rapier2d"]
+required-features = ["examples"]
 
 [[example]]
 name = "float_test"
 path = "examples/float_test.rs"
-required-features = ["examples", "rapier2d"]
+required-features = ["examples"]
 
 [[example]]
 name = "hilly_planet"
 path = "examples/hilly_planet.rs"
-required-features = ["examples", "rapier2d"]
+required-features = ["examples"]
 
 [[example]]
 name = "ballpit"
 path = "examples/ballpit.rs"
-required-features = ["examples", "rapier2d"]
-
-# Avian2D Examples - run with: cargo run --example platform_box_avian --features examples
-[[example]]
-name = "platform_box_avian"
-path = "examples/platform_box_avian.rs"
-required-features = ["examples", "avian2d"]
-
-[[example]]
-name = "spherical_planet_avian"
-path = "examples/spherical_planet_avian.rs"
-required-features = ["examples", "avian2d"]
-
-[[example]]
-name = "float_test_avian"
-path = "examples/float_test_avian.rs"
-required-features = ["examples", "avian2d"]
-
-[[example]]
-name = "hilly_planet_avian"
-path = "examples/hilly_planet_avian.rs"
-required-features = ["examples", "avian2d"]
-
-[[example]]
-name = "ballpit_avian"
-path = "examples/ballpit_avian.rs"
-required-features = ["examples", "avian2d"]
+required-features = ["examples"]
