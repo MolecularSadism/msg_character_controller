@@ -9,7 +9,7 @@ use bevy_egui::{EguiContexts, EguiPrimaryContextPass, egui};
 use msg_character_controller::prelude::*;
 use std::marker::PhantomData;
 
-use super::{DiagnosticsData, config_panel_ui, diagnostics_panel_ui, respawn_player};
+use super::{DiagnosticsData, backend_name, config_panel_ui, diagnostics_panel_ui, respawn_player};
 
 // Backend-specific velocity types
 #[cfg(feature = "rapier2d")]
@@ -367,7 +367,7 @@ fn toggle_panels_visibility(
     }
 }
 
-/// System to show help text.
+/// System to show help text and physics backend indicator.
 fn show_help_text(mut contexts: EguiContexts, ui_state: Res<CharacterControllerUiState>) {
     // Skip the first few frames to ensure egui is fully initialized
     if ui_state.frame_count <= 2 {
@@ -390,6 +390,39 @@ fn show_help_text(mut contexts: EguiContexts, ui_state: Res<CharacterControllerU
                     format!("Press {:?} to show panels", ui_state.toggle_key)
                 },
             );
+        });
+
+    // Show physics backend indicator in top-right corner
+    egui::Area::new(egui::Id::new("physics_backend_indicator"))
+        .anchor(egui::Align2::RIGHT_TOP, egui::vec2(-10.0, 10.0))
+        .show(ctx, |ui| {
+            egui::Frame::new()
+                .fill(egui::Color32::from_rgba_unmultiplied(0, 0, 0, 180))
+                .corner_radius(egui::CornerRadius::same(4))
+                .inner_margin(egui::Margin::symmetric(8, 4))
+                .show(ui, |ui| {
+                    ui.horizontal(|ui| {
+                        // Backend color indicator
+                        let backend_color = if backend_name() == "Rapier2D" {
+                            egui::Color32::from_rgb(255, 140, 0) // Orange for Rapier
+                        } else {
+                            egui::Color32::from_rgb(100, 200, 255) // Blue for Avian
+                        };
+
+                        // Draw a small colored circle
+                        let (rect, _) = ui.allocate_exact_size(
+                            egui::vec2(8.0, 8.0),
+                            egui::Sense::hover(),
+                        );
+                        ui.painter().circle_filled(rect.center(), 4.0, backend_color);
+
+                        ui.label(
+                            egui::RichText::new(format!("Physics: {}", backend_name()))
+                                .color(egui::Color32::WHITE)
+                                .size(12.0),
+                        );
+                    });
+                });
         });
 }
 

@@ -11,17 +11,33 @@
 //! - **W/Up**: Jump
 //! - **Space** (hold): Propulsion (fly upward)
 //! - **S/Down** (hold): Propulsion (fly downward)
+//!
+//! ## Running
+//! ```bash
+//! # With Avian2D (default):
+//! cargo run --example float_test --features examples
+//!
+//! # With Rapier2D:
+//! cargo run --example float_test --features "examples,rapier2d" --no-default-features
+//! ```
 
 mod helpers;
 
 use bevy::prelude::*;
 use bevy_egui::EguiPlugin;
-use bevy_rapier2d::prelude::*;
 use helpers::{
-    CharacterControllerUiPlugin, ControlsPlugin, DefaultControllerSettings, Player, SpawnConfig,
-    create_capsule_mesh, create_rectangle_mesh,
+    ActiveBackend, CharacterControllerUiPlugin, ControlsPlugin, DefaultControllerSettings,
+    ExamplePhysicsPlugin, Player, PlayerSpawnConfig, SpawnConfig, backend_name,
+    spawn_player, spawn_static_box,
 };
 use msg_character_controller::prelude::*;
+
+// Backend-specific velocity types for debug system
+#[cfg(feature = "rapier2d")]
+use helpers::Velocity;
+
+#[cfg(feature = "avian2d")]
+use helpers::LinearVelocity;
 
 const PLAYER_RADIUS: f32 = 6.0;
 const PLAYER_HALF_HEIGHT: f32 = 8.0;
@@ -41,17 +57,16 @@ fn main() {
     App::new()
         .add_plugins(DefaultPlugins.set(WindowPlugin {
             primary_window: Some(Window {
-                title: "Float Test - Character Controller".into(),
+                title: format!("Float Test ({}) - Character Controller", backend_name()).into(),
                 resolution: (1280, 720).into(),
                 ..default()
             }),
             ..default()
         }))
-        // Physics
-        .add_plugins(RapierPhysicsPlugin::<NoUserData>::pixels_per_meter(100.0))
-        .add_plugins(RapierDebugRenderPlugin::default())
+        // Physics (backend-agnostic)
+        .add_plugins(ExamplePhysicsPlugin::new(100.0))
         // Character controller
-        .add_plugins(CharacterControllerPlugin::<Rapier2dBackend>::default())
+        .add_plugins(CharacterControllerPlugin::<ActiveBackend>::default())
         // Controls (input handling and camera follow)
         .add_plugins(ControlsPlugin::default())
         // Egui for settings UI
@@ -93,21 +108,18 @@ fn setup(
             ..default()
         },
         DebugText,
-        Pickable::IGNORE, // Prevent this UI element from blocking mouse clicks
+        Pickable::IGNORE,
     ));
 
     // Ground platform (large so we can see floating clearly)
-    let platform_mesh = meshes.add(create_rectangle_mesh(400.0, 20.0));
-    let platform_material = materials.add(ColorMaterial::from_color(Color::srgb(0.3, 0.3, 0.3)));
-
-    commands.spawn((
-        Transform::from_translation(Vec3::new(0.0, -200.0, 0.0)),
-        GlobalTransform::default(),
-        RigidBody::Fixed,
-        Collider::cuboid(400.0, 20.0),
-        Mesh2d(platform_mesh),
-        MeshMaterial2d(platform_material),
-    ));
+    spawn_static_box(
+        &mut commands,
+        &mut meshes,
+        &mut materials,
+        Vec2::new(0.0, -200.0),
+        Vec2::new(400.0, 20.0),
+        Color::srgb(0.3, 0.3, 0.3),
+    );
 
     // Spawn player HIGH ABOVE the platform to test floating
     let spawn_pos = spawn_position();
@@ -129,44 +141,24 @@ fn setup(
     println!("Collider bottom offset: {}", collider_bottom_offset);
     println!("Expected center Y: {}", expected_hover_y);
 
-    // Create capsule mesh matching the collider
-    let player_mesh = meshes.add(create_capsule_mesh(
-        PLAYER_HALF_HEIGHT / 2.0,
-        PLAYER_RADIUS,
-        12,
-    ));
-    let player_material = materials.add(ColorMaterial::from_color(Color::srgb(0.2, 0.6, 0.9)));
-
-    commands
-        .spawn((
-            Player,
-            Transform::from_translation(spawn_pos.extend(1.0)),
-            GlobalTransform::default(),
-            Mesh2d(player_mesh),
-            MeshMaterial2d(player_material),
-        ))
-        .insert((
-            // Character controller with explicit float height and gravity
-            CharacterController::with_gravity(Vec2::new(0.0, -980.0)),
-            default_config(),
-            MovementIntent::default(),
-        ))
-        .insert((
-            // Physics
-            RigidBody::Dynamic,
-            Velocity::default(),
-            ExternalForce::default(),
-            ExternalImpulse::default(),
-            LockedAxes::ROTATION_LOCKED,
-            Collider::capsule_y(PLAYER_HALF_HEIGHT / 2.0, PLAYER_RADIUS),
-            GravityScale(0.0), // Gravity is applied internally by the controller
-            Damping {
-                linear_damping: 0.0,
-                angular_damping: 0.0,
-            },
-        ));
+    // Spawn player with rotation locked for this test
+    spawn_player(
+        &mut commands,
+        &mut meshes,
+        &mut materials,
+        PlayerSpawnConfig {
+            position: spawn_pos,
+            half_height: PLAYER_HALF_HEIGHT,
+            radius: PLAYER_RADIUS,
+            gravity: Vec2::new(0.0, -980.0),
+            config: default_config(),
+            lock_rotation: true,
+            ..default()
+        },
+    );
 }
 
+#[cfg(feature = "rapier2d")]
 fn debug_floating(
     mut text_query: Query<(&mut Text, &mut TextColor), With<DebugText>>,
     player_query: Query<
@@ -198,7 +190,7 @@ fn debug_floating(
     let gap_from_ground = capsule_bottom_y - platform_top_y;
 
     **text = format!(
-        "FLOAT TEST\n\
+        "FLOAT TEST ({})\n\
          Player center Y: {:.1}\n\
          Capsule bottom Y: {:.1}\n\
          Gap from ground: {:.1}\n\
@@ -209,6 +201,7 @@ fn debug_floating(
          \n\
          EXPECTED: Capsule bottom should hover ~2 px above platform\n\
          ACTUAL: {:.1} px gap",
+        backend_name(),
         transform.translation.y,
         capsule_bottom_y,
         gap_from_ground,
@@ -221,6 +214,70 @@ fn debug_floating(
 
     // Color based on floating state (gap should be around 2 pixels)
     if gap_from_ground > 0.0 && gap_from_ground < 5.0 && velocity.linvel.y.abs() < 50.0 {
+        color.0 = Color::srgb(0.2, 0.8, 0.2); // Green - stable floating
+    } else if controller.ground_detected() {
+        color.0 = Color::srgb(0.9, 0.9, 0.2); // Yellow - ground detected but not stable
+    } else {
+        color.0 = Color::srgb(0.9, 0.3, 0.3); // Red - no ground
+    }
+}
+
+#[cfg(feature = "avian2d")]
+fn debug_floating(
+    mut text_query: Query<(&mut Text, &mut TextColor), With<DebugText>>,
+    player_query: Query<
+        (
+            &Transform,
+            &LinearVelocity,
+            &CharacterController,
+            &ControllerConfig,
+        ),
+        With<Player>,
+    >,
+) {
+    let Ok((transform, velocity, controller, config)) = player_query.single() else {
+        return;
+    };
+
+    let Ok((mut text, mut color)) = text_query.single_mut() else {
+        return;
+    };
+
+    let grounded_str = if controller.is_grounded(config) {
+        "YES"
+    } else {
+        "NO"
+    };
+    let platform_top_y = -180.0;
+    let collider_bottom_offset = PLAYER_HALF_HEIGHT / 2.0 + PLAYER_RADIUS; // 10
+    let capsule_bottom_y = transform.translation.y - collider_bottom_offset;
+    let gap_from_ground = capsule_bottom_y - platform_top_y;
+
+    **text = format!(
+        "FLOAT TEST ({})\n\
+         Player center Y: {:.1}\n\
+         Capsule bottom Y: {:.1}\n\
+         Gap from ground: {:.1}\n\
+         Velocity Y: {:.1}\n\
+         Ground detected: {}\n\
+         Ground distance (from center): {:.1}\n\
+         Grounded: {}\n\
+         \n\
+         EXPECTED: Capsule bottom should hover ~2 px above platform\n\
+         ACTUAL: {:.1} px gap",
+        backend_name(),
+        transform.translation.y,
+        capsule_bottom_y,
+        gap_from_ground,
+        velocity.0.y,
+        controller.ground_detected(),
+        controller.ground_distance(),
+        grounded_str,
+        gap_from_ground
+    );
+
+    // Color based on floating state (gap should be around 2 pixels)
+    if gap_from_ground > 0.0 && gap_from_ground < 5.0 && velocity.0.y.abs() < 50.0 {
         color.0 = Color::srgb(0.2, 0.8, 0.2); // Green - stable floating
     } else if controller.ground_detected() {
         color.0 = Color::srgb(0.9, 0.9, 0.2); // Yellow - ground detected but not stable
