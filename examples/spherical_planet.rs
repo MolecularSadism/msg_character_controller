@@ -14,16 +14,24 @@
 //!
 //! The camera follows the player and the character's "up" direction
 //! always points away from the planet center.
+//!
+//! ## Running
+//! ```bash
+//! # With Avian2D (default):
+//! cargo run --example spherical_planet --features examples
+//!
+//! # With Rapier2D:
+//! cargo run --example spherical_planet --features "examples,rapier2d" --no-default-features
+//! ```
 
 mod helpers;
 
 use bevy::prelude::*;
 use bevy_egui::{EguiContexts, EguiPlugin, EguiPrimaryContextPass, egui};
-use bevy_rapier2d::prelude::*;
 use helpers::{
-    CharacterControllerUiPlugin, CharacterControllerUiState, ControlsPlugin,
-    DefaultControllerSettings, Player, SpawnConfig, create_capsule_mesh, create_circle_mesh,
-    create_rectangle_mesh, create_triangle_mesh,
+    ActiveBackend, CharacterControllerUiPlugin, CharacterControllerUiState, ControlsPlugin,
+    DefaultControllerSettings, ExamplePhysicsPlugin, Player, PlayerSpawnConfig, SpawnConfig,
+    backend_name, spawn_player, spawn_static_ball, spawn_static_box_rotated, spawn_static_slope_rotated,
 };
 use msg_character_controller::prelude::*;
 
@@ -79,17 +87,16 @@ fn main() {
     App::new()
         .add_plugins(DefaultPlugins.set(WindowPlugin {
             primary_window: Some(Window {
-                title: "Spherical Planet - Character Controller Example".into(),
+                title: format!("Spherical Planet ({}) - Character Controller Example", backend_name()).into(),
                 resolution: (1280, 720).into(),
                 ..default()
             }),
             ..default()
         }))
-        // Physics
-        .add_plugins(RapierPhysicsPlugin::<NoUserData>::pixels_per_meter(100.0))
-        .add_plugins(RapierDebugRenderPlugin::default())
+        // Physics (backend-agnostic)
+        .add_plugins(ExamplePhysicsPlugin::new(100.0))
         // Character controller
-        .add_plugins(CharacterControllerPlugin::<Rapier2dBackend>::default())
+        .add_plugins(CharacterControllerPlugin::<ActiveBackend>::default())
         // Controls (input handling only - we have custom camera follow for planet)
         .add_plugins(ControlsPlugin::default())
         // Egui for settings UI
@@ -111,7 +118,7 @@ fn main() {
             FixedUpdate,
             // Update orientation and gravity before controller systems
             update_player_orientation_and_gravity.before(
-                msg_character_controller::systems::accumulate_spring_force::<Rapier2dBackend>,
+                msg_character_controller::systems::accumulate_spring_force::<ActiveBackend>,
             ),
         )
         // Extra settings UI for planet-specific configuration
@@ -127,7 +134,14 @@ fn setup(
     mut materials: ResMut<Assets<ColorMaterial>>,
 ) {
     // Spawn planet
-    spawn_planet(&mut commands, &mut meshes, &mut materials);
+    spawn_static_ball(
+        &mut commands,
+        &mut meshes,
+        &mut materials,
+        PLANET_CENTER,
+        PLANET_RADIUS,
+        Color::srgb(0.25, 0.35, 0.25),
+    );
 
     // Spawn platform on top of planet
     spawn_surface_platform(
@@ -148,7 +162,25 @@ fn setup(
     );
 
     // Spawn player on top of planet
-    spawn_player(&mut commands, &mut meshes, &mut materials);
+    let spawn_angle = std::f32::consts::FRAC_PI_2;
+    let direction = Vec2::new(spawn_angle.cos(), spawn_angle.sin());
+    let spawn_pos = PLANET_CENTER + direction * (PLANET_RADIUS + 50.0);
+    let initial_gravity = -direction * GRAVITY_STRENGTH;
+
+    spawn_player(
+        &mut commands,
+        &mut meshes,
+        &mut materials,
+        PlayerSpawnConfig {
+            position: spawn_pos,
+            half_height: PLAYER_HALF_HEIGHT,
+            radius: PLAYER_RADIUS,
+            gravity: initial_gravity,
+            config: default_config(),
+            angular_damping: 5.0,
+            ..default()
+        },
+    );
 
     // UI instructions
     commands.spawn((
@@ -164,7 +196,7 @@ fn setup(
             left: Val::Px(10.0),
             ..default()
         },
-        Pickable::IGNORE, // Prevent this UI element from blocking mouse clicks
+        Pickable::IGNORE,
     ));
 
     // Planet info
@@ -181,27 +213,7 @@ fn setup(
             left: Val::Px(10.0),
             ..default()
         },
-        Pickable::IGNORE, // Prevent this UI element from blocking mouse clicks
-    ));
-}
-
-fn spawn_planet(
-    commands: &mut Commands,
-    meshes: &mut ResMut<Assets<Mesh>>,
-    materials: &mut ResMut<Assets<ColorMaterial>>,
-) {
-    // Create planet as a circle collider (ball)
-    // This is simpler and more efficient than a trimesh for a circle
-    let mesh = meshes.add(create_circle_mesh(PLANET_RADIUS, 64));
-    let material = materials.add(ColorMaterial::from_color(Color::srgb(0.25, 0.35, 0.25)));
-
-    commands.spawn((
-        Transform::from_translation(PLANET_CENTER.extend(0.0)),
-        GlobalTransform::default(),
-        RigidBody::Fixed,
-        Collider::ball(PLANET_RADIUS),
-        Mesh2d(mesh),
-        MeshMaterial2d(material),
+        Pickable::IGNORE,
     ));
 }
 
@@ -222,17 +234,15 @@ fn spawn_surface_platform(
     // Rotation to align with surface (tangent)
     let rotation = Quat::from_rotation_z(surface_angle - std::f32::consts::FRAC_PI_2);
 
-    let mesh = meshes.add(create_rectangle_mesh(width / 2.0, height / 2.0));
-    let material = materials.add(ColorMaterial::from_color(Color::srgb(0.4, 0.5, 0.3)));
-
-    commands.spawn((
-        Transform::from_translation(position.extend(0.0)).with_rotation(rotation),
-        GlobalTransform::default(),
-        RigidBody::Fixed,
-        Collider::cuboid(width / 2.0, height / 2.0),
-        Mesh2d(mesh),
-        MeshMaterial2d(material),
-    ));
+    spawn_static_box_rotated(
+        commands,
+        meshes,
+        materials,
+        position,
+        Vec2::new(width / 2.0, height / 2.0),
+        rotation,
+        Color::srgb(0.4, 0.5, 0.3),
+    );
 }
 
 /// Spawn a triangular slope on the planet surface.
@@ -251,79 +261,21 @@ fn spawn_surface_slope(
     let rotation = Quat::from_rotation_z(surface_angle - std::f32::consts::FRAC_PI_2);
 
     // Triangle vertices in local space
-    let vertices = vec![
+    let vertices = [
         Vec2::new(-40.0, 0.0), // Bottom left
         Vec2::new(40.0, 0.0),  // Bottom right
         Vec2::new(40.0, 50.0), // Top right
     ];
 
-    // Use convex_hull which works well for triangles
-    let collider = Collider::convex_hull(&vertices).expect("Failed to create slope collider");
-
-    // Create triangle mesh matching the collider
-    let triangle_vertices = [vertices[0], vertices[1], vertices[2]];
-    let mesh = meshes.add(create_triangle_mesh(&triangle_vertices));
-    let material = materials.add(ColorMaterial::from_color(Color::srgb(0.5, 0.4, 0.3)));
-
-    commands.spawn((
-        Transform::from_translation(position.extend(0.0)).with_rotation(rotation),
-        GlobalTransform::default(),
-        RigidBody::Fixed,
-        collider,
-        Mesh2d(mesh),
-        MeshMaterial2d(material),
-    ));
-}
-
-fn spawn_player(
-    commands: &mut Commands,
-    meshes: &mut ResMut<Assets<Mesh>>,
-    materials: &mut ResMut<Assets<ColorMaterial>>,
-) {
-    // Spawn on top of the planet
-    let spawn_angle = std::f32::consts::FRAC_PI_2; // Top of planet
-    let direction = Vec2::new(spawn_angle.cos(), spawn_angle.sin());
-    let spawn_pos = PLANET_CENTER + direction * (PLANET_RADIUS + 50.0);
-
-    // Initial gravity pointing toward planet center
-    // Up direction is derived from gravity via controller.ideal_up()
-    let initial_gravity = -direction * GRAVITY_STRENGTH;
-
-    // Create capsule mesh matching the collider
-    let mesh = meshes.add(create_capsule_mesh(
-        PLAYER_HALF_HEIGHT / 2.0,
-        PLAYER_RADIUS,
-        12,
-    ));
-    let material = materials.add(ColorMaterial::from_color(Color::srgb(0.2, 0.6, 0.9)));
-
-    commands
-        .spawn((
-            Player,
-            Transform::from_translation(spawn_pos.extend(1.0)),
-            GlobalTransform::default(),
-            Mesh2d(mesh),
-            MeshMaterial2d(material),
-        ))
-        .insert((
-            // Character controller with initial gravity pointing toward planet
-            CharacterController::with_gravity(initial_gravity),
-            default_config(),
-            MovementIntent::default(),
-        ))
-        .insert((
-            // Physics
-            RigidBody::Dynamic,
-            Velocity::default(),
-            ExternalForce::default(),
-            ExternalImpulse::default(),
-            Collider::capsule_y(PLAYER_HALF_HEIGHT / 2.0, PLAYER_RADIUS),
-            GravityScale(0.0), // Gravity is applied internally by the controller
-            Damping {
-                linear_damping: 0.0,
-                angular_damping: 5.0, // Some angular damping for stability
-            },
-        ));
+    spawn_static_slope_rotated(
+        commands,
+        meshes,
+        materials,
+        position,
+        &vertices,
+        rotation,
+        Color::srgb(0.5, 0.4, 0.3),
+    );
 }
 
 // ==================== Planetary Systems ====================

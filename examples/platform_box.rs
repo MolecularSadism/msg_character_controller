@@ -13,15 +13,24 @@
 //! - **S/Down** (hold): Propulsion (fly downward)
 //!
 //! The camera follows the player.
+//!
+//! ## Running
+//! ```bash
+//! # With Avian2D (default):
+//! cargo run --example platform_box --features examples
+//!
+//! # With Rapier2D:
+//! cargo run --example platform_box --features "examples,rapier2d" --no-default-features
+//! ```
 
 mod helpers;
 
 use bevy::prelude::*;
 use bevy_egui::EguiPlugin;
-use bevy_rapier2d::prelude::*;
 use helpers::{
-    CharacterControllerUiPlugin, ControlsPlugin, DefaultControllerSettings, Player, SpawnConfig,
-    create_capsule_mesh, create_circle_mesh, create_rectangle_mesh, create_triangle_mesh,
+    ActiveBackend, CharacterControllerUiPlugin, ControlsPlugin, DefaultControllerSettings,
+    ExamplePhysicsPlugin, Player, PlayerSpawnConfig, SpawnConfig, backend_name,
+    spawn_player, spawn_static_ball, spawn_static_box, spawn_static_slope,
 };
 use msg_character_controller::prelude::*;
 
@@ -38,7 +47,7 @@ const PLATFORM_WIDTH: f32 = 200.0;
 const PLATFORM_HEIGHT: f32 = 20.0;
 const PLATFORM_Y: f32 = 100.0;
 
-const PX_PER_M: f32 = 10.0; // Pixels per meter for Rapier
+const PX_PER_M: f32 = 10.0;
 
 // ==================== Main ====================
 
@@ -58,19 +67,16 @@ fn main() {
     App::new()
         .add_plugins(DefaultPlugins.set(WindowPlugin {
             primary_window: Some(Window {
-                title: "Platform Box - Character Controller Example".into(),
+                title: format!("Platform Box ({}) - Character Controller Example", backend_name()).into(),
                 resolution: (1280, 720).into(),
                 ..default()
             }),
             ..default()
         }))
-        // Physics
-        .add_plugins(RapierPhysicsPlugin::<NoUserData>::pixels_per_meter(
-            PX_PER_M,
-        ))
-        .add_plugins(RapierDebugRenderPlugin::default())
+        // Physics (backend-agnostic)
+        .add_plugins(ExamplePhysicsPlugin::new(PX_PER_M))
         // Character controller
-        .add_plugins(CharacterControllerPlugin::<Rapier2dBackend>::default())
+        .add_plugins(CharacterControllerPlugin::<ActiveBackend>::default())
         // Controls (input handling and camera follow)
         .add_plugins(ControlsPlugin::default())
         // Egui for settings UI
@@ -101,7 +107,19 @@ fn setup(
     spawn_slope(&mut commands, &mut meshes, &mut materials);
 
     // Spawn player
-    spawn_player(&mut commands, &mut meshes, &mut materials);
+    spawn_player(
+        &mut commands,
+        &mut meshes,
+        &mut materials,
+        PlayerSpawnConfig {
+            position: spawn_position(),
+            half_height: PLAYER_HALF_HEIGHT,
+            radius: PLAYER_RADIUS,
+            gravity: default_gravity(),
+            config: default_config(),
+            ..default()
+        },
+    );
 
     // UI instructions - use Pickable::IGNORE to prevent blocking mouse events
     commands.spawn((
@@ -117,7 +135,7 @@ fn setup(
             left: Val::Px(10.0),
             ..default()
         },
-        Pickable::IGNORE, // Prevent this UI element from blocking mouse clicks
+        Pickable::IGNORE,
     ));
 }
 
@@ -131,7 +149,7 @@ fn spawn_box(
     let half_wall = WALL_THICKNESS / 2.0;
 
     // Floor
-    spawn_static_collider(
+    spawn_static_box(
         commands,
         meshes,
         materials,
@@ -141,7 +159,7 @@ fn spawn_box(
     );
 
     // Ceiling
-    spawn_static_collider(
+    spawn_static_box(
         commands,
         meshes,
         materials,
@@ -151,7 +169,7 @@ fn spawn_box(
     );
 
     // Left wall
-    spawn_static_collider(
+    spawn_static_box(
         commands,
         meshes,
         materials,
@@ -161,7 +179,7 @@ fn spawn_box(
     );
 
     // Right wall
-    spawn_static_collider(
+    spawn_static_box(
         commands,
         meshes,
         materials,
@@ -176,7 +194,7 @@ fn spawn_obstacles(
     meshes: &mut ResMut<Assets<Mesh>>,
     materials: &mut ResMut<Assets<ColorMaterial>>,
 ) {
-    spawn_static_collider(
+    spawn_static_box(
         commands,
         meshes,
         materials,
@@ -186,7 +204,7 @@ fn spawn_obstacles(
     );
 
     for i in 0..=5 {
-        spawn_ball_static_collider(
+        spawn_static_ball(
             commands,
             meshes,
             materials,
@@ -197,7 +215,7 @@ fn spawn_obstacles(
     }
 
     for i in 0..=5 {
-        spawn_ball_static_collider(
+        spawn_static_ball(
             commands,
             meshes,
             materials,
@@ -211,7 +229,7 @@ fn spawn_obstacles(
     }
 
     for i in 0..=5 {
-        spawn_ball_static_collider(
+        spawn_static_ball(
             commands,
             meshes,
             materials,
@@ -230,114 +248,22 @@ fn spawn_slope(
     meshes: &mut ResMut<Assets<Mesh>>,
     materials: &mut ResMut<Assets<ColorMaterial>>,
 ) {
-    // Create a triangle slope using a convex hull collider
-    // Position it on the right side of the box
     let slope_x = 250.0;
     let slope_y = -BOX_HEIGHT / 2.0;
 
     // Triangle vertices (relative to center)
-    let vertices = vec![
+    let vertices = [
         Vec2::new(-80.0, 0.0),  // Bottom left
         Vec2::new(80.0, 0.0),   // Bottom right
         Vec2::new(80.0, 100.0), // Top right
     ];
 
-    // Use convex_hull which works well for triangles
-    let collider = Collider::convex_hull(&vertices).expect("Failed to create slope collider");
-
-    // Create a triangle mesh that matches the collider
-    let triangle_vertices = [vertices[0], vertices[1], vertices[2]];
-    let mesh = meshes.add(create_triangle_mesh(&triangle_vertices));
-    let material = materials.add(ColorMaterial::from_color(Color::srgb(0.5, 0.4, 0.3)));
-
-    commands.spawn((
-        Transform::from_translation(Vec3::new(slope_x, slope_y, 0.0)),
-        GlobalTransform::default(),
-        RigidBody::Fixed,
-        collider,
-        Mesh2d(mesh),
-        MeshMaterial2d(material),
-    ));
-}
-
-fn spawn_static_collider(
-    commands: &mut Commands,
-    meshes: &mut ResMut<Assets<Mesh>>,
-    materials: &mut ResMut<Assets<ColorMaterial>>,
-    position: Vec2,
-    half_size: Vec2,
-    color: Color,
-) {
-    let mesh = meshes.add(create_rectangle_mesh(half_size.x, half_size.y));
-    let material = materials.add(ColorMaterial::from_color(color));
-
-    commands.spawn((
-        Transform::from_translation(position.extend(0.0)),
-        GlobalTransform::default(),
-        RigidBody::Fixed,
-        Collider::cuboid(half_size.x, half_size.y),
-        Mesh2d(mesh),
-        MeshMaterial2d(material),
-    ));
-}
-
-fn spawn_ball_static_collider(
-    commands: &mut Commands,
-    meshes: &mut ResMut<Assets<Mesh>>,
-    materials: &mut ResMut<Assets<ColorMaterial>>,
-    position: Vec2,
-    radius: f32,
-    color: Color,
-) {
-    let mesh = meshes.add(create_circle_mesh(radius, 24));
-    let material = materials.add(ColorMaterial::from_color(color));
-
-    commands.spawn((
-        Transform::from_translation(position.extend(0.0)),
-        GlobalTransform::default(),
-        RigidBody::Fixed,
-        Collider::ball(radius),
-        Mesh2d(mesh),
-        MeshMaterial2d(material),
-    ));
-}
-
-fn spawn_player(
-    commands: &mut Commands,
-    meshes: &mut ResMut<Assets<Mesh>>,
-    materials: &mut ResMut<Assets<ColorMaterial>>,
-) {
-    let spawn_pos = spawn_position();
-
-    // Create capsule mesh matching the collider
-    let mesh = meshes.add(create_capsule_mesh(PLAYER_HALF_HEIGHT, PLAYER_RADIUS, 12));
-    let material = materials.add(ColorMaterial::from_color(Color::srgb(0.2, 0.6, 0.9)));
-
-    commands
-        .spawn((
-            Player,
-            Transform::from_translation(spawn_pos.extend(1.0)),
-            GlobalTransform::default(),
-            Mesh2d(mesh),
-            MeshMaterial2d(material),
-        ))
-        .insert((
-            // Character controller with gravity
-            CharacterController::with_gravity(default_gravity()),
-            default_config(),
-            MovementIntent::default(),
-        ))
-        .insert((
-            // Physics
-            RigidBody::Dynamic,
-            Velocity::default(),
-            ExternalForce::default(),
-            ExternalImpulse::default(),
-            Collider::capsule_y(PLAYER_HALF_HEIGHT, PLAYER_RADIUS),
-            GravityScale(0.0), // Gravity is applied internally by the controller
-            Damping {
-                linear_damping: 0.0,
-                angular_damping: 0.0,
-            },
-        ));
+    spawn_static_slope(
+        commands,
+        meshes,
+        materials,
+        Vec2::new(slope_x, slope_y),
+        &vertices,
+        Color::srgb(0.5, 0.4, 0.3),
+    );
 }
