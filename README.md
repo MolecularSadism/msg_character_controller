@@ -16,21 +16,25 @@ An advanced 2D **floating rigidbody character controller** for the [Bevy](https:
 - **Stair stepping** - Automatic step climbing with shapecast detection
 - **Gravity-relative directions** - Supports non-standard gravity (e.g., spherical planets)
 
+**Backend Status:**
+- **Rapier2D**: Fully tested and production-ready (24/24 tests passing)
+- **Avian2D**: Functional but has known issues with collision layers (8/17 tests failing). Recommended to use Rapier2D for production until Avian2D collision layer support is fixed.
+
 ## Installation
 
 ### With Avian2D (default)
 
 ```toml
 [dependencies]
-msg_character_controller = "0.1"
+msg_character_controller = { git = "https://github.com/MolecularSadism/msg_character_controller", tag = "v0.2.0" }
 avian2d = "0.4"
 ```
 
-### With Rapier2D
+### With Rapier2D (Recommended)
 
 ```toml
 [dependencies]
-msg_character_controller = { version = "0.1", default-features = false, features = ["rapier2d"] }
+msg_character_controller = { git = "https://github.com/MolecularSadism/msg_character_controller", tag = "v0.2.0", default-features = false, features = ["rapier2d"] }
 bevy_rapier2d = "0.32"
 ```
 
@@ -173,12 +177,12 @@ cargo run --example platform_box --features examples
 cargo run --example spherical_planet --features examples
 ```
 
-## Bevy Compatibility
+## Bevy Version Compatibility
 
-| Bevy | bevy_rapier2d | avian2d | msg_character_controller |
-|------|---------------|---------|--------------------------|
-| 0.17 | 0.32          | 0.4     | 0.2                      |
-| 0.16 | 0.31          | -       | 0.1                      |
+| `msg_character_controller` | Bevy | `bevy_rapier2d` | `avian2d` |
+|----------------------------|------|-----------------|-----------|
+| 0.2                        | 0.17 | 0.32            | 0.4       |
+| 0.1                        | 0.16 | 0.31            | -         |
 
 ## License
 
