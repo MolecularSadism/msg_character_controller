@@ -11,15 +11,19 @@ use bevy_rapier2d::prelude::*;
 use msg_character_controller::prelude::*;
 use msg_character_controller::rapier::Rapier2dBackend;
 
+// Shared physics constants - must match examples/helpers/physics.rs for consistent behavior
+const FIXED_UPDATE_HZ: f64 = 60.0;
+const PIXELS_PER_METER: f32 = 10.0;
+
 /// Create a minimal test app with physics and character controller.
 fn create_test_app() -> App {
     let mut app = App::new();
 
     app.add_plugins(MinimalPlugins);
     app.add_plugins(TransformPlugin);
-    app.add_plugins(RapierPhysicsPlugin::<NoUserData>::default());
+    app.add_plugins(RapierPhysicsPlugin::<NoUserData>::pixels_per_meter(PIXELS_PER_METER));
     app.add_plugins(CharacterControllerPlugin::<Rapier2dBackend>::default());
-    app.insert_resource(Time::<Fixed>::from_hz(60.0));
+    app.insert_resource(Time::<Fixed>::from_hz(FIXED_UPDATE_HZ));
 
     app.finish();
     app.cleanup();
