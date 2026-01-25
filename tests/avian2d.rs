@@ -11,6 +11,10 @@ use avian2d::prelude::*;
 use msg_character_controller::prelude::*;
 use msg_character_controller::avian::Avian2dBackend;
 
+// Shared physics constants - must match examples/helpers/physics.rs for consistent behavior
+const FIXED_UPDATE_HZ: f64 = 60.0;
+const PIXELS_PER_METER: f32 = 10.0;
+
 /// Create a minimal test app with physics and character controller.
 fn create_test_app() -> App {
     let mut app = App::new();
@@ -19,9 +23,9 @@ fn create_test_app() -> App {
     app.add_plugins(TransformPlugin);
     // Insert SceneSpawner resource to satisfy Avian's ColliderHierarchyPlugin
     app.insert_resource(bevy::scene::SceneSpawner::default());
-    app.add_plugins(PhysicsPlugins::default());
+    app.add_plugins(PhysicsPlugins::default().with_length_unit(PIXELS_PER_METER));
     app.add_plugins(CharacterControllerPlugin::<Avian2dBackend>::default());
-    app.insert_resource(Time::<Fixed>::from_hz(60.0));
+    app.insert_resource(Time::<Fixed>::from_hz(FIXED_UPDATE_HZ));
 
     app.finish();
     app.cleanup();
