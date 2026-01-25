@@ -4,9 +4,19 @@
 //! allowing examples to work with both Rapier2D and Avian2D without code duplication.
 
 use bevy::prelude::*;
+use bevy::time::Fixed;
 use msg_character_controller::prelude::*;
 
 use super::{Player, create_capsule_mesh, create_circle_mesh, create_rectangle_mesh, create_triangle_mesh};
+
+// ==================== Shared Physics Constants ====================
+
+/// Fixed update rate in Hz. Both Rapier2D and Avian2D use this for consistent simulation.
+pub const FIXED_UPDATE_HZ: f64 = 60.0;
+
+/// Default pixels per meter conversion. This ensures forces behave consistently
+/// across both physics backends.
+pub const DEFAULT_PIXELS_PER_METER: f32 = 10.0;
 
 // Re-export the active backend type for convenience
 #[cfg(feature = "rapier2d")]
@@ -48,7 +58,7 @@ pub struct ExamplePhysicsPlugin {
 impl Default for ExamplePhysicsPlugin {
     fn default() -> Self {
         Self {
-            pixels_per_meter: 10.0,
+            pixels_per_meter: DEFAULT_PIXELS_PER_METER,
         }
     }
 }
@@ -61,6 +71,9 @@ impl ExamplePhysicsPlugin {
 
 impl Plugin for ExamplePhysicsPlugin {
     fn build(&self, app: &mut App) {
+        // Set fixed timestep for consistent physics simulation across backends
+        app.insert_resource(Time::<Fixed>::from_hz(FIXED_UPDATE_HZ));
+
         #[cfg(feature = "rapier2d")]
         {
             app.add_plugins(RapierPhysicsPlugin::<NoUserData>::pixels_per_meter(
