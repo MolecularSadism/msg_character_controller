@@ -20,6 +20,18 @@ bevy = { version = "0.17", default-features = false }
 avian2d = "0.4"
 bevy_rapier2d = { version = "0.32.0", features = ["simd-stable", "debug-render-2d"] }
 bevy_egui = "0.37"
+# Full Bevy features for examples (rendering, UI)
+# Note: Windowing backend (x11/wayland) will be auto-detected by bevy_winit
+bevy = { version = "0.17", features = [
+    "bevy_core_pipeline",
+    "bevy_sprite",
+    "bevy_text",
+    "bevy_ui",
+    "bevy_winit",
+    "default_font",
+    "multi_threaded",
+    "png",
+] }
 
 [features]
 default = ["avian2d"]
@@ -29,19 +41,6 @@ avian2d = ["dep:avian2d"]
 # Physics backend: bevy_rapier2d (Rapier2D physics engine)
 # Usage: CharacterControllerPlugin::<Rapier2dBackend>::default()
 rapier2d = ["dep:bevy_rapier2d"]
-# Feature for running examples (requires platform windowing libs)
-examples = [
-    "bevy/bevy_core_pipeline",
-    "bevy/bevy_sprite",
-    "bevy/bevy_sprite_render",
-    "bevy/bevy_text",
-    "bevy/bevy_ui",
-    "bevy/bevy_winit",
-    "bevy/default_font",
-    "bevy/multi_threaded",
-    "bevy/png",
-    "bevy/x11",
-]
 
 [dependencies.avian2d]
 version = "0.4"
@@ -53,29 +52,24 @@ features = ["simd-stable", "debug-render-2d"]
 optional = true
 
 # Examples - work with either physics backend:
-# - Avian2D (default): cargo run --example platform_box --features examples
-# - Rapier2D: cargo run --example platform_box --features "examples,rapier2d" --no-default-features
+# - Avian2D (default): cargo run --example platform_box
+# - Rapier2D: cargo run --example platform_box --features rapier2d --no-default-features
 [[example]]
 name = "platform_box"
 path = "examples/platform_box.rs"
-required-features = ["examples"]
 
 [[example]]
 name = "spherical_planet"
 path = "examples/spherical_planet.rs"
-required-features = ["examples"]
 
 [[example]]
 name = "float_test"
 path = "examples/float_test.rs"
-required-features = ["examples"]
 
 [[example]]
 name = "hilly_planet"
 path = "examples/hilly_planet.rs"
-required-features = ["examples"]
 
 [[example]]
 name = "ballpit"
 path = "examples/ballpit.rs"
-required-features = ["examples"]

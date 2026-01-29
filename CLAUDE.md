@@ -75,9 +75,13 @@ Systems run in `FixedUpdate` in six ordered phases via `CharacterControllerSet`:
 # Run tests
 cargo test
 
-# Run specific example
-cargo run --example platform_box --features examples
-cargo run --example spherical_planet --features examples
+# Run examples (use Avian2D physics by default)
+cargo run --example platform_box
+cargo run --example spherical_planet
+
+# Run examples with Rapier2D physics backend
+cargo run --example platform_box --features rapier2d --no-default-features
+cargo run --example spherical_planet --features rapier2d --no-default-features
 
 # Build documentation
 cargo doc --open
