@@ -52,9 +52,11 @@ fn spawn_character(app: &mut App, position: Vec2) -> Entity {
 
 /// Spawn a character controller with custom config.
 fn spawn_character_with_config(app: &mut App, position: Vec2, config: ControllerConfig) -> Entity {
+    let transform = Transform::from_translation(position.extend(0.0));
     app.world_mut()
         .spawn((
-            Transform::from_translation(position.extend(0.0)),
+            transform,
+            GlobalTransform::from(transform),
             CharacterController::new(),
             config,
             Collider::capsule(4.0, 8.0),
@@ -66,9 +68,11 @@ fn spawn_character_with_config(app: &mut App, position: Vec2, config: Controller
 
 /// Spawn a character with custom gravity (which determines the up direction).
 fn spawn_character_with_gravity(app: &mut App, position: Vec2, gravity: Vec2) -> Entity {
+    let transform = Transform::from_translation(position.extend(0.0));
     app.world_mut()
         .spawn((
-            Transform::from_translation(position.extend(0.0)),
+            transform,
+            GlobalTransform::from(transform),
             CharacterController::with_gravity(gravity),
             ControllerConfig::default(),
             Collider::capsule(4.0, 8.0),
@@ -84,8 +88,7 @@ fn tick(app: &mut App) {
     app.world_mut()
         .resource_mut::<Time<Virtual>>()
         .advance_by(timestep);
-    app.update();
-    app.world_mut().run_schedule(bevy::prelude::FixedUpdate);
+    // Just update once - Bevy 0.18 handles scheduling internally
     app.update();
 }
 
