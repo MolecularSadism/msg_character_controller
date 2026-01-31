@@ -9,7 +9,10 @@
       "Bash(cargo doc:*)",
       "Read(//c/Users/fmulk/.cargo/registry/src/**)",
       "Bash(timeout 5 cargo run:*)",
-      "Bash(git add:*)"
+      "Bash(git add:*)",
+      "WebSearch",
+      "Bash(cargo check:*)",
+      "Bash(cargo info:*)"
     ],
     "deny": [],
     "ask": []
