@@ -12,7 +12,8 @@
       "Bash(git add:*)",
       "WebSearch",
       "Bash(cargo check:*)",
-      "Bash(cargo info:*)"
+      "Bash(cargo info:*)",
+      "Bash(git commit:*)"
     ],
     "deny": [],
     "ask": []

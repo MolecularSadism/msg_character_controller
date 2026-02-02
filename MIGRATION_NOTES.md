@@ -29,6 +29,9 @@
 - Running 10+ frames doesn't help
 - PhysicsPlugins configured identically to working 0.17 setup
 - Avian 0.5 claims to be "just a Bevy 0.18 update with no other breaking changes"
+- Tried: simplified tick(), adding/removing RigidBody, explicit CollisionLayers, avoiding layer bit 0
+- Docs confirm only Collider required for detection, but spatial queries return no hits
+- **Suspect**: May be test environment issue, schedule ordering, or Avian 0.5 bug
 
 **Test Failures (8/17)**:
 - `collision_layers::explicit_layer_0_matches_default`
