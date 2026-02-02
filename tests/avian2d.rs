@@ -57,6 +57,7 @@ fn spawn_character_with_config(app: &mut App, position: Vec2, config: Controller
         .spawn((
             transform,
             GlobalTransform::from(transform),
+            RigidBody::Dynamic, // Required for Avian physics
             CharacterController::new(),
             config,
             Collider::capsule(4.0, 8.0),
@@ -73,6 +74,7 @@ fn spawn_character_with_gravity(app: &mut App, position: Vec2, gravity: Vec2) ->
         .spawn((
             transform,
             GlobalTransform::from(transform),
+            RigidBody::Dynamic, // Required for Avian physics
             CharacterController::with_gravity(gravity),
             ControllerConfig::default(),
             Collider::capsule(4.0, 8.0),
