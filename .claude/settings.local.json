@@ -13,7 +13,8 @@
       "WebSearch",
       "Bash(cargo check:*)",
       "Bash(cargo info:*)",
-      "Bash(git commit:*)"
+      "Bash(git commit:*)",
+      "Bash(cargo clippy-pedantic:*)"
     ],
     "deny": [],
     "ask": []
