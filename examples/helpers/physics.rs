@@ -123,14 +123,17 @@ pub fn spawn_static_box(
     ));
 
     #[cfg(feature = "avian2d")]
-    commands.spawn((
-        Transform::from_translation(position.extend(0.0)),
-        GlobalTransform::default(),
-        RigidBody::Static,
-        Collider::rectangle(half_size.x * 2.0, half_size.y * 2.0),
-        Mesh2d(mesh),
-        MeshMaterial2d(material),
-    ));
+    {
+        let entity = commands.spawn((
+            Transform::from_translation(position.extend(0.0)),
+            GlobalTransform::default(),
+            RigidBody::Static,
+            Collider::rectangle(half_size.x * 2.0, half_size.y * 2.0),
+            Mesh2d(mesh),
+            MeshMaterial2d(material),
+        )).id();
+        eprintln!("spawn_static_box: Created platform entity {:?} at position {:?} with half_size {:?}", entity, position, half_size);
+    }
 }
 
 /// Spawns a static rectangular collider with rotation.

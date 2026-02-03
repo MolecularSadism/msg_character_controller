@@ -315,6 +315,17 @@ pub fn movement_intent_ui(ui: &mut egui::Ui, movement: Option<&MovementIntent>) 
                 ui.label(fly_str);
             });
             ui.horizontal(|ui| {
+                ui.label("Fly Horizontal:");
+                let fly_h_str = if intent.fly_horizontal > 0.01 {
+                    format!("Right ({:.2})", intent.fly_horizontal)
+                } else if intent.fly_horizontal < -0.01 {
+                    format!("Left ({:.2})", intent.fly_horizontal)
+                } else {
+                    "None".to_string()
+                };
+                ui.label(fly_h_str);
+            });
+            ui.horizontal(|ui| {
                 ui.label("Walk Speed:");
                 ui.label(format!("{:.2}", intent.walk_speed));
             });

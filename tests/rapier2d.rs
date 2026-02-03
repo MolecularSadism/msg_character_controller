@@ -136,14 +136,15 @@ mod ground_detection {
         // PROOF: ground_distance should be approximately 20 - 5 = 15 (from capsule center to ground)
         // Capsule has half-height 8 and radius 4, so bottom is at y=20-12=8
         // Ground surface is at y=5, so distance ~= 8 - 5 = 3
+        let ground_dist = controller.ground_distance().expect("Ground should have distance");
         assert!(
-            controller.ground_distance() < 20.0,
+            ground_dist < 20.0,
             "Ground distance should be less than character height: {}",
-            controller.ground_distance()
+            ground_dist
         );
 
         println!(
-            "PROOF: ground_detected={}, ground_distance={}, ground_normal={:?}",
+            "PROOF: ground_detected={}, ground_distance={:?}, ground_normal={:?}",
             controller.ground_detected(),
             controller.ground_distance(),
             controller.ground_normal()
@@ -170,7 +171,7 @@ mod ground_detection {
         let cfg = app.world().get::<ControllerConfig>(character).unwrap();
 
         println!(
-            "PROOF: is_grounded={}, ground_distance={}, riding_height+grounding_distance={}",
+            "PROOF: is_grounded={}, ground_distance={:?}, riding_height+grounding_distance={}",
             controller.is_grounded(cfg),
             controller.ground_distance(),
             controller.riding_height(cfg) + cfg.grounding_distance
@@ -197,7 +198,7 @@ mod ground_detection {
         let config = app.world().get::<ControllerConfig>(character).unwrap();
 
         println!(
-            "PROOF: is_grounded={}, ground_detected={}, ground_distance={}",
+            "PROOF: is_grounded={}, ground_detected={}, ground_distance={:?}",
             controller.is_grounded(config),
             controller.ground_detected(),
             controller.ground_distance()
@@ -271,11 +272,12 @@ mod float_height {
 
         // The riding height = float_height + collider_bottom_offset
         let riding_height = controller.riding_height(cfg);
+        let ground_dist = controller.ground_distance().expect("Ground should be detected");
 
         println!(
             "PROOF: Character position.y={}, ground_distance={}, riding_height={}",
             transform.translation.y,
-            controller.ground_distance(),
+            ground_dist,
             riding_height
         );
 
@@ -284,11 +286,11 @@ mod float_height {
         // The force isolation system can slightly affect settling precision
         let tolerance = 2.0;
         assert!(
-            (controller.ground_distance() - riding_height).abs() < tolerance,
+            (ground_dist - riding_height).abs() < tolerance,
             "Ground distance {} should be close to riding_height {} (diff: {})",
-            controller.ground_distance(),
+            ground_dist,
             riding_height,
-            (controller.ground_distance() - riding_height).abs()
+            (ground_dist - riding_height).abs()
         );
 
         // PROOF: Character should NOT be touching the ground (position should be elevated)

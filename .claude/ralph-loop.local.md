@@ -1,9 +1,9 @@
 ---
 active: true
 iteration: 1
-max_iterations: 30
-completion_promise: "DONE"
-started_at: "2026-01-31T19:09:47Z"
+max_iterations: 200
+completion_promise: "POLISHED"
+started_at: "2026-02-03T13:06:07Z"
 ---
 
-- Publish a branch bevy-0.17 to keep an old version available - Make a new branch for migration - Migrate the crate to Bevy 0.18 - Bump the version number to v0.3.0 - Fully run cargo test, cargo check all examples all targets, same for clippy, run bevy_lint all targets all features - Completely clean up the project CI including pedantic clippy - Set the project clippy to use these exceptions: cargo clippy --all-targets --all-features -- -W clippy::pedantic -A clippy::needless_pass_by_value -A clippy::too_many_arguments -A clippy::type_complexity - Write integration and unit tests where they are missing, particularly where migration required breaking changes - The tests and all examples have to run through the full cleanup pipeline - You are on windows with WSL, avoid firing stop hooks, just launch directly into follow-up iterations
+Your brother fucked up the complete project. The whole job is to make ShapeCaster and RayCaster and ShapeHits and RayHits work for Avian. Save it and remove this retarded SpatialQuery workaround! Read TASKS.md. Review the progress. Actually make it work. The project MUST use these. NO WORKING AROUND IT TO GET TO THE GOAL. You are finished when ALL Avian collision detection succesfully uses this component-based approach. SpatialQuery is not allowed without my specific consent. Write comprehensive tests to ensure this all works. No deprecated bullshit, no dead code. Make it work.
