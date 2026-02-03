@@ -17,7 +17,7 @@ exclude = [".github/", "CLAUDE.md"]
 bevy = { version = "0.18", default-features = false }
 
 [dev-dependencies]
-avian2d = "0.5"
+avian2d = { version = "0.5", features = ["2d"] }
 # bevy_rapier2d support temporarily disabled until Bevy 0.18 compatibility is released
 # bevy_rapier2d = { version = "0.32.0", features = ["simd-stable", "debug-render-2d"] }
 bevy_egui = "0.39"
@@ -47,6 +47,7 @@ examples = [
 
 [dependencies.avian2d]
 version = "0.5"
+features = ["2d"]
 optional = true
 
 # bevy_rapier2d support temporarily disabled until Bevy 0.18 compatibility is released

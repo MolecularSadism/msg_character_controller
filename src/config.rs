@@ -86,6 +86,10 @@ pub struct CharacterController {
     pub step_detected: bool,
     /// Height of the detected step (if any).
     pub step_height: f32,
+    /// Whether the character is moving downward (falling).
+    /// Set by velocity detection system each frame. Used by fall gravity to determine
+    /// if jump apex has been crossed (even when jump button is still held).
+    pub falling: bool,
     /// Timer tracking time since last grounded (for coyote time).
     /// When grounded, this timer is reset. When not grounded, it ticks.
     /// Coyote time is valid while the timer has not finished.
@@ -203,6 +207,7 @@ impl Default for CharacterController {
             slope_angle: 0.0,
             step_detected: false,
             step_height: 0.0,
+            falling: false,
             // Coyote timer starts finished (not grounded) - will be reset when grounded
             // Duration is set by the system based on config.coyote_time
             coyote_timer: Timer::new(Duration::ZERO, TimerMode::Once),
@@ -410,8 +415,9 @@ impl CharacterController {
     }
 
     /// Get the raw distance to ground (for debugging/testing).
-    pub fn ground_distance(&self) -> f32 {
-        self.floor.as_ref().map(|f| f.distance).unwrap_or(f32::MAX)
+    /// Returns None if no ground is detected.
+    pub fn ground_distance(&self) -> Option<f32> {
+        self.floor.as_ref().map(|f| f.distance)
     }
 
     /// Check if ground was detected by raycast (for debugging/testing).
@@ -420,8 +426,9 @@ impl CharacterController {
     }
 
     /// Get the ground contact point in world space (for debugging/testing).
-    pub fn ground_contact_point(&self) -> Vec2 {
-        self.floor.as_ref().map(|f| f.point).unwrap_or(Vec2::ZERO)
+    /// Returns None if no ground is detected.
+    pub fn ground_contact_point(&self) -> Option<Vec2> {
+        self.floor.as_ref().map(|f| f.point)
     }
 
     /// Reset all detection state (called at start of each frame).

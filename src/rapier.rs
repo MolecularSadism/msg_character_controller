@@ -494,15 +494,13 @@ fn check_stair_step(
         shape_rotation,
         entity,
         collision_groups,
-    );
-
-    let current_ground_distance = current_ground_hit.map(|h| h.distance).unwrap_or(f32::MAX);
+    )?; // Return None if we can't detect current ground - can't determine step height without reference
 
     // Calculate step height: how much higher is the step surface compared to our current ground?
     // The step is at cast_origin + down * stair_hit.distance
-    // Our ground is at position + down * current_ground_distance
+    // Our ground is at position + down * current_ground_hit.distance
     // The height difference in the "up" direction:
-    let current_ground_point = position + down * current_ground_distance;
+    let current_ground_point = position + down * current_ground_hit.distance;
     let step_height_in_up = (step_surface_point - current_ground_point).dot(up);
 
     // step_height is positive when the step surface is above current ground

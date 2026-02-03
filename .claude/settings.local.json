@@ -14,7 +14,15 @@
       "Bash(cargo check:*)",
       "Bash(cargo info:*)",
       "Bash(git commit:*)",
-      "Bash(cargo clippy-pedantic:*)"
+      "Bash(cargo clippy-pedantic:*)",
+      "Bash(cargo tree:*)",
+      "Bash(git log:*)",
+      "WebFetch(domain:github.com)",
+      "WebFetch(domain:docs.rs)",
+      "Bash(cargo clippy:*)",
+      "Bash(curl:*)",
+      "Bash(timeout:*)",
+      "Bash(ls:*)"
     ],
     "deny": [],
     "ask": []

@@ -116,6 +116,19 @@ pub trait CharacterPhysicsBackend: 'static + Send + Sync {
     fn is_rotation_locked(_world: &World, _entity: Entity) -> bool {
         false
     }
+
+    /// Indicates whether this backend provides custom gravity systems.
+    ///
+    /// If true, the backend's plugin should register its own gravity systems,
+    /// and the generic gravity systems will not be registered by the main plugin.
+    ///
+    /// This allows backends to use physics-engine-specific approaches (like Avian's
+    /// Forces component) instead of the generic impulse-based gravity.
+    ///
+    /// Default implementation returns false (use generic gravity systems).
+    fn provides_custom_gravity() -> bool {
+        false
+    }
 }
 
 /// Empty plugin for backends that don't need additional setup.

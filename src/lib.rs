@@ -427,6 +427,7 @@ impl<B: backend::CharacterPhysicsBackend> Plugin for CharacterControllerPlugin<B
         app.register_type::<config::StairConfig>();
         app.register_type::<config::JumpType>();
         app.register_type::<intent::MovementIntent>();
+        app.register_type::<intent::JumpRequest>();
 
         // Add the physics backend plugin
         app.add_plugins(B::plugin());
@@ -504,12 +505,19 @@ impl<B: backend::CharacterPhysicsBackend> Plugin for CharacterControllerPlugin<B
                 .chain()
                 .in_set(CharacterControllerSet::ForceAccumulation),
         );
+
+        // Only register generic gravity if backend doesn't provide custom implementation
+        if !B::provides_custom_gravity() {
+            app.add_systems(
+                FixedUpdate,
+                systems::accumulate_gravity::<B>
+                    .in_set(CharacterControllerSet::ForceAccumulation),
+            );
+        }
+
         app.add_systems(
             FixedUpdate,
-            (
-                systems::accumulate_gravity::<B>,
-                systems::accumulate_upright_torque::<B>,
-            )
+            systems::accumulate_upright_torque::<B>
                 .in_set(CharacterControllerSet::ForceAccumulation),
         );
 
@@ -518,16 +526,31 @@ impl<B: backend::CharacterPhysicsBackend> Plugin for CharacterControllerPlugin<B
         // Fall gravity runs first to check jump request before it's consumed
         // Jump runs second to consume the jump request
         // Walk and fly can run in parallel as they affect orthogonal axes
-        app.add_systems(
-            FixedUpdate,
-            (
-                systems::apply_fall_gravity::<B>,
-                systems::apply_walk::<B>,
-                systems::apply_jump::<B>,
-            )
-                .chain()
-                .in_set(CharacterControllerSet::IntentApplication),
-        );
+
+        // Only register generic fall gravity if backend doesn't provide custom implementation
+        if !B::provides_custom_gravity() {
+            app.add_systems(
+                FixedUpdate,
+                (
+                    systems::apply_fall_gravity::<B>,
+                    systems::apply_walk::<B>,
+                    systems::apply_jump::<B>,
+                )
+                    .chain()
+                    .in_set(CharacterControllerSet::IntentApplication),
+            );
+        } else {
+            // Backend provides custom gravity, so only add walk and jump
+            app.add_systems(
+                FixedUpdate,
+                (
+                    systems::apply_walk::<B>,
+                    systems::apply_jump::<B>,
+                )
+                    .chain()
+                    .in_set(CharacterControllerSet::IntentApplication),
+            );
+        }
         app.add_systems(
             FixedUpdate,
             (

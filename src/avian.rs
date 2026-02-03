@@ -8,7 +8,39 @@ use avian2d::prelude::*;
 
 use crate::backend::CharacterPhysicsBackend;
 use crate::collision::CollisionData;
-use crate::config::{CharacterController, ControllerConfig, StairConfig};
+use crate::config::{CharacterController, ControllerConfig};
+
+/// Marker component for ground detection ShapeCaster.
+#[derive(Component, Debug, Clone, Copy)]
+pub struct GroundCaster;
+
+/// Marker component for left wall detection ShapeCaster.
+#[derive(Component, Debug, Clone, Copy)]
+pub struct LeftWallCaster;
+
+/// Marker component for right wall detection ShapeCaster.
+#[derive(Component, Debug, Clone, Copy)]
+pub struct RightWallCaster;
+
+/// Marker component for ceiling detection ShapeCaster.
+#[derive(Component, Debug, Clone, Copy)]
+pub struct CeilingCaster;
+
+/// Marker component for stair detection ShapeCaster (forward-down cast).
+#[derive(Component, Debug, Clone, Copy)]
+pub struct StairCaster;
+
+/// Marker component for current ground detection ShapeCaster (for step height calculation).
+#[derive(Component, Debug, Clone, Copy)]
+pub struct CurrentGroundCaster;
+
+/// Component linking a caster child entity back to its parent character.
+#[derive(Component, Debug, Clone, Copy)]
+pub struct CasterParent(pub Entity);
+
+/// Marker component to track that casters have been spawned for this character.
+#[derive(Component, Debug, Clone, Copy)]
+pub struct CastersSpawned;
 
 /// Message fired when a reactive force (Newton's 3rd law) is applied to an entity.
 ///
@@ -28,7 +60,7 @@ pub struct ReactiveForceApplied {
 /// This backend uses `avian2d` for physics operations including
 /// force application and velocity manipulation. Collision detection
 /// (shapecasting/raycasting) is handled by dedicated Avian systems
-/// that use `SpatialQuery` as a system parameter.
+/// that use `ShapeCaster` components for deferred spatial queries.
 pub struct Avian2dBackend;
 
 impl CharacterPhysicsBackend for Avian2dBackend {
@@ -175,6 +207,11 @@ impl CharacterPhysicsBackend for Avian2dBackend {
             .get::<LockedAxes>(entity)
             .is_some_and(|axes| axes.is_rotation_locked())
     }
+
+    fn provides_custom_gravity() -> bool {
+        // Avian backend provides custom gravity systems that use Forces component
+        true
+    }
 }
 
 /// Plugin that sets up Avian2D-specific systems for the character controller.
@@ -187,26 +224,48 @@ impl Plugin for Avian2dBackendPlugin {
         // Register the reactive force message
         app.add_message::<ReactiveForceApplied>();
 
-        // Phase 1: Preparation - Clear forces from previous frame
-        // Both controller forces and reactive forces (ground reactions) are cleared here
+        // Phase 1: Preparation - Clear forces and update caster components
+        // First clear forces, then spawn casters for new controllers, then update all caster directions
         app.add_systems(
             FixedUpdate,
-            (clear_controller_forces, clear_reactive_forces)
+            (
+                clear_controller_forces,
+                clear_reactive_forces,
+                spawn_detection_casters,
+                update_ground_caster_direction,
+                update_wall_caster_directions,
+                update_ceiling_caster_direction,
+                update_stair_casters,
+            )
+                .chain()
                 .in_set(CharacterControllerSet::Preparation),
         );
 
-        // Phase 3: Sensors - Avian-specific detection systems
+        // Phase 3: Sensors - Read ShapeHits from caster components
         // Ground detection must run first because it sets collider_bottom_offset
         // which ceiling detection uses for capsule_half_height().
-        // Wall and ceiling detection can run in parallel after ground detection.
+        // Wall, ceiling, and stair detection can run in parallel after ground detection.
+        // Falling detection can run after collision detection to determine vertical movement.
         app.add_systems(
             FixedUpdate,
             (
                 avian_ground_detection,
-                (avian_wall_detection, avian_ceiling_detection),
+                (avian_wall_detection, avian_ceiling_detection, avian_stair_detection, avian_detect_falling),
             )
                 .chain()
                 .in_set(CharacterControllerSet::Sensors),
+        );
+
+        // Phase 4: Force Accumulation - Avian-specific gravity using Forces component
+        app.add_systems(
+            FixedUpdate,
+            avian_accumulate_gravity.in_set(CharacterControllerSet::ForceAccumulation),
+        );
+
+        // Phase 5: Intent Application - Avian-specific fall gravity using Forces component
+        app.add_systems(
+            FixedUpdate,
+            avian_apply_fall_gravity.in_set(CharacterControllerSet::IntentApplication),
         );
 
         // Phase 6: Final Application - Apply accumulated forces to physics
@@ -214,6 +273,39 @@ impl Plugin for Avian2dBackendPlugin {
             FixedUpdate,
             apply_controller_forces.in_set(CharacterControllerSet::FinalApplication),
         );
+    }
+}
+
+/// Automatically spawn detection casters for new character controllers.
+///
+/// This system detects newly added CharacterController entities and spawns
+/// all necessary ShapeCaster child entities for collision detection.
+fn spawn_detection_casters(
+    mut commands: Commands,
+    q_new_controllers: Query<
+        (Entity, &CharacterController, &ControllerConfig),
+        (Without<CastersSpawned>, With<CharacterController>),
+    >,
+) {
+    for (entity, controller, config) in &q_new_controllers {
+        // Spawn ground caster
+        spawn_ground_caster(&mut commands, entity, config);
+
+        // Spawn wall casters
+        spawn_wall_casters(&mut commands, entity, config);
+
+        // Spawn ceiling caster
+        spawn_ceiling_caster(&mut commands, entity, config);
+
+        // Spawn stair casters if enabled
+        if let Some(stair_config) = &controller.stair_config {
+            if stair_config.enabled {
+                spawn_stair_casters(&mut commands, entity, controller);
+            }
+        }
+
+        // Mark this entity as having casters spawned
+        commands.entity(entity).insert(CastersSpawned);
     }
 }
 
@@ -239,278 +331,522 @@ pub fn get_collider_bottom_offset(collider: &Collider) -> f32 {
     }
 }
 
-// Avian-specific detection systems that use SpatialQuery as a system parameter
+/// Spawn a ground detection ShapeCaster as a child of the character entity.
+///
+/// This function creates a child entity with a ShapeCaster component configured
+/// for ground detection. The caster direction and distance will be updated
+/// dynamically by the `update_ground_caster_direction` system.
+///
+/// Note: Collision layers are inherited from the parent in the update system.
+pub fn spawn_ground_caster(commands: &mut Commands, parent: Entity, config: &ControllerConfig) {
+    let half_width = config.ground_cast_width / 2.0;
 
-/// Perform a shapecast using SpatialQuery.
-fn avian_shapecast(
-    spatial_query: &SpatialQuery,
-    origin: Vec2,
-    direction: Vec2,
-    max_distance: f32,
-    shape_width: f32,
-    shape_height: f32,
-    shape_rotation: f32,
-    exclude_entity: Entity,
-    collision_layers: Option<CollisionLayers>,
-) -> Option<CollisionData> {
-    // Determine if we're creating a horizontal or vertical segment based on dimensions
-    let shape = if shape_height > shape_width {
-        // Vertical segment (for wall detection)
-        let half_height = shape_height / 2.0;
-        Collider::segment(Vec2::new(0.0, -half_height), Vec2::new(0.0, half_height))
-    } else {
-        // Horizontal segment (for ground/ceiling detection)
-        let half_width = shape_width / 2.0;
-        Collider::segment(Vec2::new(-half_width, 0.0), Vec2::new(half_width, 0.0))
-    };
+    let child = commands.spawn((
+        Name::new("GroundCaster"),
+        GroundCaster,
+        CasterParent(parent),
+        ShapeCaster::new(
+            Collider::segment(Vec2::new(-half_width, 0.0), Vec2::new(half_width, 0.0)),
+            Vec2::ZERO,
+            0.0,
+            Dir2::NEG_Y,
+        ).with_max_distance(20.0)
+         .with_max_hits(1)
+         .with_ignore_self(true),
+        Transform::default(),
+        GlobalTransform::default(),
+    )).id();
 
-    // Create filter to exclude the casting entity and respect collision layers
-    let filter = if let Some(layers) = collision_layers {
-        // Use the character's filters as the mask - this finds entities whose memberships
-        // overlap with what the character is allowed to collide with
-        SpatialQueryFilter::from_mask(layers.filters).with_excluded_entities([exclude_entity])
-    } else {
-        // No collision layers specified - use default which includes all entities
-        SpatialQueryFilter::default().with_excluded_entities([exclude_entity])
-    };
-
-    // Create shape cast config
-    let config = ShapeCastConfig::from_max_distance(max_distance);
-
-    // Perform the shapecast
-    spatial_query
-        .cast_shape(
-            &shape,
-            origin,
-            shape_rotation,
-            Dir2::new(direction).unwrap_or(Dir2::NEG_Y),
-            &config,
-            &filter,
-        )
-        .map(|hit| {
-            // Extract normal from hit (normal1 is the surface normal on the hit shape)
-            let normal = hit.normal1;
-            // Calculate hit point
-            let hit_point = origin + direction * hit.distance;
-            CollisionData::new(hit.distance, normal, hit_point, Some(hit.entity))
-        })
+    commands.entity(parent).add_child(child);
 }
 
-use crate::intent::MovementIntent;
+/// Spawn left wall detection ShapeCaster as a child of the character entity.
+///
+/// This function creates a child entity with a ShapeCaster component configured
+/// for left wall detection. The caster direction will be updated dynamically
+/// by the `update_wall_caster_directions` system.
+///
+/// Note: Collision layers are inherited from the parent in the update system.
+pub fn spawn_left_wall_caster(commands: &mut Commands, parent: Entity, config: &ControllerConfig) {
+    let half_height = config.wall_cast_height / 2.0;
+    let child = commands.spawn((
+        LeftWallCaster,
+        CasterParent(parent),
+        ShapeCaster::new(
+            Collider::segment(Vec2::new(0.0, -half_height), Vec2::new(0.0, half_height)),
+            Vec2::ZERO,
+            0.0,
+            Dir2::NEG_X,
+        ).with_max_distance(10.0)
+         .with_max_hits(1)
+         .with_ignore_self(true),
+        Transform::default(),
+        GlobalTransform::default(),
+    )).id();
 
-/// Avian-specific ground detection system using shapecast.
+    commands.entity(parent).add_child(child);
+}
+
+/// Spawn right wall detection ShapeCaster as a child of the character entity.
 ///
-/// Floor raycast covers: riding_height + grounding_distance
-/// (which is float_height + capsule_half_height + grounding_distance)
+/// This function creates a child entity with a ShapeCaster component configured
+/// for right wall detection. The caster direction will be updated dynamically
+/// by the `update_wall_caster_directions` system.
 ///
-/// **Important**: Raycasts use the "ideal up" direction derived from gravity,
-/// NOT from the actor's Transform rotation. This ensures ground detection
-/// works correctly even when the actor is physically rotated.
-fn avian_ground_detection(
-    spatial_query: SpatialQuery,
-    mut q_controllers: Query<(
-        Entity,
-        &GlobalTransform,
-        &ControllerConfig,
+/// Note: Collision layers are inherited from the parent in the update system.
+pub fn spawn_right_wall_caster(commands: &mut Commands, parent: Entity, config: &ControllerConfig) {
+    let half_height = config.wall_cast_height / 2.0;
+    let child = commands.spawn((
+        RightWallCaster,
+        CasterParent(parent),
+        ShapeCaster::new(
+            Collider::segment(Vec2::new(0.0, -half_height), Vec2::new(0.0, half_height)),
+            Vec2::ZERO,
+            0.0,
+            Dir2::X,
+        ).with_max_distance(10.0)
+         .with_max_hits(1)
+         .with_ignore_self(true),
+        Transform::default(),
+        GlobalTransform::default(),
+    )).id();
+
+    commands.entity(parent).add_child(child);
+}
+
+/// Spawn both left and right wall casters.
+///
+/// Convenience function to spawn both wall casters at once.
+pub fn spawn_wall_casters(commands: &mut Commands, parent: Entity, config: &ControllerConfig) {
+    spawn_left_wall_caster(commands, parent, config);
+    spawn_right_wall_caster(commands, parent, config);
+}
+
+/// Spawn ceiling detection ShapeCaster as a child of the character entity.
+///
+/// This function creates a child entity with a ShapeCaster component configured
+/// for ceiling detection. The caster direction will be updated dynamically
+/// by the `update_ceiling_caster_direction` system.
+///
+/// Note: Collision layers are inherited from the parent in the update system.
+pub fn spawn_ceiling_caster(commands: &mut Commands, parent: Entity, config: &ControllerConfig) {
+    let half_width = config.ceiling_cast_width / 2.0;
+    let child = commands.spawn((
+        CeilingCaster,
+        CasterParent(parent),
+        ShapeCaster::new(
+            Collider::segment(Vec2::new(-half_width, 0.0), Vec2::new(half_width, 0.0)),
+            Vec2::ZERO,
+            0.0,
+            Dir2::Y,
+        ).with_max_distance(10.0)
+         .with_max_hits(1)
+         .with_ignore_self(true),
+        Transform::default(),
+        GlobalTransform::default(),
+    )).id();
+
+    commands.entity(parent).add_child(child);
+}
+
+/// Spawn stair detection ShapeCasters as children of the character entity.
+///
+/// This function creates two child entities:
+/// - StairCaster: forward-down cast for detecting the step surface
+/// - CurrentGroundCaster: downward cast for detecting current ground level
+///
+/// Both casters start disabled and are enabled/positioned dynamically by the
+/// `update_stair_casters` system when the character is walking.
+///
+/// Note: Collision layers are inherited from the parent in the update system.
+pub fn spawn_stair_casters(commands: &mut Commands, parent: Entity, controller: &CharacterController) {
+    // Get stair config, or use default if not set
+    let stair_config = controller.stair_config.as_ref()
+        .cloned()
+        .unwrap_or_default();
+
+    let half_width = stair_config.stair_cast_width / 2.0;
+
+    // Stair caster (forward-down detection) - starts disabled
+    let stair_child = commands.spawn((
+        StairCaster,
+        CasterParent(parent),
+        ShapeCaster::new(
+            Collider::segment(Vec2::new(-half_width, 0.0), Vec2::new(half_width, 0.0)),
+            Vec2::ZERO,
+            0.0,
+            Dir2::NEG_Y,
+        ).with_max_distance(stair_config.max_climb_height)
+         .with_max_hits(1)
+         .with_ignore_self(true)
+         .disable(), // Start disabled
+        Transform::default(),
+        GlobalTransform::default(),
+    )).id();
+
+    commands.entity(parent).add_child(stair_child);
+
+    // Current ground caster (for step height reference) - starts disabled
+    let ground_child = commands.spawn((
+        CurrentGroundCaster,
+        CasterParent(parent),
+        ShapeCaster::new(
+            Collider::segment(Vec2::new(-half_width, 0.0), Vec2::new(half_width, 0.0)),
+            Vec2::ZERO,
+            0.0,
+            Dir2::NEG_Y,
+        ).with_max_distance(20.0)
+         .with_max_hits(1)
+         .with_ignore_self(true)
+         .disable(), // Start disabled
+        Transform::default(),
+        GlobalTransform::default(),
+    )).id();
+
+    commands.entity(parent).add_child(ground_child);
+}
+
+/// Update ground caster direction and configuration based on gravity.
+///
+/// This system runs in the Preparation phase, before Avian updates ShapeHits.
+fn update_ground_caster_direction(
+    mut q_casters: Query<(&CasterParent, &mut ShapeCaster), With<GroundCaster>>,
+    q_controllers: Query<(&CharacterController, &ControllerConfig, Option<&CollisionLayers>)>,
+) {
+    for (caster_parent, mut shape_caster) in &mut q_casters {
+        let Ok((controller, config, collision_layers)) = q_controllers.get(caster_parent.0) else {
+            continue;
+        };
+
+        // Update direction to ideal_down (gravity-relative)
+        let down = controller.ideal_down();
+        if let Ok(dir) = Dir2::new(down) {
+            shape_caster.direction = dir;
+        }
+
+        // Update shape rotation to align with ideal_up
+        shape_caster.shape_rotation = controller.ideal_up_angle() - std::f32::consts::FRAC_PI_2;
+
+        // Update max_distance to cover riding_height + grounding_distance + buffer
+        let riding_height = controller.riding_height(config);
+        shape_caster.max_distance = riding_height + config.grounding_distance + 1.0;
+
+        // Inherit collision layers from parent
+        if let Some(layers) = collision_layers {
+            // Use the character's filters as the mask - this finds entities whose memberships
+            // overlap with what the character is allowed to collide with
+            shape_caster.query_filter = SpatialQueryFilter::from_mask(layers.filters);
+        } else {
+            // No collision layers specified - use default which includes all entities
+            shape_caster.query_filter = SpatialQueryFilter::default();
+        }
+
+        // Exclude the parent entity from the cast
+        shape_caster.query_filter.excluded_entities.insert(caster_parent.0);
+    }
+}
+
+/// Update wall caster directions and configuration based on gravity.
+///
+/// This system runs in the Preparation phase, before Avian updates ShapeHits.
+fn update_wall_caster_directions(
+    mut q_left_casters: Query<(&CasterParent, &mut ShapeCaster), With<LeftWallCaster>>,
+    mut q_right_casters: Query<(&CasterParent, &mut ShapeCaster), (With<RightWallCaster>, Without<LeftWallCaster>)>,
+    q_controllers: Query<(&CharacterController, &ControllerConfig, Option<&CollisionLayers>, Option<&Collider>)>,
+) {
+    // Update left wall casters
+    for (caster_parent, mut shape_caster) in &mut q_left_casters {
+        let Ok((controller, config, collision_layers, collider)) = q_controllers.get(caster_parent.0) else {
+            continue;
+        };
+
+        // Update direction to ideal_left (gravity-relative)
+        let left = controller.ideal_left();
+        if let Ok(dir) = Dir2::new(left) {
+            shape_caster.direction = dir;
+        }
+
+        // Update shape rotation to align with ideal_up (vertical segment)
+        shape_caster.shape_rotation = controller.ideal_up_angle();
+
+        // Update max_distance: surface_detection_distance + radius + buffer
+        let radius = collider.map(get_collider_radius).unwrap_or(0.0);
+        shape_caster.max_distance = config.surface_detection_distance + radius + 1.0;
+
+        // Inherit collision layers from parent
+        if let Some(layers) = collision_layers {
+            shape_caster.query_filter = SpatialQueryFilter::from_mask(layers.filters);
+        } else {
+            shape_caster.query_filter = SpatialQueryFilter::default();
+        }
+
+        // Exclude the parent entity from the cast
+        shape_caster.query_filter.excluded_entities.insert(caster_parent.0);
+    }
+
+    // Update right wall casters
+    for (caster_parent, mut shape_caster) in &mut q_right_casters {
+        let Ok((controller, config, collision_layers, collider)) = q_controllers.get(caster_parent.0) else {
+            continue;
+        };
+
+        // Update direction to ideal_right (gravity-relative)
+        let right = controller.ideal_right();
+        if let Ok(dir) = Dir2::new(right) {
+            shape_caster.direction = dir;
+        }
+
+        // Update shape rotation to align with ideal_up (vertical segment)
+        shape_caster.shape_rotation = controller.ideal_up_angle();
+
+        // Update max_distance: surface_detection_distance + radius + buffer
+        let radius = collider.map(get_collider_radius).unwrap_or(0.0);
+        shape_caster.max_distance = config.surface_detection_distance + radius + 1.0;
+
+        // Inherit collision layers from parent
+        if let Some(layers) = collision_layers {
+            shape_caster.query_filter = SpatialQueryFilter::from_mask(layers.filters);
+        } else {
+            shape_caster.query_filter = SpatialQueryFilter::default();
+        }
+
+        // Exclude the parent entity from the cast
+        shape_caster.query_filter.excluded_entities.insert(caster_parent.0);
+    }
+}
+
+/// Update ceiling caster direction and configuration based on gravity.
+///
+/// This system runs in the Preparation phase, before Avian updates ShapeHits.
+fn update_ceiling_caster_direction(
+    mut q_casters: Query<(&CasterParent, &mut ShapeCaster), With<CeilingCaster>>,
+    q_controllers: Query<(&CharacterController, &ControllerConfig, Option<&CollisionLayers>)>,
+) {
+    for (caster_parent, mut shape_caster) in &mut q_casters {
+        let Ok((controller, config, collision_layers)) = q_controllers.get(caster_parent.0) else {
+            continue;
+        };
+
+        // Update direction to ideal_up (gravity-relative)
+        let up = controller.ideal_up();
+        if let Ok(dir) = Dir2::new(up) {
+            shape_caster.direction = dir;
+        }
+
+        // Update shape rotation to align with ideal_up
+        shape_caster.shape_rotation = controller.ideal_up_angle() - std::f32::consts::FRAC_PI_2;
+
+        // Update max_distance: surface_detection_distance + capsule_half_height + buffer
+        shape_caster.max_distance = config.surface_detection_distance + controller.capsule_half_height() + 1.0;
+
+        // Inherit collision layers from parent
+        if let Some(layers) = collision_layers {
+            shape_caster.query_filter = SpatialQueryFilter::from_mask(layers.filters);
+        } else {
+            shape_caster.query_filter = SpatialQueryFilter::default();
+        }
+
+        // Exclude the parent entity from the cast
+        shape_caster.query_filter.excluded_entities.insert(caster_parent.0);
+    }
+}
+
+/// Update stair caster configuration based on movement intent.
+///
+/// This system runs in the Preparation phase, before Avian updates ShapeHits.
+/// Stair casters are only enabled when the character is walking.
+fn update_stair_casters(
+    mut q_stair_casters: Query<(&CasterParent, &mut ShapeCaster), With<StairCaster>>,
+    mut q_ground_casters: Query<(&CasterParent, &mut ShapeCaster), (With<CurrentGroundCaster>, Without<StairCaster>)>,
+    q_controllers: Query<(
+        &CharacterController,
         Option<&MovementIntent>,
-        &mut CharacterController,
         Option<&CollisionLayers>,
         Option<&Collider>,
     )>,
 ) {
-    for (entity, transform, config, movement_intent, mut controller, collision_layers, collider) in
-        &mut q_controllers
-    {
-        let position = transform.translation().xy();
+    // Update stair casters
+    for (caster_parent, mut shape_caster) in &mut q_stair_casters {
+        let Ok((controller, movement_intent, collision_layers, collider)) = q_controllers.get(caster_parent.0) else {
+            continue;
+        };
 
-        // Get collider radius for stair detection offset
-        let radius = collider.map(get_collider_radius).unwrap_or(0.0);
-
-        // Update collider_bottom_offset from actual collider dimensions
-        controller.collider_bottom_offset = collider.map(get_collider_bottom_offset).unwrap_or(0.0);
-
-        // Use ideal up/down direction from gravity, NOT from orientation or transform.
-        // This ensures raycasts work correctly regardless of actor rotation.
-        let down = controller.ideal_down();
-        let up = controller.ideal_up();
-
-        // Clone collision layers for the shapecast
-        let collision_layers_clone = collision_layers.cloned();
-
-        // Calculate ground cast length:
-        // riding_height + grounding_distance = float_height + capsule_half_height + grounding_distance
-        // Add a small buffer to avoid edge cases with floating point precision
-        let riding_height = controller.riding_height(config);
-        let ground_cast_length = riding_height + config.grounding_distance + 1.0;
-
-        // Compute rotation angle for the shape to align with ideal up direction (from gravity).
-        // This ensures the shapecast shape is oriented correctly in world space.
-        let shape_rotation = controller.ideal_up_angle() - std::f32::consts::FRAC_PI_2;
-
-        // Reset detection state
-        controller.reset_detection_state();
-
-        // Perform shapecast for ground detection
-        if let Some(ground_hit) = avian_shapecast(
-            &spatial_query,
-            position,
-            down,
-            ground_cast_length,
-            config.ground_cast_width,
-            0.0, // height not used for ground detection
-            shape_rotation,
-            entity,
-            collision_layers_clone.clone(),
-        ) {
-            let normal = ground_hit.normal;
-            let dot = normal.dot(up).clamp(-1.0, 1.0);
-            let slope_angle = dot.acos();
-
-            // Store floor collision data
-            controller.floor = Some(ground_hit);
-            controller.slope_angle = slope_angle;
-        }
-
-        // Check for stairs if enabled and we have movement intent
-        if let (Some(stair), Some(intent)) = (controller.stair_config.as_ref(), movement_intent) {
-            if stair.enabled && intent.is_walking() {
-                if let Some(step_height) = check_stair_step(
-                    &spatial_query,
-                    entity,
-                    position,
-                    radius,
-                    config.float_height,
-                    intent,
-                    &controller,
-                    stair,
-                    collision_layers_clone,
-                ) {
-                    controller.step_detected = true;
-                    controller.step_height = step_height;
-                }
+        // Check if stair stepping is enabled and we have movement intent
+        let stair_config = match &controller.stair_config {
+            Some(config) if config.enabled => config,
+            _ => {
+                shape_caster.enabled = false;
+                continue;
             }
+        };
+
+        let Some(intent) = movement_intent else {
+            shape_caster.enabled = false;
+            continue;
+        };
+
+        // Enable only when walking
+        if intent.is_walking() {
+            shape_caster.enabled = true;
+
+            // Get ideal directions from gravity
+            let down = controller.ideal_down();
+            let right = controller.ideal_right();
+
+            // Calculate forward offset based on walk direction
+            let walk_direction = intent.walk;
+            let move_dir = right * walk_direction.signum();
+
+            // Get collider radius
+            let radius = collider.map(get_collider_radius).unwrap_or(0.0);
+
+            // Calculate horizontal offset: radius + stair_cast_offset
+            let horizontal_offset = radius + stair_config.stair_cast_offset;
+
+            // Calculate vertical offset: position at max_climb_height above feet
+            // vertical_offset = up * (max_climb_height - collider_bottom_offset)
+            let up = controller.ideal_up();
+            let vertical_offset = up * (stair_config.max_climb_height - controller.collider_bottom_offset);
+
+            // Set origin: forward_offset + vertical_offset
+            let origin = move_dir * horizontal_offset + vertical_offset;
+            shape_caster.origin = origin;
+
+            // Update direction to ideal_down
+            if let Ok(dir) = Dir2::new(down) {
+                shape_caster.direction = dir;
+            }
+
+            // Update shape rotation to align with ideal_up
+            shape_caster.shape_rotation = controller.ideal_up_angle() - std::f32::consts::FRAC_PI_2;
+
+            // Update max_distance
+            shape_caster.max_distance = stair_config.max_climb_height;
+
+            // Inherit collision layers from parent
+            if let Some(layers) = collision_layers {
+                shape_caster.query_filter = SpatialQueryFilter::from_mask(layers.filters);
+            } else {
+                shape_caster.query_filter = SpatialQueryFilter::default();
+            }
+
+            // Exclude the parent entity from the cast
+            shape_caster.query_filter.excluded_entities.insert(caster_parent.0);
+        } else {
+            shape_caster.enabled = false;
+        }
+    }
+
+    // Update current ground casters
+    for (caster_parent, mut shape_caster) in &mut q_ground_casters {
+        let Ok((controller, movement_intent, collision_layers, _)) = q_controllers.get(caster_parent.0) else {
+            continue;
+        };
+
+        // Check if stair stepping is enabled
+        let stair_config = match &controller.stair_config {
+            Some(config) if config.enabled => config,
+            _ => {
+                shape_caster.enabled = false;
+                continue;
+            }
+        };
+
+        let Some(intent) = movement_intent else {
+            shape_caster.enabled = false;
+            continue;
+        };
+
+        // Enable only when walking
+        if intent.is_walking() {
+            shape_caster.enabled = true;
+
+            // Origin at character center
+            shape_caster.origin = Vec2::ZERO;
+
+            // Update direction to ideal_down
+            let down = controller.ideal_down();
+            if let Ok(dir) = Dir2::new(down) {
+                shape_caster.direction = dir;
+            }
+
+            // Update shape rotation to align with ideal_up
+            shape_caster.shape_rotation = controller.ideal_up_angle() - std::f32::consts::FRAC_PI_2;
+
+            // Update max_distance to cover max_climb_height + float_height + tolerance + buffer
+            shape_caster.max_distance = stair_config.max_climb_height + controller.collider_bottom_offset + stair_config.stair_tolerance + 2.0;
+
+            // Inherit collision layers from parent
+            if let Some(layers) = collision_layers {
+                shape_caster.query_filter = SpatialQueryFilter::from_mask(layers.filters);
+            } else {
+                shape_caster.query_filter = SpatialQueryFilter::default();
+            }
+
+            // Exclude the parent entity from the cast
+            shape_caster.query_filter.excluded_entities.insert(caster_parent.0);
+        } else {
+            shape_caster.enabled = false;
         }
     }
 }
 
-/// Check for a climbable stair in front of the character using movement intent.
-///
-/// This function casts a shapecast downward from a position in front of the character
-/// (in the direction of movement intent) to detect steps.
-///
-/// The cast origin is positioned at `max_climb_height` above the player's feet (bottom
-/// of collider), and casts downward to the feet level. This allows detecting steps
-/// even when the stair surface would be above the player's center.
-///
-/// **Important**: Uses the "ideal up" direction derived from gravity, NOT from
-/// the actor's Transform rotation.
-///
-/// Returns Some(step_height) if a climbable stair is detected, where step_height is
-/// the height above the current ground level that needs to be climbed.
-fn check_stair_step(
-    spatial_query: &SpatialQuery,
-    entity: Entity,
-    position: Vec2,
-    collider_radius: f32,
-    float_height: f32,
-    intent: &MovementIntent,
-    controller: &CharacterController,
-    config: &StairConfig,
-    collision_layers: Option<CollisionLayers>,
-) -> Option<f32> {
-    // Use ideal directions from gravity, NOT from orientation or transform.
-    // This ensures stair detection works correctly regardless of actor rotation.
-    let down = controller.ideal_down();
-    let up = controller.ideal_up();
-    let right = controller.ideal_right();
+use crate::intent::MovementIntent;
 
-    // Determine movement direction from intent
-    let walk_direction = intent.walk;
-    if walk_direction.abs() < 0.001 {
-        return None; // No horizontal intent
+/// Avian-specific ground detection system using ShapeCaster components.
+///
+/// This system reads ShapeHits from ground caster child entities to detect the floor.
+/// The GroundCaster child entities must be spawned and updated by the update systems.
+fn avian_ground_detection(
+    q_casters: Query<(&CasterParent, &ShapeHits), With<GroundCaster>>,
+    mut q_controllers: Query<(
+        Entity,
+        &GlobalTransform,
+        &mut CharacterController,
+        &ControllerConfig,
+        Option<&Collider>,
+    )>,
+) {
+    // First, reset detection state for all controllers
+    for (_, _, mut controller, _, _) in &mut q_controllers {
+        controller.reset_detection_state();
     }
 
-    let move_dir = right * walk_direction.signum();
+    // Now process ground hits
+    for (caster_parent, shape_hits) in &q_casters {
+        let Ok((_, transform, mut controller, _config, collider)) = q_controllers.get_mut(caster_parent.0) else {
+            continue;
+        };
 
-    // Calculate the cast origin:
-    // - Horizontal: offset in front of the player by (radius + stair_cast_offset)
-    // - Vertical: at max_climb_height above the player's feet (bottom of collider)
-    //   - Feet are at: position + down * collider_bottom_offset
-    //   - Origin should be: feet + up * max_climb_height
-    //     = position + down * collider_bottom_offset + up * max_climb_height
-    //     = position + up * (max_climb_height - collider_bottom_offset)
-    //   This can place the origin above player center when max_climb_height > collider_bottom_offset
-    let horizontal_offset = collider_radius + config.stair_cast_offset;
-    let vertical_offset = up * (config.max_climb_height - controller.collider_bottom_offset);
-    let cast_origin = position + move_dir * horizontal_offset + vertical_offset;
+        // Update collider_bottom_offset from actual collider dimensions
+        controller.collider_bottom_offset = collider.map(get_collider_bottom_offset).unwrap_or(0.0);
 
-    // Cast distance: from origin (at max_climb_height above feet) down to the feet level
-    let cast_distance = config.max_climb_height;
+        // Get the first (closest) hit
+        let Some(hit) = shape_hits.first() else {
+            continue;
+        };
 
-    // Use shapecast for more reliable detection
-    // Shape rotation based on ideal up direction from gravity
-    let shape_rotation = controller.ideal_up_angle() - std::f32::consts::FRAC_PI_2;
+        let position = transform.translation().xy();
+        let up = controller.ideal_up();
+        let down = controller.ideal_down();
 
-    let stair_hit = avian_shapecast(
-        spatial_query,
-        cast_origin,
-        down,
-        cast_distance,
-        config.stair_cast_width,
-        0.0, // height not used for downward detection
-        shape_rotation,
-        entity,
-        collision_layers.clone(),
-    )?;
+        // Calculate slope angle from normal
+        let normal = hit.normal1;
+        let dot = normal.dot(up).clamp(-1.0, 1.0);
+        let slope_angle = dot.acos();
 
-    // Calculate the ground height at the stair position relative to our current height
-    // stair_hit.distance is how far down from cast_origin we hit
-    // The step surface is at: cast_origin + down * stair_hit.distance
-    let step_surface_point = cast_origin + down * stair_hit.distance;
+        // Calculate hit point
+        let hit_point = position + down * hit.distance;
 
-    // Get the current ground level under the character (from center position)
-    // Use a longer cast distance here to ensure we detect the ground below
-    let ground_cast_distance =
-        config.max_climb_height + float_height + config.stair_tolerance + 2.0;
-    let current_ground_hit = avian_shapecast(
-        spatial_query,
-        position,
-        down,
-        ground_cast_distance,
-        config.stair_cast_width,
-        0.0, // height not used for ground detection
-        shape_rotation,
-        entity,
-        collision_layers,
-    );
-
-    let current_ground_distance = current_ground_hit.map(|h| h.distance).unwrap_or(f32::MAX);
-
-    // Calculate step height: how much higher is the step surface compared to our current ground?
-    // The step is at cast_origin + down * stair_hit.distance
-    // Our ground is at position + down * current_ground_distance
-    // The height difference in the "up" direction:
-    let current_ground_point = position + down * current_ground_distance;
-    let step_height_in_up = (step_surface_point - current_ground_point).dot(up);
-
-    // step_height is positive when the step surface is above current ground
-    // (the dot product with up is positive when step is higher)
-    let step_height = step_height_in_up;
-
-    // Check if the step height is within climbable range:
-    // - Higher than float_height + tolerance (needs climbing, not just spring)
-    // - Lower than max_climb_height (not too high to climb)
-    if step_height > float_height + config.stair_tolerance && step_height <= config.max_climb_height
-    {
-        // Also verify the step has adequate depth (horizontal surface)
-        // Check that the normal is mostly upward (floor surface, not wall)
-        let normal_up_component = stair_hit.normal.dot(up);
-        if normal_up_component > 0.7 {
-            return Some(step_height);
-        }
+        // Store floor collision data
+        controller.floor = Some(CollisionData::new(
+            hit.distance,
+            normal,
+            hit_point,
+            Some(hit.entity),
+        ));
+        controller.slope_angle = slope_angle;
     }
-
-    None
 }
 
 /// Get the capsule radius from a collider.
@@ -527,123 +863,178 @@ fn get_collider_radius(collider: &Collider) -> f32 {
     }
 }
 
-/// Avian-specific wall detection system using shapecast.
+/// Avian-specific wall detection system using ShapeCaster components.
 ///
-/// Wall cast length: surface_detection_distance + radius
-///
-/// **Important**: Raycasts use the "ideal up" direction derived from gravity,
-/// NOT from the actor's Transform rotation. This ensures wall detection
-/// works correctly even when the actor is physically rotated.
+/// This system reads ShapeHits from left and right wall caster child entities.
 fn avian_wall_detection(
-    spatial_query: SpatialQuery,
-    mut q_controllers: Query<(
-        Entity,
-        &GlobalTransform,
-        &ControllerConfig,
-        &mut CharacterController,
-        Option<&CollisionLayers>,
-        Option<&Collider>,
-    )>,
+    q_left_casters: Query<(&CasterParent, &ShapeHits), With<LeftWallCaster>>,
+    q_right_casters: Query<(&CasterParent, &ShapeHits), With<RightWallCaster>>,
+    mut q_controllers: Query<(&GlobalTransform, &mut CharacterController)>,
 ) {
-    for (entity, transform, config, mut controller, collision_layers, collider) in
-        &mut q_controllers
-    {
+    // Process left wall hits
+    for (caster_parent, shape_hits) in &q_left_casters {
+        let Ok((transform, mut controller)) = q_controllers.get_mut(caster_parent.0) else {
+            continue;
+        };
+
+        let Some(hit) = shape_hits.first() else {
+            continue;
+        };
+
         let position = transform.translation().xy();
-
-        // Use ideal directions from gravity, NOT from orientation or transform.
-        // This ensures wall detection works correctly regardless of actor rotation.
         let left = controller.ideal_left();
+        let normal = hit.normal1;
+        let hit_point = position + left * hit.distance;
+
+        controller.left_wall = Some(CollisionData::new(
+            hit.distance,
+            normal,
+            hit_point,
+            Some(hit.entity),
+        ));
+    }
+
+    // Process right wall hits
+    for (caster_parent, shape_hits) in &q_right_casters {
+        let Ok((transform, mut controller)) = q_controllers.get_mut(caster_parent.0) else {
+            continue;
+        };
+
+        let Some(hit) = shape_hits.first() else {
+            continue;
+        };
+
+        let position = transform.translation().xy();
         let right = controller.ideal_right();
+        let normal = hit.normal1;
+        let hit_point = position + right * hit.distance;
 
-        // Clone collision layers
-        let collision_layers_clone = collision_layers.cloned();
-
-        // Compute rotation angle for the shape based on ideal up direction from gravity
-        let shape_rotation = controller.ideal_up_angle();
-
-        // Wall cast length: surface_detection_distance + radius + small buffer for precision
-        let radius = collider.map(get_collider_radius).unwrap_or(0.0);
-        let wall_cast_length = config.surface_detection_distance + radius + 1.0;
-
-        // Shapecast left
-        if let Some(left_hit) = avian_shapecast(
-            &spatial_query,
-            position,
-            left,
-            wall_cast_length,
-            0.0, // width not used for wall detection
-            config.wall_cast_height,
-            shape_rotation,
-            entity,
-            collision_layers_clone.clone(),
-        ) {
-            controller.left_wall = Some(left_hit);
-        }
-
-        // Shapecast right
-        if let Some(right_hit) = avian_shapecast(
-            &spatial_query,
-            position,
-            right,
-            wall_cast_length,
-            0.0, // width not used for wall detection
-            config.wall_cast_height,
-            shape_rotation,
-            entity,
-            collision_layers_clone,
-        ) {
-            controller.right_wall = Some(right_hit);
-        }
+        controller.right_wall = Some(CollisionData::new(
+            hit.distance,
+            normal,
+            hit_point,
+            Some(hit.entity),
+        ));
     }
 }
 
-/// Avian-specific ceiling detection system using shapecast.
+/// Avian-specific ceiling detection system using ShapeCaster components.
 ///
-/// Ceiling cast length: surface_detection_distance + capsule_half_height
-///
-/// **Important**: Raycasts use the "ideal up" direction derived from gravity,
-/// NOT from the actor's Transform rotation. This ensures ceiling detection
-/// works correctly even when the actor is physically rotated.
+/// This system reads ShapeHits from ceiling caster child entities.
 fn avian_ceiling_detection(
-    spatial_query: SpatialQuery,
-    mut q_controllers: Query<(
-        Entity,
-        &GlobalTransform,
-        &ControllerConfig,
-        &mut CharacterController,
-        Option<&CollisionLayers>,
-    )>,
+    q_casters: Query<(&CasterParent, &ShapeHits), With<CeilingCaster>>,
+    mut q_controllers: Query<(&GlobalTransform, &mut CharacterController)>,
 ) {
-    for (entity, transform, config, mut controller, collision_layers) in &mut q_controllers {
+    for (caster_parent, shape_hits) in &q_casters {
+        let Ok((transform, mut controller)) = q_controllers.get_mut(caster_parent.0) else {
+            continue;
+        };
+
+        let Some(hit) = shape_hits.first() else {
+            continue;
+        };
+
         let position = transform.translation().xy();
-
-        // Use ideal up direction from gravity, NOT from orientation or transform.
-        // This ensures ceiling detection works correctly regardless of actor rotation.
         let up = controller.ideal_up();
+        let normal = hit.normal1;
+        let hit_point = position + up * hit.distance;
 
-        // Clone collision layers
-        let collision_layers_clone = collision_layers.cloned();
+        controller.ceiling = Some(CollisionData::new(
+            hit.distance,
+            normal,
+            hit_point,
+            Some(hit.entity),
+        ));
+    }
+}
 
-        // Shape rotation based on ideal up direction from gravity
-        let shape_rotation = controller.ideal_up_angle() - std::f32::consts::FRAC_PI_2;
+/// Avian-specific stair detection system using ShapeCaster components.
+///
+/// This system reads ShapeHits from stair caster child entities to calculate step height.
+fn avian_stair_detection(
+    q_stair_casters: Query<(&CasterParent, Option<&ShapeHits>, &ShapeCaster), With<StairCaster>>,
+    q_ground_casters: Query<(&CasterParent, Option<&ShapeHits>, &ShapeCaster), (With<CurrentGroundCaster>, Without<StairCaster>)>,
+    mut q_controllers: Query<(Entity, &GlobalTransform, &mut CharacterController)>,
+) {
+    for (entity, transform, mut controller) in &mut q_controllers {
+        let position = transform.translation().xy();
+        let up = controller.ideal_up();
+        let down = controller.ideal_down();
 
-        // Ceiling cast length: surface_detection_distance + capsule_half_height + small buffer for precision
-        let ceiling_cast_length =
-            config.surface_detection_distance + controller.capsule_half_height() + 1.0;
+        // Check if stair stepping is enabled
+        let stair_config = match &controller.stair_config {
+            Some(config) if config.enabled => config,
+            _ => continue,
+        };
 
-        // Shapecast upward
-        if let Some(ceiling_hit) = avian_shapecast(
-            &spatial_query,
-            position,
-            up,
-            ceiling_cast_length,
-            config.ceiling_cast_width,
-            0.0, // height not used for ceiling detection
-            shape_rotation,
-            entity,
-            collision_layers_clone,
-        ) {
-            controller.ceiling = Some(ceiling_hit);
+        // Find stair caster hits and origin
+        let mut stair_hit: Option<&ShapeHitData> = None;
+        let mut stair_origin = Vec2::ZERO;
+        for (caster_parent, shape_hits, shape_caster) in &q_stair_casters {
+            if caster_parent.0 != entity {
+                continue;
+            }
+
+            if let Some(hits) = shape_hits {
+                stair_hit = hits.first();
+                stair_origin = shape_caster.origin;
+            }
+            break;
+        }
+
+        // Find current ground caster hits and origin
+        let mut ground_hit: Option<&ShapeHitData> = None;
+        let mut ground_origin = Vec2::ZERO;
+        for (caster_parent, shape_hits, shape_caster) in &q_ground_casters {
+            if caster_parent.0 != entity {
+                continue;
+            }
+
+            if let Some(hits) = shape_hits {
+                ground_hit = hits.first();
+                ground_origin = shape_caster.origin;
+            }
+            break;
+        }
+
+        // Calculate step height if both hits are present
+        if let (Some(stair), Some(ground)) = (stair_hit, ground_hit) {
+            // Calculate the actual hit points in world space
+            // Stair caster casts from: position + stair_origin (forward + up offset)
+            // Current ground caster casts from: position + ground_origin (character center)
+
+            let stair_cast_origin = position + stair_origin;
+            let ground_cast_origin = position + ground_origin;
+
+            // Calculate the actual surface points
+            let step_surface_point = stair_cast_origin + down * stair.distance;
+            let current_ground_point = ground_cast_origin + down * ground.distance;
+
+            // Calculate step height: how much higher is the step surface compared to current ground?
+            // Use dot product with up direction to get the vertical component
+            let step_height = (step_surface_point - current_ground_point).dot(up);
+
+            // Check if the step is valid:
+            // 1. Step height is above stair_tolerance (needs climbing, not just spring)
+            // 2. Step height is below max_climb_height (climbable)
+            // 3. Step surface is mostly horizontal (normal points up)
+
+            let normal_up_component = stair.normal1.dot(up);
+
+            if step_height > stair_config.stair_tolerance
+                && step_height <= stair_config.max_climb_height
+                && normal_up_component > 0.7
+            {
+                controller.step_detected = true;
+                controller.step_height = step_height;
+            } else {
+                controller.step_detected = false;
+                controller.step_height = 0.0;
+            }
+        } else {
+            // No valid stair detected
+            controller.step_detected = false;
+            controller.step_height = 0.0;
         }
     }
 }
@@ -705,6 +1096,96 @@ pub fn clear_reactive_forces(
         }
         if force.0.y.abs() < EPSILON {
             force.0.y = 0.0;
+        }
+    }
+}
+
+/// Detect falling state by checking vertical velocity.
+///
+/// This system runs early to set the `falling` flag on the CharacterController,
+/// which is then used by fall gravity and other systems. This avoids query conflicts
+/// with the Forces API that needs mutable access to velocity.
+pub fn avian_detect_falling(
+    mut query: Query<(&mut CharacterController, &LinearVelocity)>,
+) {
+    for (mut controller, velocity) in &mut query {
+        let up = controller.ideal_up();
+        let vertical_velocity = velocity.0.dot(up);
+        controller.falling = vertical_velocity < 0.0;
+    }
+}
+
+/// Apply gravity acceleration to airborne characters using Avian's Forces API.
+///
+/// This is the Avian-specific gravity system that uses the `Forces` QueryData
+/// with `apply_linear_acceleration()`. This is the idiomatic Avian 0.4+ way to
+/// apply non-persistent forces that get cleared automatically each frame.
+///
+/// This approach supports dynamic gravity that can change every frame (e.g., for
+/// spherical planets with radial gravity).
+pub fn avian_accumulate_gravity(
+    mut query: Query<(Forces, &CharacterController, &ControllerConfig)>,
+) {
+    for (mut forces, controller, config) in &mut query {
+        // Only apply gravity to airborne entities
+        if !controller.is_grounded(config) {
+            // Apply gravity as linear acceleration
+            // Forces API handles mass multiplication and integration automatically
+            forces.apply_linear_acceleration(controller.gravity);
+        }
+    }
+}
+
+/// Apply fall gravity for early jump cancellation using Avian's Forces API.
+///
+/// This system enables players to cancel jumps early by releasing the jump button,
+/// making jumps feel less floaty. Fall gravity is triggered when:
+///
+/// 1. We jumped recently (within `jump_cancel_window`)
+/// 2. AND either:
+///    - Jump button is not held (player let go)
+///    - OR we're moving downward (crossed the zenith)
+///
+/// When triggered, fall gravity is applied for `fall_gravity_duration`,
+/// multiplying gravity by `fall_gravity`.
+///
+/// Note: This system applies additional gravity on top of the base gravity
+/// applied by `avian_accumulate_gravity`. Both use the Forces API.
+pub fn avian_apply_fall_gravity(
+    mut query: Query<(
+        Forces,
+        &mut CharacterController,
+        &ControllerConfig,
+        &MovementIntent,
+    )>,
+) {
+    for (mut forces, mut controller, config, intent) in &mut query {
+        // Only process airborne entities with fall_gravity > 1.0
+        if controller.is_grounded(config) || config.fall_gravity <= 1.0 {
+            continue;
+        }
+
+        // Check if we should trigger fall gravity
+        // Uses controller.falling (set by avian_detect_falling system) to detect
+        // when we've crossed the jump apex, avoiding query conflicts with Forces.
+        let max_ascent_expired = controller.jump_max_ascent_expired();
+        let should_trigger = controller.in_jump_cancel_window()
+            && !controller.recently_jumped()
+            && (!intent.jump_pressed || controller.falling || max_ascent_expired);
+
+        // Trigger fall gravity if conditions are met
+        if should_trigger && !controller.fall_gravity_active() {
+            controller.trigger_fall_gravity(config.fall_gravity_duration);
+        }
+
+        // Apply fall gravity if the timer is active
+        if controller.fall_gravity_active() {
+            // Apply additional gravity acceleration
+            // The regular gravity system applies: gravity
+            // We want to add: gravity * (fall_gravity - 1)
+            // This way total becomes: gravity * fall_gravity
+            let fall_multiplier = config.fall_gravity - 1.0;
+            forces.apply_linear_acceleration(controller.gravity * fall_multiplier);
         }
     }
 }
