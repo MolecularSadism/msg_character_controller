@@ -106,7 +106,7 @@ fn main() {
     App::new()
         .add_plugins(DefaultPlugins.set(WindowPlugin {
             primary_window: Some(Window {
-                title: format!("Hilly Planet ({}) - 16px/m Physics", backend_name()).into(),
+                title: format!("Hilly Planet ({}) - 16px/m Physics", backend_name()),
                 resolution: (1280, 720).into(),
                 ..default()
             }),

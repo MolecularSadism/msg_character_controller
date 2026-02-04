@@ -20,6 +20,7 @@ pub struct CollisionData {
 
 impl CollisionData {
     /// Create a collisionresult.
+    #[must_use] 
     pub fn new(distance: f32, normal: Vec2, point: Vec2, entity: Option<Entity>) -> Self {
         Self {
             distance,

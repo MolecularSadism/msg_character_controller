@@ -2,6 +2,7 @@
 //!
 //! This example specifically tests if the character controller's floating spring
 //! system is working. It spawns a character high in the air above a platform.
+#![allow(unexpected_cfgs)]
 //!
 //! If floating works: The character should descend and hover at float_height above the platform
 //! If floating doesn't work: The character will fall through or sit directly on the platform
@@ -57,7 +58,7 @@ fn main() {
     App::new()
         .add_plugins(DefaultPlugins.set(WindowPlugin {
             primary_window: Some(Window {
-                title: format!("Float Test ({}) - Character Controller", backend_name()).into(),
+                title: format!("Float Test ({}) - Character Controller", backend_name()),
                 resolution: (1280, 720).into(),
                 ..default()
             }),

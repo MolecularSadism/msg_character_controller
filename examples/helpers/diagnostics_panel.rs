@@ -211,8 +211,7 @@ pub fn stair_climbing_ui(ui: &mut egui::Ui, controller: &CharacterController) {
         let stair_enabled = controller
             .stair_config
             .as_ref()
-            .map(|c| c.enabled)
-            .unwrap_or(false);
+            .is_some_and(|c| c.enabled);
 
         ui.horizontal(|ui| {
             ui.label("Enabled:");

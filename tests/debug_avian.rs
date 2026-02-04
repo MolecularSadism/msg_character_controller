@@ -2,6 +2,7 @@
 
 use bevy::prelude::*;
 use avian2d::prelude::*;
+use msg_character_controller::backend::avian::CasterOfCharacter;
 
 /// Test demonstrating that ShapeCaster components work with Avian2D.
 ///
@@ -27,9 +28,9 @@ fn test_shapecaster_minimal_reproduction() {
     app.finish();
     app.cleanup();
 
-    // Spawn ground - exactly like avian2d.rs spawn_ground
+    // Spawn ground - exactly like avian2d.rs spawnground
     let ground_transform = Transform::from_translation(Vec2::new(0.0, 0.0).extend(0.0));
-    let _ground = app.world_mut().spawn((
+    let ground = app.world_mut().spawn((
         ground_transform,
         GlobalTransform::from(ground_transform),
         RigidBody::Static,
@@ -64,7 +65,7 @@ fn test_shapecaster_minimal_reproduction() {
 
     app.world_mut().entity_mut(character).add_child(caster_child);
 
-    eprintln!("Spawned: character={:?}, caster={:?}, ground={:?}", character, caster_child, _ground);
+    eprintln!("Spawned: character={:?}, caster={:?}, ground={:?}", character, caster_child, ground);
 
     // Run like avian2d.rs tests
     for i in 0..60 {
@@ -77,7 +78,7 @@ fn test_shapecaster_minimal_reproduction() {
         if i % 10 == 9 {
             if let Some(hits) = app.world().get::<ShapeHits>(caster_child) {
                 eprintln!("Frame {}: {} hits", i, hits.len());
-                if hits.len() > 0 {
+                if !hits.is_empty() {
                     eprintln!("  Hit at distance: {}", hits.iter().next().unwrap().distance);
                 }
             } else {
@@ -104,7 +105,7 @@ fn test_shapecaster_minimal_reproduction() {
 #[test]
 fn test_shapecaster_with_controller() {
     use msg_character_controller::prelude::*;
-    use msg_character_controller::avian::{Avian2dBackend, GroundCaster, CasterParent};
+    use msg_character_controller::backend::avian::{Avian2dBackend, GroundCaster};
 
     let mut app = App::new();
     app.add_plugins(MinimalPlugins);
@@ -118,7 +119,7 @@ fn test_shapecaster_with_controller() {
 
     // Spawn ground
     let ground_transform = Transform::from_translation(Vec2::new(0.0, 0.0).extend(0.0));
-    let _ground = app.world_mut().spawn((
+    let ground = app.world_mut().spawn((
         ground_transform,
         GlobalTransform::from(ground_transform),
         RigidBody::Static,
@@ -142,7 +143,7 @@ fn test_shapecaster_with_controller() {
     let half_width = 10.0 / 2.0;
     let caster_child = app.world_mut().spawn((
         GroundCaster,
-        CasterParent(character),
+        CasterOfCharacter(character),
         ShapeCaster::new(
             Collider::segment(Vec2::new(-half_width, 0.0), Vec2::new(half_width, 0.0)),
             Vec2::ZERO,
@@ -157,7 +158,7 @@ fn test_shapecaster_with_controller() {
 
     app.world_mut().entity_mut(character).add_child(caster_child);
 
-    eprintln!("Spawned: character={:?}, caster={:?}, ground={:?}", character, caster_child, _ground);
+    eprintln!("Spawned: character={:?}, caster={:?}, ground={:?}", character, caster_child, ground);
 
     // Run simulation
     for i in 0..120 {

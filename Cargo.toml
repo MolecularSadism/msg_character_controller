@@ -18,8 +18,6 @@ bevy = { version = "0.18", default-features = false }
 
 [dev-dependencies]
 avian2d = { version = "0.5", features = ["2d"] }
-# bevy_rapier2d support temporarily disabled until Bevy 0.18 compatibility is released
-# bevy_rapier2d = { version = "0.32.0", features = ["simd-stable", "debug-render-2d"] }
 bevy_egui = "0.39"
 
 [features]
@@ -27,10 +25,6 @@ default = ["avian2d"]
 # Physics backend: avian2d (Avian physics engine, formerly XPBD)
 # Usage: CharacterControllerPlugin::<Avian2dBackend>::default()
 avian2d = ["dep:avian2d"]
-# Physics backend: bevy_rapier2d (Rapier2D physics engine)
-# NOTE: Temporarily disabled until bevy_rapier2d is updated for Bevy 0.18
-# Usage: CharacterControllerPlugin::<Rapier2dBackend>::default()
-# rapier2d = ["dep:bevy_rapier2d"]
 # Feature for running examples (requires platform windowing libs)
 examples = [
     "bevy/bevy_core_pipeline",
@@ -50,13 +44,7 @@ version = "0.5"
 features = ["2d"]
 optional = true
 
-# bevy_rapier2d support temporarily disabled until Bevy 0.18 compatibility is released
-# [dependencies.bevy_rapier2d]
-# version = "0.32.0"
-# features = ["simd-stable", "debug-render-2d"]
-# optional = true
-
-# Examples - currently only work with Avian2D backend (Rapier2D support pending Bevy 0.18 update):
+# Examples:
 # - Avian2D (default): cargo run --example platform_box --features examples
 [[example]]
 name = "platform_box"

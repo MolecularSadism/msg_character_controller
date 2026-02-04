@@ -67,7 +67,7 @@ fn main() {
     App::new()
         .add_plugins(DefaultPlugins.set(WindowPlugin {
             primary_window: Some(Window {
-                title: format!("Platform Box ({}) - Character Controller Example", backend_name()).into(),
+                title: format!("Platform Box ({}) - Character Controller Example", backend_name()),
                 resolution: (1280, 720).into(),
                 ..default()
             }),
