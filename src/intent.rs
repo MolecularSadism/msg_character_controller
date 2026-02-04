@@ -67,7 +67,7 @@ pub struct MovementIntent {
     /// intent.set_jump_pressed(gamepad.pressed(GamepadButton::South));
     /// ```
     pub jump_pressed: bool,
-    /// Previous frame's jump_pressed state (for edge detection).
+    /// Previous frame's `jump_pressed` state (for edge detection).
     /// This is managed internally by the controller.
     pub(crate) jump_pressed_prev: bool,
 }
@@ -89,6 +89,7 @@ impl Default for MovementIntent {
 
 impl MovementIntent {
     /// Create a new empty movement intent.
+    #[must_use] 
     pub fn new() -> Self {
         Self::default()
     }
@@ -141,51 +142,61 @@ impl MovementIntent {
     }
 
     /// Check if there is active walking input.
+    #[must_use] 
     pub fn is_walking(&self) -> bool {
         self.walk.abs() > 0.001
     }
 
     /// Check if there is active flying input.
+    #[must_use] 
     pub fn is_flying(&self) -> bool {
         self.fly.abs() > 0.001
     }
 
     /// Check if flying upward.
+    #[must_use] 
     pub fn is_flying_up(&self) -> bool {
         self.fly > 0.001
     }
 
     /// Check if flying downward.
+    #[must_use] 
     pub fn is_flying_down(&self) -> bool {
         self.fly < -0.001
     }
 
     /// Check if there is active horizontal flying input.
+    #[must_use] 
     pub fn is_flying_horizontal(&self) -> bool {
         self.fly_horizontal.abs() > 0.001
     }
 
     /// Check if flying left horizontally.
+    #[must_use] 
     pub fn is_flying_left(&self) -> bool {
         self.fly_horizontal < -0.001
     }
 
     /// Check if flying right horizontally.
+    #[must_use] 
     pub fn is_flying_right(&self) -> bool {
         self.fly_horizontal > 0.001
     }
 
     /// Get the effective walking direction with speed multiplier applied.
+    #[must_use] 
     pub fn effective_walk(&self) -> f32 {
         self.walk * self.walk_speed
     }
 
     /// Get the effective flying direction with speed multiplier applied.
+    #[must_use] 
     pub fn effective_fly(&self) -> f32 {
         self.fly * self.fly_speed
     }
 
     /// Get the effective horizontal flying direction with speed multiplier applied.
+    #[must_use] 
     pub fn effective_fly_horizontal(&self) -> f32 {
         self.fly_horizontal * self.fly_speed
     }
@@ -196,7 +207,7 @@ impl MovementIntent {
     /// edge detection and timer creation automatically.
     ///
     /// Creates a jump request with a timer. The request will be consumed
-    /// by apply_jump if conditions allow before the timer expires.
+    /// by `apply_jump` if conditions allow before the timer expires.
     pub(crate) fn request_jump(&mut self, buffer_time: f32) {
         self.jump_request = Some(JumpRequest::new(buffer_time));
     }
@@ -209,6 +220,7 @@ impl MovementIntent {
     }
 
     /// Check if there's a pending jump request.
+    #[must_use] 
     pub fn has_jump_request(&self) -> bool {
         self.jump_request.is_some()
     }
@@ -247,17 +259,18 @@ impl MovementIntent {
     /// Check if jump is currently active.
     ///
     /// Returns the current boolean state set via `set_jump_pressed()`.
+    #[must_use] 
     pub fn is_jump_pressed(&self) -> bool {
         self.jump_pressed
     }
 }
 
-/// Jump request stored in MovementIntent.
+/// Jump request stored in `MovementIntent`.
 ///
 /// This represents a pending jump request with a timer for buffering.
 /// The timer counts down from the buffer duration, and the request
 /// expires when the timer finishes. The controller consumes the request
-/// by taking the Option from MovementIntent.
+/// by taking the Option from `MovementIntent`.
 #[derive(Reflect, Debug, Clone, Default)]
 pub struct JumpRequest {
     /// Timer for jump buffering. When finished, the request expires.
@@ -267,6 +280,7 @@ pub struct JumpRequest {
 
 impl JumpRequest {
     /// Create a new jump request with the given buffer duration.
+    #[must_use] 
     pub fn new(buffer_time: f32) -> Self {
         Self {
             buffer_timer: Timer::from_seconds(buffer_time, TimerMode::Once),
@@ -279,6 +293,7 @@ impl JumpRequest {
     }
 
     /// Check if the request is still valid (timer hasn't finished).
+    #[must_use] 
     pub fn is_valid(&self) -> bool {
         !self.buffer_timer.is_finished()
     }

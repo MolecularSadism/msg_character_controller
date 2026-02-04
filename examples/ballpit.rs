@@ -72,7 +72,7 @@ fn main() {
     App::new()
         .add_plugins(DefaultPlugins.set(WindowPlugin {
             primary_window: Some(Window {
-                title: format!("Ballpit ({}) - Dynamic Ground Reaction Example", backend_name()).into(),
+                title: format!("Ballpit ({}) - Dynamic Ground Reaction Example", backend_name()),
                 resolution: (1280, 720).into(),
                 ..default()
             }),

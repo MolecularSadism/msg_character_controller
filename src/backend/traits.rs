@@ -2,7 +2,7 @@
 //!
 //! This module defines the trait that physics backends must implement
 //! to work with the character controller. This allows easy swapping
-//! between physics engines (Rapier2D, XPBD, custom, etc.).
+//! between physics engines (`Rapier2D`, XPBD, custom, etc.).
 
 use bevy::prelude::*;
 
@@ -15,7 +15,7 @@ use bevy::prelude::*;
 /// # Example
 ///
 /// For an example implementation, see the `rapier` module's `Rapier2dBackend`
-/// which implements this trait for Bevy Rapier2D.
+/// which implements this trait for Bevy `Rapier2D`.
 ///
 /// ```rust
 /// use bevy::prelude::*;
@@ -126,12 +126,14 @@ pub trait CharacterPhysicsBackend: 'static + Send + Sync {
     /// Forces component) instead of the generic impulse-based gravity.
     ///
     /// Default implementation returns false (use generic gravity systems).
+    #[must_use] 
     fn provides_custom_gravity() -> bool {
         false
     }
 }
 
 /// Empty plugin for backends that don't need additional setup.
+#[allow(dead_code)]
 pub struct NoOpBackendPlugin;
 
 impl Plugin for NoOpBackendPlugin {

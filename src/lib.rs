@@ -5,26 +5,20 @@
 //! This crate provides a responsive, tuneable character controller that:
 //! - Floats above ground using a spring-damper system
 //! - Uses raycasts for ground detection and slope handling
-//! - Horizontal movement via WalkIntent with slope handling when grounded
-//! - Vertical propulsion via PropulsionIntent (jetpack/thrusters) with gravity compensation
+//! - Horizontal movement via `WalkIntent` with slope handling when grounded
+//! - Vertical propulsion via `PropulsionIntent` (jetpack/thrusters) with gravity compensation
 //! - Distinct jump functionality with coyote time and input buffering
 //! - Handles stair stepping with multi-raycast detection
 //! - Detects wall contact for advanced movement
-//! - Abstracts physics backend for easy swapping (Avian2D and Rapier2D supported)
+//! - Uses `Avian2D` physics engine (formerly XPBD)
 //!
-//! ## Physics Backends
+//! ## Physics Backend
 //!
-//! The crate supports multiple physics backends via feature flags:
-//!
-//! - `avian2d` (default): Uses `avian2d` for physics
-//! - `rapier2d`: Uses `bevy_rapier2d` for physics
+//! The crate uses the `Avian2D` physics engine:
 //!
 //! ```toml
-//! # Use Avian2D (default)
-//! msg_character_controller = "0.1"
-//!
-//! # Use Rapier2D instead
-//! msg_character_controller = { version = "0.1", default-features = false, features = ["rapier2d"] }
+//! # Avian2D is the default backend
+//! msg_character_controller = "0.3"
 //! ```
 //!
 //! ## Architecture
@@ -33,7 +27,7 @@
 //! 1. A dynamic rigidbody handles collisions normally
 //! 2. Raycasts detect ground and compute desired float height
 //! 3. A spring-damper system applies forces to maintain float height
-//! 4. Horizontal movement and vertical propulsion is controlled via MovementIntent
+//! 4. Horizontal movement and vertical propulsion is controlled via `MovementIntent`
 //! 5. Jumping is an impulse-based action that requires being grounded
 //!
 //! ## System Order
@@ -42,10 +36,10 @@
 //!
 //! 1. **Preparation** - Clear forces from previous frame
 //! 2. **Sensors** - Collect ground/wall/ceiling data (run in parallel)
-//! 3. **IntentEvaluation** - Read MovementIntent, set intent flags (requires current sensor data)
-//! 4. **ForceAccumulation** - Spring, gravity, stair climb, upright torque
-//! 5. **IntentApplication** - Apply jump, walk, fly based on intent
-//! 6. **FinalApplication** - Apply accumulated forces to physics
+//! 3. **`IntentEvaluation`** - Read `MovementIntent`, set intent flags (requires current sensor data)
+//! 4. **`ForceAccumulation`** - Spring, gravity, stair climb, upright torque
+//! 5. **`IntentApplication`** - Apply jump, walk, fly based on intent
+//! 6. **`FinalApplication`** - Apply accumulated forces to physics
 //!
 //! All systems are members of the [`CharacterControllerSystems`] set, which can be used
 //! to apply run conditions to pause/unpause all controller processing.
@@ -80,7 +74,7 @@
 //!
 //! fn main() {
 //!     let mut app = App::new();
-//!     app.add_plugins(CharacterControllerPlugin::<Rapier2dBackend>::without_default_run_condition());
+//!     app.add_plugins(CharacterControllerPlugin::<Avian2dBackend>::without_default_run_condition());
 //!     app.configure_sets(
 //!         FixedUpdate,
 //!         CharacterControllerSystems.run_if(in_state(GameState::Playing)),
@@ -115,12 +109,6 @@ pub mod intent;
 /// you can order your own systems relative to them (e.g., for custom gravity).
 pub mod systems;
 
-#[cfg(feature = "rapier2d")]
-pub mod rapier;
-
-#[cfg(feature = "avian2d")]
-pub mod avian;
-
 /// Parent system set containing all character controller systems.
 ///
 /// This set can be used to apply run conditions to all character controller
@@ -154,7 +142,7 @@ pub mod avian;
 /// enum GameState { #[default] Menu, Playing }
 ///
 /// let mut app = App::new();
-/// app.add_plugins(CharacterControllerPlugin::<Rapier2dBackend>::without_default_run_condition());
+/// app.add_plugins(CharacterControllerPlugin::<Avian2dBackend>::without_default_run_condition());
 /// app.configure_sets(
 ///     FixedUpdate,
 ///     CharacterControllerSystems.run_if(in_state(GameState::Playing)),
@@ -221,10 +209,10 @@ impl Default for CharacterControllerActive {
 ///
 /// 1. **Preparation** - Clear forces from previous frame
 /// 2. **Sensors** - Collect ground/wall/ceiling data (systems can run in parallel)
-/// 3. **IntentEvaluation** - Read MovementIntent, set intent flags (requires current sensor data)
-/// 4. **ForceAccumulation** - Accumulate spring, gravity, stair climb, upright torque forces
-/// 5. **IntentApplication** - Apply jump, walk, fly impulses based on intent
-/// 6. **FinalApplication** - Apply accumulated forces to physics engine
+/// 3. **`IntentEvaluation`** - Read `MovementIntent`, set intent flags (requires current sensor data)
+/// 4. **`ForceAccumulation`** - Accumulate spring, gravity, stair climb, upright torque forces
+/// 5. **`IntentApplication`** - Apply jump, walk, fly impulses based on intent
+/// 6. **`FinalApplication`** - Apply accumulated forces to physics engine
 ///
 /// # Usage
 ///
@@ -237,7 +225,7 @@ pub enum CharacterControllerSet {
     /// Phase 2: Collect sensor data (ground, wall, ceiling detection).
     /// Systems in this phase can run in parallel.
     Sensors,
-    /// Phase 3: Evaluate MovementIntent and set intent flags.
+    /// Phase 3: Evaluate `MovementIntent` and set intent flags.
     /// Runs after Sensors so it has access to current frame's floor/grounded state.
     IntentEvaluation,
     /// Phase 4: Accumulate forces (spring, gravity, stair climb, upright torque).
@@ -255,7 +243,7 @@ pub mod prelude {
     //!
     //! ```rust,no_run
     //! use bevy::prelude::*;
-    //! use bevy_rapier2d::prelude::*;
+    //! use avian2d::prelude::*;
     //! use msg_character_controller::prelude::*;
     //!
     //! fn spawn_character(mut commands: Commands) {
@@ -263,9 +251,8 @@ pub mod prelude {
     //!         Transform::from_xyz(0.0, 100.0, 0.0),
     //!         CharacterController::new(),
     //!         ControllerConfig::default(),
-    //!         Collider::capsule_y(8.0, 4.0),
+    //!         Collider::capsule(8.0, 4.0),
     //!         LockedAxes::ROTATION_LOCKED,
-    //!         GravityScale(0.0),
     //!     ));
     //! }
     //! ```
@@ -279,11 +266,8 @@ pub mod prelude {
     pub use crate::config::{CharacterController, ControllerConfig, JumpType, StairConfig};
     pub use crate::intent::{JumpRequest, MovementIntent};
 
-    #[cfg(feature = "rapier2d")]
-    pub use crate::rapier::Rapier2dBackend;
-
     #[cfg(feature = "avian2d")]
-    pub use crate::avian::Avian2dBackend;
+    pub use crate::backend::Avian2dBackend;
 }
 
 /// Main plugin for the character controller system.
@@ -292,7 +276,7 @@ pub mod prelude {
 /// physics operations (raycasting, force application, etc.).
 ///
 /// # Type Parameters
-/// - `B`: The physics backend implementation (e.g., `Rapier2dBackend`)
+/// - `B`: The physics backend implementation (e.g., `Avian2dBackend`)
 ///
 /// # Run Conditions
 ///
@@ -325,7 +309,7 @@ pub mod prelude {
 /// enum GameState { #[default] Menu, Playing }
 ///
 /// let mut app = App::new();
-/// app.add_plugins(CharacterControllerPlugin::<Rapier2dBackend>::without_default_run_condition());
+/// app.add_plugins(CharacterControllerPlugin::<Avian2dBackend>::without_default_run_condition());
 /// app.configure_sets(
 ///     FixedUpdate,
 ///     CharacterControllerSystems.run_if(in_state(GameState::Playing)),
@@ -339,22 +323,8 @@ pub mod prelude {
 /// is not supported - use `CharacterController::set_gravity()` to change the gravity
 /// vector at runtime.
 ///
-/// # Examples
+/// # Example
 ///
-/// With Rapier2D backend:
-/// ```rust,ignore
-/// use bevy::prelude::*;
-/// use bevy_rapier2d::prelude::*;
-/// use msg_character_controller::prelude::*;
-///
-/// App::new()
-///     .add_plugins(DefaultPlugins)
-///     .add_plugins(RapierPhysicsPlugin::<NoUserData>::default())
-///     .add_plugins(CharacterControllerPlugin::<Rapier2dBackend>::default())
-///     .run();
-/// ```
-///
-/// With Avian2D backend:
 /// ```rust,ignore
 /// use bevy::prelude::*;
 /// use avian2d::prelude::*;
@@ -385,6 +355,7 @@ impl<B: backend::CharacterPhysicsBackend> CharacterControllerPlugin<B> {
     /// Create a new character controller plugin with default settings.
     ///
     /// By default, systems run only when [`CharacterControllerActive`] exists.
+    #[must_use] 
     pub fn new() -> Self {
         Self::default()
     }
@@ -405,12 +376,13 @@ impl<B: backend::CharacterPhysicsBackend> CharacterControllerPlugin<B> {
     /// enum GameState { #[default] Menu, Playing }
     ///
     /// let mut app = App::new();
-    /// app.add_plugins(CharacterControllerPlugin::<Rapier2dBackend>::without_default_run_condition());
+    /// app.add_plugins(CharacterControllerPlugin::<Avian2dBackend>::without_default_run_condition());
     /// app.configure_sets(
     ///     FixedUpdate,
     ///     CharacterControllerSystems.run_if(in_state(GameState::Playing)),
     /// );
     /// ```
+    #[must_use] 
     pub fn without_default_run_condition() -> Self {
         Self {
             use_default_run_condition: false,
@@ -528,11 +500,11 @@ impl<B: backend::CharacterPhysicsBackend> Plugin for CharacterControllerPlugin<B
         // Walk and fly can run in parallel as they affect orthogonal axes
 
         // Only register generic fall gravity if backend doesn't provide custom implementation
-        if !B::provides_custom_gravity() {
+        if B::provides_custom_gravity() {
+            // Backend provides custom gravity, so only add walk and jump
             app.add_systems(
                 FixedUpdate,
                 (
-                    systems::apply_fall_gravity::<B>,
                     systems::apply_walk::<B>,
                     systems::apply_jump::<B>,
                 )
@@ -540,10 +512,10 @@ impl<B: backend::CharacterPhysicsBackend> Plugin for CharacterControllerPlugin<B
                     .in_set(CharacterControllerSet::IntentApplication),
             );
         } else {
-            // Backend provides custom gravity, so only add walk and jump
             app.add_systems(
                 FixedUpdate,
                 (
+                    systems::apply_fall_gravity::<B>,
                     systems::apply_walk::<B>,
                     systems::apply_jump::<B>,
                 )
