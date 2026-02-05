@@ -9,6 +9,10 @@ use bevy::render::render_resource::PrimitiveTopology;
 use bevy::asset::RenderAssetUsages;
 use std::f32::consts::PI;
 
+/// Maximum safe value for u32 to f32 conversion without precision loss.
+/// f32 mantissa is 23 bits, so values above 2^24 lose precision.
+const MAX_SAFE_F32_INT: u32 = 1 << 24; // 16,777,216
+
 /// Creates a 2D capsule mesh (stadium shape).
 ///
 /// A capsule is a rectangle with semicircular caps on top and bottom.
@@ -17,14 +21,15 @@ use std::f32::consts::PI;
 /// * `half_height` - Half the height of the rectangular portion
 /// * `radius` - Radius of the semicircular caps
 /// * `segments` - Number of segments for each semicircle (more = smoother)
-pub fn create_capsule_mesh(half_height: f32, radius: f32, segments: usize) -> Mesh {
-    let segments = segments.max(4);
+pub fn create_capsule_mesh(half_height: f32, radius: f32, segments: u32) -> Mesh {
+    let segments = segments.clamp(4, MAX_SAFE_F32_INT);
+    let segments_f = segments as f32;
 
     // Total vertices: segments for top semicircle + segments for bottom semicircle + 2 for center
     let vertex_count = segments * 2 + 2;
-    let mut positions: Vec<[f32; 3]> = Vec::with_capacity(vertex_count);
-    let mut normals: Vec<[f32; 3]> = Vec::with_capacity(vertex_count);
-    let mut uvs: Vec<[f32; 2]> = Vec::with_capacity(vertex_count);
+    let mut positions: Vec<[f32; 3]> = Vec::with_capacity(vertex_count as usize);
+    let mut normals: Vec<[f32; 3]> = Vec::with_capacity(vertex_count as usize);
+    let mut uvs: Vec<[f32; 2]> = Vec::with_capacity(vertex_count as usize);
 
     // Center point for triangle fan
     positions.push([0.0, 0.0, 0.0]);
@@ -33,7 +38,8 @@ pub fn create_capsule_mesh(half_height: f32, radius: f32, segments: usize) -> Me
 
     // Top semicircle (from left to right)
     for i in 0..=segments {
-        let angle = PI - (PI * i as f32 / segments as f32);
+        let i_f32 = i as f32;
+        let angle = PI - (PI * i_f32 / segments_f);
         let x = angle.cos() * radius;
         let y = half_height + angle.sin() * radius;
         positions.push([x, y, 0.0]);
@@ -46,7 +52,8 @@ pub fn create_capsule_mesh(half_height: f32, radius: f32, segments: usize) -> Me
 
     // Bottom semicircle (from right to left)
     for i in 0..=segments {
-        let angle = -(PI * i as f32 / segments as f32);
+        let i_f32 = i as f32;
+        let angle = -(PI * i_f32 / segments_f);
         let x = angle.cos() * radius;
         let y = -half_height + angle.sin() * radius;
         positions.push([x, y, 0.0]);
@@ -62,12 +69,12 @@ pub fn create_capsule_mesh(half_height: f32, radius: f32, segments: usize) -> Me
     let total_outer = (segments + 1) * 2;
     for i in 1..total_outer {
         indices.push(0); // Center
-        indices.push(i as u32);
-        indices.push((i % total_outer + 1) as u32);
+        indices.push(i);
+        indices.push(i % total_outer + 1);
     }
     // Close the fan
     indices.push(0);
-    indices.push(total_outer as u32);
+    indices.push(total_outer);
     indices.push(1);
 
     let mut mesh = Mesh::new(
@@ -87,12 +94,13 @@ pub fn create_capsule_mesh(half_height: f32, radius: f32, segments: usize) -> Me
 /// # Arguments
 /// * `radius` - Radius of the circle
 /// * `segments` - Number of segments (more = smoother circle)
-pub fn create_circle_mesh(radius: f32, segments: usize) -> Mesh {
-    let segments = segments.max(8);
+pub fn create_circle_mesh(radius: f32, segments: u32) -> Mesh {
+    let segments = segments.clamp(8, MAX_SAFE_F32_INT);
+    let segments_f = segments as f32;
 
-    let mut positions: Vec<[f32; 3]> = Vec::with_capacity(segments + 2);
-    let mut normals: Vec<[f32; 3]> = Vec::with_capacity(segments + 2);
-    let mut uvs: Vec<[f32; 2]> = Vec::with_capacity(segments + 2);
+    let mut positions: Vec<[f32; 3]> = Vec::with_capacity((segments + 2) as usize);
+    let mut normals: Vec<[f32; 3]> = Vec::with_capacity((segments + 2) as usize);
+    let mut uvs: Vec<[f32; 2]> = Vec::with_capacity((segments + 2) as usize);
 
     // Center point
     positions.push([0.0, 0.0, 0.0]);
@@ -101,7 +109,8 @@ pub fn create_circle_mesh(radius: f32, segments: usize) -> Mesh {
 
     // Circle vertices
     for i in 0..=segments {
-        let angle = 2.0 * PI * i as f32 / segments as f32;
+        let i_f32 = i as f32;
+        let angle = 2.0 * PI * i_f32 / segments_f;
         let x = angle.cos() * radius;
         let y = angle.sin() * radius;
         positions.push([x, y, 0.0]);
@@ -111,7 +120,7 @@ pub fn create_circle_mesh(radius: f32, segments: usize) -> Mesh {
 
     // Triangle fan indices
     let mut indices: Vec<u32> = Vec::new();
-    for i in 1..=segments as u32 {
+    for i in 1..=segments {
         indices.push(0);
         indices.push(i);
         indices.push(i + 1);
@@ -200,7 +209,9 @@ pub fn create_polygon_mesh(vertices: &[Vec2]) -> Mesh {
     }
 
     // Calculate center point for fan triangulation
-    let center: Vec2 = vertices.iter().copied().sum::<Vec2>() / vertices.len() as f32;
+    let vertices_len = vertices.len().min(MAX_SAFE_F32_INT as usize);
+    let vertices_len_f = vertices_len as f32;
+    let center: Vec2 = vertices.iter().copied().sum::<Vec2>() / vertices_len_f;
 
     let mut positions: Vec<[f32; 3]> = Vec::with_capacity(vertices.len() + 1);
     let mut normals: Vec<[f32; 3]> = Vec::with_capacity(vertices.len() + 1);

@@ -1,0 +1,3 @@
+[alias]
+# Clippy with pedantic warnings - only allow needless_pass_by_value for Bevy systems
+clippy-pedantic = "clippy --all-targets --all-features -- -W clippy::pedantic -A clippy::needless_pass_by_value -A clippy::type_complexity -A clippy::nonstandard_macro_braces"

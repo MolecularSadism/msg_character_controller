@@ -1,4 +1,4 @@
-//! Diagnostics panel for CharacterController state.
+//! Diagnostics panel for `CharacterController` state.
 //!
 //! Provides a read-only egui panel displaying the current state of
 //! a character controller for debugging and visualization.
@@ -50,7 +50,7 @@ pub fn position_velocity_ui(ui: &mut egui::Ui, transform: &Transform, velocity: 
         });
         ui.horizontal(|ui| {
             ui.label("Angular Vel:");
-            ui.label(format!("{:.2} rad/s", angular_velocity));
+            ui.label(format!("{angular_velocity:.2} rad/s"));
         });
     });
 }
@@ -211,8 +211,7 @@ pub fn stair_climbing_ui(ui: &mut egui::Ui, controller: &CharacterController) {
         let stair_enabled = controller
             .stair_config
             .as_ref()
-            .map(|c| c.enabled)
-            .unwrap_or(false);
+            .is_some_and(|c| c.enabled);
 
         ui.horizontal(|ui| {
             ui.label("Enabled:");
@@ -313,6 +312,17 @@ pub fn movement_intent_ui(ui: &mut egui::Ui, movement: Option<&MovementIntent>) 
                     "None".to_string()
                 };
                 ui.label(fly_str);
+            });
+            ui.horizontal(|ui| {
+                ui.label("Fly Horizontal:");
+                let fly_h_str = if intent.fly_horizontal > 0.01 {
+                    format!("Right ({:.2})", intent.fly_horizontal)
+                } else if intent.fly_horizontal < -0.01 {
+                    format!("Left ({:.2})", intent.fly_horizontal)
+                } else {
+                    "None".to_string()
+                };
+                ui.label(fly_h_str);
             });
             ui.horizontal(|ui| {
                 ui.label("Walk Speed:");
