@@ -12,6 +12,51 @@
 //! - Detects wall contact for advanced movement
 //! - Uses `Avian2D` physics engine (formerly XPBD)
 //!
+//! ## Quick Start
+//!
+//! Here's a complete minimal example to get you started:
+//!
+//! ```rust
+//! use bevy::prelude::*;
+//! use avian2d::prelude::*;
+//! use msg_character_controller::prelude::*;
+//!
+//! fn build_app() {
+//!     let mut app = App::new();
+//!     app.add_plugins(DefaultPlugins)
+//!         .add_plugins(PhysicsPlugins::default())
+//!         .add_plugins(CharacterControllerPlugin::<Avian2dBackend>::default())
+//!         .add_systems(Startup, spawn_character)
+//!         .add_systems(Update, handle_input);
+//!     // In a real app, you would call app.run() here
+//! }
+//!
+//! fn spawn_character(mut commands: Commands) {
+//!     commands.spawn((
+//!         Transform::from_xyz(0.0, 100.0, 0.0),
+//!         CharacterController::new(),
+//!         ControllerConfig::default(),
+//!         Collider::capsule(8.0, 4.0),  // height, radius
+//!         // MovementIntent is automatically added via component requirements
+//!     ));
+//! }
+//!
+//! fn handle_input(
+//!     keyboard: Res<ButtonInput<KeyCode>>,
+//!     mut query: Query<&mut MovementIntent>,
+//! ) {
+//!     for mut intent in &mut query {
+//!         // Set walking direction (-1.0 = left, 1.0 = right)
+//!         let walk = keyboard.pressed(KeyCode::KeyD) as i32
+//!                  - keyboard.pressed(KeyCode::KeyA) as i32;
+//!         intent.set_walk(walk as f32);
+//!
+//!         // Set jump state (controller handles buffering and coyote time)
+//!         intent.set_jump_pressed(keyboard.pressed(KeyCode::Space));
+//!     }
+//! }
+//! ```
+//!
 //! ## Physics Backend
 //!
 //! The crate uses the `Avian2D` physics engine:
@@ -19,6 +64,7 @@
 //! ```toml
 //! # Avian2D is the default backend
 //! msg_character_controller = "0.3"
+//! avian2d = "0.5"
 //! ```
 //!
 //! ## Architecture
@@ -49,7 +95,7 @@
 //! By default, all systems run only when the [`CharacterControllerActive`] resource is enabled.
 //! You can pause/resume processing by toggling the boolean:
 //!
-//! ```rust,no_run
+//! ```rust
 //! use bevy::prelude::*;
 //! use msg_character_controller::prelude::*;
 //!
@@ -65,20 +111,15 @@
 //! For custom run conditions (e.g., state-based), use [`CharacterControllerPlugin::without_default_run_condition`]
 //! and configure your own condition on [`CharacterControllerSystems`]:
 //!
-//! ```rust,ignore
+//! ```rust
 //! use bevy::prelude::*;
 //! use msg_character_controller::prelude::*;
 //!
-//! #[derive(States, Default, Debug, Clone, Copy, PartialEq, Eq, Hash)]
-//! enum GameState { #[default] Menu, Playing }
-//!
-//! fn main() {
+//! fn setup_controller_with_custom_run_condition() {
 //!     let mut app = App::new();
 //!     app.add_plugins(CharacterControllerPlugin::<Avian2dBackend>::without_default_run_condition());
-//!     app.configure_sets(
-//!         FixedUpdate,
-//!         CharacterControllerSystems.run_if(in_state(GameState::Playing)),
-//!     );
+//!     // Configure your own run condition on CharacterControllerSystems
+//!     // For example: app.configure_sets(FixedUpdate, CharacterControllerSystems.run_if(custom_condition));
 //! }
 //! ```
 //!
@@ -121,7 +162,7 @@ pub mod systems;
 ///
 /// The simplest way to pause is by setting [`CharacterControllerActive`] to disabled:
 ///
-/// ```rust,no_run
+/// ```rust
 /// # use bevy::prelude::*;
 /// # use msg_character_controller::prelude::*;
 /// fn pause(mut active: ResMut<CharacterControllerActive>) {
@@ -134,19 +175,16 @@ pub mod systems;
 /// For custom conditions (e.g., game state-based), disable the default condition
 /// and configure your own:
 ///
-/// ```rust,ignore
+/// ```rust
 /// use bevy::prelude::*;
 /// use msg_character_controller::prelude::*;
 ///
-/// #[derive(States, Default, Debug, Clone, Copy, PartialEq, Eq, Hash)]
-/// enum GameState { #[default] Menu, Playing }
-///
-/// let mut app = App::new();
-/// app.add_plugins(CharacterControllerPlugin::<Avian2dBackend>::without_default_run_condition());
-/// app.configure_sets(
-///     FixedUpdate,
-///     CharacterControllerSystems.run_if(in_state(GameState::Playing)),
-/// );
+/// fn configure_with_custom_run_condition() {
+///     let mut app = App::new();
+///     app.add_plugins(CharacterControllerPlugin::<Avian2dBackend>::without_default_run_condition());
+///     // Configure your own run condition on CharacterControllerSystems
+///     // For example: app.configure_sets(FixedUpdate, CharacterControllerSystems.run_if(custom_condition));
+/// }
 /// ```
 #[derive(SystemSet, Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub struct CharacterControllerSystems;
@@ -161,7 +199,7 @@ pub struct CharacterControllerSystems;
 ///
 /// Set to `false` to pause all character controller processing:
 ///
-/// ```rust,no_run
+/// ```rust
 /// # use bevy::prelude::*;
 /// # use msg_character_controller::prelude::*;
 /// fn pause(mut active: ResMut<CharacterControllerActive>) {
@@ -173,7 +211,7 @@ pub struct CharacterControllerSystems;
 ///
 /// Set to `true` to resume processing:
 ///
-/// ```rust,no_run
+/// ```rust
 /// # use bevy::prelude::*;
 /// # use msg_character_controller::prelude::*;
 /// fn resume(mut active: ResMut<CharacterControllerActive>) {
@@ -183,7 +221,7 @@ pub struct CharacterControllerSystems;
 ///
 /// # Toggling
 ///
-/// ```rust,no_run
+/// ```rust
 /// # use bevy::prelude::*;
 /// # use msg_character_controller::prelude::*;
 /// fn toggle(mut active: ResMut<CharacterControllerActive>) {
@@ -241,7 +279,7 @@ pub mod prelude {
     //!
     //! This module provides all the types you need to get started with the character controller:
     //!
-    //! ```rust,no_run
+    //! ```rust
     //! use bevy::prelude::*;
     //! use avian2d::prelude::*;
     //! use msg_character_controller::prelude::*;
@@ -283,7 +321,7 @@ pub mod prelude {
 /// By default, all systems run only when the [`CharacterControllerActive`] resource is enabled.
 /// This provides an easy way to pause/unpause the controller:
 ///
-/// ```rust,no_run
+/// ```rust
 /// # use bevy::prelude::*;
 /// # use msg_character_controller::prelude::*;
 /// // Pause
@@ -301,19 +339,16 @@ pub mod prelude {
 /// [`Self::without_default_run_condition`] and configure your own condition
 /// on the [`CharacterControllerSystems`] set:
 ///
-/// ```rust,ignore
+/// ```rust
 /// use bevy::prelude::*;
 /// use msg_character_controller::prelude::*;
 ///
-/// #[derive(States, Default, Debug, Clone, Copy, PartialEq, Eq, Hash)]
-/// enum GameState { #[default] Menu, Playing }
-///
-/// let mut app = App::new();
-/// app.add_plugins(CharacterControllerPlugin::<Avian2dBackend>::without_default_run_condition());
-/// app.configure_sets(
-///     FixedUpdate,
-///     CharacterControllerSystems.run_if(in_state(GameState::Playing)),
-/// );
+/// fn configure_with_custom_run_condition() {
+///     let mut app = App::new();
+///     app.add_plugins(CharacterControllerPlugin::<Avian2dBackend>::without_default_run_condition());
+///     // Configure your own run condition on CharacterControllerSystems
+///     // For example: app.configure_sets(FixedUpdate, CharacterControllerSystems.run_if(custom_condition));
+/// }
 /// ```
 ///
 /// # Gravity Handling
@@ -325,16 +360,18 @@ pub mod prelude {
 ///
 /// # Example
 ///
-/// ```rust,ignore
+/// ```rust
 /// use bevy::prelude::*;
 /// use avian2d::prelude::*;
 /// use msg_character_controller::prelude::*;
 ///
-/// App::new()
-///     .add_plugins(DefaultPlugins)
-///     .add_plugins(PhysicsPlugins::default())
-///     .add_plugins(CharacterControllerPlugin::<Avian2dBackend>::default())
-///     .run();
+/// fn build_app() {
+///     let mut app = App::new();
+///     app.add_plugins(DefaultPlugins)
+///         .add_plugins(PhysicsPlugins::default())
+///         .add_plugins(CharacterControllerPlugin::<Avian2dBackend>::default());
+///     // Would normally call app.run() here
+/// }
 /// ```
 pub struct CharacterControllerPlugin<B: backend::CharacterPhysicsBackend> {
     /// Whether to use the default resource-based run condition.
@@ -368,19 +405,16 @@ impl<B: backend::CharacterPhysicsBackend> CharacterControllerPlugin<B> {
     ///
     /// # Example
     ///
-    /// ```rust,ignore
+    /// ```rust
     /// use bevy::prelude::*;
     /// use msg_character_controller::prelude::*;
     ///
-    /// #[derive(States, Default, Debug, Clone, Copy, PartialEq, Eq, Hash)]
-    /// enum GameState { #[default] Menu, Playing }
-    ///
-    /// let mut app = App::new();
-    /// app.add_plugins(CharacterControllerPlugin::<Avian2dBackend>::without_default_run_condition());
-    /// app.configure_sets(
-    ///     FixedUpdate,
-    ///     CharacterControllerSystems.run_if(in_state(GameState::Playing)),
-    /// );
+    /// fn configure_with_custom_run_condition() {
+    ///     let mut app = App::new();
+    ///     app.add_plugins(CharacterControllerPlugin::<Avian2dBackend>::without_default_run_condition());
+    ///     // Configure your own run condition on CharacterControllerSystems
+    ///     // For example: app.configure_sets(FixedUpdate, CharacterControllerSystems.run_if(custom_condition));
+    /// }
     /// ```
     #[must_use] 
     pub fn without_default_run_condition() -> Self {

@@ -1,4 +1,4 @@
-//! Configuration panel for ControllerConfig.
+//! Configuration panel for `ControllerConfig`.
 //!
 //! Provides a reusable egui panel for editing character controller configuration.
 
@@ -73,7 +73,7 @@ pub fn spring_settings_ui(ui: &mut egui::Ui, config: &mut ControllerConfig) {
             ui.add(
                 egui::DragValue::new(&mut config.spring_strength)
                     .speed(100.0)
-                    .range(0.0..=1000000000.0),
+                    .range(0.0..=1_000_000_000.0),
             );
         });
         ui.horizontal(|ui| {
@@ -81,7 +81,7 @@ pub fn spring_settings_ui(ui: &mut egui::Ui, config: &mut ControllerConfig) {
             ui.add(
                 egui::DragValue::new(&mut config.spring_damping)
                     .speed(10.0)
-                    .range(0.0..=1000000000.0),
+                    .range(0.0..=1_000_000_000.0),
             );
         });
 
@@ -97,7 +97,7 @@ pub fn spring_settings_ui(ui: &mut egui::Ui, config: &mut ControllerConfig) {
                     .add(
                         egui::DragValue::new(&mut max_force)
                             .speed(100.0)
-                            .range(0.0..=1000000000.0),
+                            .range(0.0..=1_000_000_000.0),
                     )
                     .changed()
                 {
@@ -117,7 +117,7 @@ pub fn spring_settings_ui(ui: &mut egui::Ui, config: &mut ControllerConfig) {
                     .add(
                         egui::DragValue::new(&mut max_vel)
                             .speed(1.0)
-                            .range(0.0..=100000.0),
+                            .range(0.0..=100_000.0),
                     )
                     .changed()
                 {
@@ -135,7 +135,7 @@ pub fn movement_settings_ui(ui: &mut egui::Ui, config: &mut ControllerConfig) {
             ui.add(
                 egui::DragValue::new(&mut config.max_speed)
                     .speed(1.0)
-                    .range(0.0..=100000.0),
+                    .range(0.0..=100_000.0),
             );
         });
         ui.horizontal(|ui| {
@@ -143,7 +143,7 @@ pub fn movement_settings_ui(ui: &mut egui::Ui, config: &mut ControllerConfig) {
             ui.add(
                 egui::DragValue::new(&mut config.acceleration)
                     .speed(10.0)
-                    .range(0.0..=100000.0),
+                    .range(0.0..=100_000.0),
             );
         });
         ui.horizontal(|ui| {
@@ -194,7 +194,7 @@ pub fn flying_settings_ui(ui: &mut egui::Ui, config: &mut ControllerConfig) {
             ui.add(
                 egui::DragValue::new(&mut config.fly_max_speed)
                     .speed(1.0)
-                    .range(0.0..=100000.0),
+                    .range(0.0..=100_000.0),
             );
         });
         ui.horizontal(|ui| {
@@ -211,7 +211,7 @@ pub fn flying_settings_ui(ui: &mut egui::Ui, config: &mut ControllerConfig) {
             ui.add(
                 egui::DragValue::new(&mut config.fly_acceleration)
                     .speed(10.0)
-                    .range(0.0..=100000.0),
+                    .range(0.0..=100_000.0),
             );
         });
         ui.horizontal(|ui| {
@@ -324,7 +324,7 @@ pub fn jump_settings_ui(ui: &mut egui::Ui, config: &mut ControllerConfig) {
             ui.add(
                 egui::DragValue::new(&mut config.jump_speed)
                     .speed(100.0)
-                    .range(0.0..=1000000000.0),
+                    .range(0.0..=1_000_000_000.0),
             );
         });
         ui.horizontal(|ui| {
@@ -485,7 +485,7 @@ pub fn upright_torque_settings_ui(ui: &mut egui::Ui, config: &mut ControllerConf
             ui.add(
                 egui::DragValue::new(&mut config.upright_torque_strength)
                     .speed(10.0)
-                    .range(0.0..=1000000.0),
+                    .range(0.0..=1_000_000.0),
             );
         });
         ui.horizontal(|ui| {
@@ -493,7 +493,7 @@ pub fn upright_torque_settings_ui(ui: &mut egui::Ui, config: &mut ControllerConf
             ui.add(
                 egui::DragValue::new(&mut config.upright_torque_damping)
                     .speed(1.0)
-                    .range(0.0..=1000000.0),
+                    .range(0.0..=1_000_000.0),
             );
         });
         // upright_target_angle is Option<f32> - handle separately

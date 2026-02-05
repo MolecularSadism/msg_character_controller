@@ -1,4 +1,4 @@
-//! Diagnostics panel for CharacterController state.
+//! Diagnostics panel for `CharacterController` state.
 //!
 //! Provides a read-only egui panel displaying the current state of
 //! a character controller for debugging and visualization.
@@ -50,7 +50,7 @@ pub fn position_velocity_ui(ui: &mut egui::Ui, transform: &Transform, velocity: 
         });
         ui.horizontal(|ui| {
             ui.label("Angular Vel:");
-            ui.label(format!("{:.2} rad/s", angular_velocity));
+            ui.label(format!("{angular_velocity:.2} rad/s"));
         });
     });
 }

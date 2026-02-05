@@ -4,7 +4,7 @@
 //! system is working. It spawns a character high in the air above a platform.
 #![allow(unexpected_cfgs)]
 //!
-//! If floating works: The character should descend and hover at float_height above the platform
+//! If floating works: The character should descend and hover at `float_height` above the platform
 //! If floating doesn't work: The character will fall through or sit directly on the platform
 //!
 //! ## Controls
@@ -134,13 +134,12 @@ fn setup(
 
     println!("=== FLOAT TEST SETUP ===");
     println!("Spawning player at Y: {}", spawn_pos.y);
-    println!("Platform top at Y: {}", platform_top);
+    println!("Platform top at Y: {platform_top}");
     println!(
-        "Float height (gap from capsule bottom to ground): {}",
-        float_height
+        "Float height (gap from capsule bottom to ground): {float_height}"
     );
-    println!("Collider bottom offset: {}", collider_bottom_offset);
-    println!("Expected center Y: {}", expected_hover_y);
+    println!("Collider bottom offset: {collider_bottom_offset}");
+    println!("Expected center Y: {expected_hover_y}");
 
     // Spawn player with rotation locked for this test
     spawn_player(

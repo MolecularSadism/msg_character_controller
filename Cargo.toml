@@ -19,6 +19,7 @@ bevy = { version = "0.18", default-features = false }
 [dev-dependencies]
 avian2d = { version = "0.5", features = ["2d"] }
 bevy_egui = "0.39"
+approx = "0.5"
 
 [features]
 default = ["avian2d"]

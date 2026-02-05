@@ -1,10 +1,12 @@
-//! Integration tests for the character controller with Avian2D backend.
+//! Integration tests for the character controller with `Avian2D` backend.
 //!
 //! These tests verify the complete system behavior with actual physics simulation.
 //! Each test produces PROOF through explicit velocity/force checks.
 
 #![cfg(feature = "avian2d")]
 
+use approx::assert_relative_eq;
+use bevy::app::FixedMain;
 use bevy::prelude::*;
 use avian2d::prelude::*;
 use msg_character_controller::prelude::*;
@@ -344,13 +346,20 @@ fn spawn_character_with_gravity(app: &mut App, position: Vec2, gravity: Vec2) ->
 }
 
 /// Advance time by one fixed timestep and run one update.
-/// This is necessary for FixedUpdate schedule to run.
+/// This is necessary for `FixedUpdate` schedule to run.
 fn tick(app: &mut App) {
     let timestep = std::time::Duration::from_secs_f64(1.0 / FIXED_UPDATE_HZ);
+
+    // Advance virtual time
     app.world_mut()
         .resource_mut::<Time<Virtual>>()
         .advance_by(timestep);
+
+    // Run the main update which includes FixedMain schedule
     app.update();
+
+    // Also manually run FixedMain to ensure FixedUpdate runs
+    app.world_mut().run_schedule(FixedMain);
 }
 
 /// Run the app for the specified number of frames.
@@ -361,11 +370,11 @@ fn run_frames(app: &mut App, frames: usize) {
 }
 
 /// Run the app for a specified duration in seconds.
-/// This runs app.update() repeatedly, letting Bevy's FixedUpdate run passively
+/// This runs `app.update()` repeatedly, letting Bevy's `FixedUpdate` run passively
 /// based on Time<Virtual>, until the target duration is reached.
-#[allow(clippy::cast_sign_loss)]
+#[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation)]
 fn run_for_duration(app: &mut App, duration_secs: f32) {
-    let frames = (duration_secs * FIXED_UPDATE_HZ as f32).ceil() as usize;
+    let frames = (f64::from(duration_secs) * FIXED_UPDATE_HZ).ceil().max(0.0) as usize;
     run_frames(app, frames);
 }
 
@@ -399,8 +408,7 @@ mod ground_detection {
         let ground_dist = controller.ground_distance().expect("Ground should have distance");
         assert!(
             ground_dist < 20.0,
-            "Ground distance should be less than character height: {}",
-            ground_dist
+            "Ground distance should be less than character height: {ground_dist}"
         );
 
         println!(
@@ -558,18 +566,14 @@ mod float_height {
         // Character should be floating above the ground surface
         assert!(
             capsule_bottom > ground_surface + 1.0,
-            "Character should be floating ABOVE ground: capsule_bottom={}, ground_surface={}",
-            capsule_bottom,
-            ground_surface
+            "Character should be floating ABOVE ground: capsule_bottom={capsule_bottom}, ground_surface={ground_surface}"
         );
 
         // PROOF 3: Ground distance should be greater than float_height
         // (ground_distance is from character center, float_height is the target hover distance)
         assert!(
             ground_dist > float_height,
-            "Ground distance {} should be greater than float_height {}",
-            ground_dist,
-            float_height
+            "Ground distance {ground_dist} should be greater than float_height {float_height}"
         );
 
         // PROOF 4: Verify the spring is maintaining float height
@@ -578,10 +582,7 @@ mod float_height {
         let expected_max = float_height + controller.capsule_half_height() + 5.0; // Some tolerance
         assert!(
             ground_dist >= expected_min && ground_dist <= expected_max,
-            "Ground distance {} should be between {} and {} (float_height + capsule + tolerance)",
-            ground_dist,
-            expected_min,
-            expected_max
+            "Ground distance {ground_dist} should be between {expected_min} and {expected_max} (float_height + capsule + tolerance)"
         );
     }
 
@@ -607,13 +608,12 @@ mod float_height {
         let vel_after = app.world().get::<LinearVelocity>(character).unwrap().0;
 
         println!(
-            "PROOF: vel_before={:?}, vel_after={:?}",
-            vel_before, vel_after
+            "PROOF: vel_before={vel_before:?}, vel_after={vel_after:?}"
         );
 
         // PROOF: Spring force should have affected velocity
         let ext_force = app.world().get::<ConstantForce>(character);
-        println!("PROOF: ConstantForce={:?}", ext_force);
+        println!("PROOF: ConstantForce={ext_force:?}");
 
         // The velocity change proves force was applied
         assert!(
@@ -649,7 +649,7 @@ mod wall_detection {
 
             // Get character capsule info
             let collider = app.world().get::<Collider>(character).unwrap();
-            eprintln!("\nCharacter collider: {:?}", collider);
+            eprintln!("\nCharacter collider: {collider:?}");
 
             run_for_duration(&mut app, 2.0);
 
@@ -661,7 +661,7 @@ mod wall_detection {
                 distance, -distance, -(distance - 2.0));
             eprintln!("  Character center at x=0.0, capsule radius=4.0");
             eprintln!("  Expected hit distance: {:.1} units", distance - 2.0);
-            eprintln!("  Detected: {} {:?}", detected, wall_data);
+            eprintln!("  Detected: {detected} {wall_data:?}");
 
             if detected {
                 if let Some(data) = wall_data {
@@ -736,7 +736,7 @@ mod wall_detection {
     }
 
     /// Test that verifies wall detection range limit discovered through diagnostics.
-    /// Walls beyond ~6 units are not detected even though max_distance=10.
+    /// Walls beyond ~6 units are not detected even though `max_distance=10`.
     #[test]
     fn wall_detection_has_range_limit() {
         let mut app = create_test_app();
@@ -813,7 +813,7 @@ mod ceiling_detection {
             .filter(|(_, parent)| parent.0 == character)
             .count();
 
-        println!("PROOF: ceiling_caster_count={}", ceiling_caster_count);
+        println!("PROOF: ceiling_caster_count={ceiling_caster_count}");
 
         assert_eq!(ceiling_caster_count, 1, "Should have 1 ceiling caster");
     }
@@ -878,6 +878,35 @@ mod ceiling_detection {
 
 mod movement {
     use super::*;
+
+    /// Test if `FixedUpdate` systems are actually running.
+    #[test]
+    fn verify_fixed_update_runs() {
+        #[derive(Resource, Default)]
+        struct FixedUpdateCounter(usize);
+
+        fn increment_counter(mut counter: ResMut<FixedUpdateCounter>) {
+            counter.0 += 1;
+        }
+
+        let mut app = create_test_app();
+        app.init_resource::<FixedUpdateCounter>();
+        app.add_systems(FixedUpdate, increment_counter);
+
+        eprintln!("\n=== Verifying FixedUpdate Execution ===");
+
+        for i in 0..5 {
+            tick(&mut app);
+            let count = app.world().resource::<FixedUpdateCounter>().0;
+            eprintln!("After tick {i}: counter = {count}");
+        }
+
+        let final_count = app.world().resource::<FixedUpdateCounter>().0;
+        eprintln!("Final count: {final_count}");
+        eprintln!("=== END VERIFICATION ===\n");
+
+        assert!(final_count > 0, "FixedUpdate should have run at least once");
+    }
 
     /// Diagnostic test to understand why jump isn't working in tests.
     /// This test examines the state at each step to identify where the flow breaks.
@@ -952,7 +981,7 @@ mod movement {
             eprintln!("  Tick {}: vel.y={:.2}, jump_request={:?}", i, vel.y, intent.jump_request);
 
             if vel.y > 40.0 {
-                eprintln!("  ✅ Jump applied successfully at tick {}", i);
+                eprintln!("  ✅ Jump applied successfully at tick {i}");
                 break;
             }
         }
@@ -985,8 +1014,7 @@ mod movement {
         let vel_after = app.world().get::<LinearVelocity>(character).unwrap().0;
 
         println!(
-            "PROOF: vel_before={:?}, vel_after={:?}",
-            vel_before, vel_after
+            "PROOF: vel_before={vel_before:?}, vel_after={vel_after:?}"
         );
 
         // PROOF: Velocity should increase in the X direction
@@ -1068,7 +1096,7 @@ mod movement {
 
             if vel > 40.0 {
                 // Jump was applied!
-                println!("PROOF: Jump applied! vel_before.y={}, vel_after.y={}", vel_before, vel);
+                println!("PROOF: Jump applied! vel_before.y={vel_before}, vel_after.y={vel}");
                 assert!(vel > 40.0, "Jump should apply upward velocity");
                 return;
             }
@@ -1078,7 +1106,7 @@ mod movement {
         let vel_after = app.world().get::<LinearVelocity>(character).unwrap().0.y;
 
         eprintln!("Jump did not apply in test environment");
-        eprintln!("vel_before={}, vel_after={}", vel_before, vel_after);
+        eprintln!("vel_before={vel_before}, vel_after={vel_after}");
         eprintln!("This is a known limitation of the test environment - jump works correctly in-game");
 
         // Don't fail the test - just document the limitation
@@ -1126,8 +1154,8 @@ mod movement {
             let cfg = app.world().get::<ControllerConfig>(character).unwrap();
             (cfg.jump_speed, cfg.coyote_time)
         };
-        assert_eq!(jump_speed, 90.0, "Jump speed should match config");
-        assert_eq!(coyote_time, 0.15, "Coyote time should match config");
+        assert_relative_eq!(jump_speed, 90.0);
+        assert_relative_eq!(coyote_time, 0.15);
 
         // PROOF 4: MovementIntent exists and can be modified
         let mut has_intent = false;
@@ -1145,8 +1173,7 @@ mod movement {
         assert!(jump_pressed, "Jump pressed state should be readable");
 
         println!(
-            "PROOF: Character grounded={}, in_coyote_time={}, jump_speed={}, can_set_jump={}",
-            is_grounded, in_coyote, jump_speed, jump_pressed
+            "PROOF: Character grounded={is_grounded}, in_coyote_time={in_coyote}, jump_speed={jump_speed}, can_set_jump={jump_pressed}"
         );
     }
 }
@@ -1396,7 +1423,7 @@ mod collision_layers {
         );
     }
 
-    /// Test that explicit CollisionLayers matching the default layer work correctly.
+    /// Test that explicit `CollisionLayers` matching the default layer work correctly.
     #[test]
     fn explicit_layer_0_matches_default() {
         let mut app = create_test_app();
@@ -1493,8 +1520,8 @@ mod collision_layers {
         // Debug: print layer values
         let char_with_layers_val = app.world().get::<CollisionLayers>(char_with_layers);
         let char_no_layers_val = app.world().get::<CollisionLayers>(char_no_layers);
-        println!("char_with_layers CollisionLayers: {:?}", char_with_layers_val);
-        println!("char_no_layers CollisionLayers: {:?}", char_no_layers_val);
+        println!("char_with_layers CollisionLayers: {char_with_layers_val:?}");
+        println!("char_no_layers CollisionLayers: {char_no_layers_val:?}");
 
         let ctrl_with = app.world().get::<CharacterController>(char_with_layers).unwrap();
         let ctrl_no = app.world().get::<CharacterController>(char_no_layers).unwrap();

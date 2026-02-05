@@ -60,11 +60,15 @@ pub struct MovementIntent {
     /// - Use the held state for fall gravity calculations (shorter hops when released early)
     ///
     /// # Example
-    /// ```rust,ignore
+    /// ```rust
+    /// # use msg_character_controller::prelude::*;
+    /// # let mut intent = MovementIntent::new();
     /// // Your code handles input, we just receive a bool:
-    /// intent.set_jump_pressed(keyboard.pressed(KeyCode::Space));
+    /// # let space_pressed = true;
+    /// intent.set_jump_pressed(space_pressed);
     /// // Or from gamepad, touch, AI, etc. - any source of a boolean
-    /// intent.set_jump_pressed(gamepad.pressed(GamepadButton::South));
+    /// # let south_pressed = false;
+    /// intent.set_jump_pressed(south_pressed);
     /// ```
     pub jump_pressed: bool,
     /// Previous frame's `jump_pressed` state (for edge detection).
@@ -242,15 +246,20 @@ impl MovementIntent {
     /// input source: keyboard, gamepad, touch, AI, network, etc.
     ///
     /// # Example
-    /// ```rust,ignore
+    /// ```rust
+    /// # use msg_character_controller::prelude::*;
+    /// # let mut intent = MovementIntent::new();
     /// // From keyboard:
-    /// intent.set_jump_pressed(keyboard.pressed(KeyCode::Space));
+    /// # let space_pressed = true;
+    /// intent.set_jump_pressed(space_pressed);
     ///
     /// // From gamepad:
-    /// intent.set_jump_pressed(gamepad.pressed(GamepadButton::South));
+    /// # let south_pressed = false;
+    /// intent.set_jump_pressed(south_pressed);
     ///
     /// // From AI:
-    /// intent.set_jump_pressed(ai.wants_to_jump());
+    /// # let ai_wants_jump = true;
+    /// intent.set_jump_pressed(ai_wants_jump);
     /// ```
     pub fn set_jump_pressed(&mut self, pressed: bool) {
         self.jump_pressed = pressed;
@@ -302,17 +311,18 @@ impl JumpRequest {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use approx::assert_relative_eq;
 
     // ==================== MovementIntent Tests ====================
 
     #[test]
     fn movement_intent_new() {
         let intent = MovementIntent::new();
-        assert_eq!(intent.walk, 0.0);
-        assert_eq!(intent.fly, 0.0);
-        assert_eq!(intent.fly_horizontal, 0.0);
-        assert_eq!(intent.walk_speed, 1.0);
-        assert_eq!(intent.fly_speed, 1.0);
+        assert_relative_eq!(intent.walk, 0.0);
+        assert_relative_eq!(intent.fly, 0.0);
+        assert_relative_eq!(intent.fly_horizontal, 0.0);
+        assert_relative_eq!(intent.walk_speed, 1.0);
+        assert_relative_eq!(intent.fly_speed, 1.0);
         assert!(intent.jump_request.is_none());
     }
 
@@ -320,24 +330,24 @@ mod tests {
     fn movement_intent_set_walk() {
         let mut intent = MovementIntent::new();
         intent.set_walk(0.5);
-        assert_eq!(intent.walk, 0.5);
+        assert_relative_eq!(intent.walk, 0.5);
 
         // Clamps to valid range
         intent.set_walk(5.0);
-        assert_eq!(intent.walk, 1.0);
+        assert_relative_eq!(intent.walk, 1.0);
 
         intent.set_walk(-5.0);
-        assert_eq!(intent.walk, -1.0);
+        assert_relative_eq!(intent.walk, -1.0);
     }
 
     #[test]
     fn movement_intent_set_fly() {
         let mut intent = MovementIntent::new();
         intent.set_fly(0.8);
-        assert_eq!(intent.fly, 0.8);
+        assert_relative_eq!(intent.fly, 0.8);
 
         intent.set_fly(-0.6);
-        assert_eq!(intent.fly, -0.6);
+        assert_relative_eq!(intent.fly, -0.6);
     }
 
     #[test]
@@ -345,18 +355,18 @@ mod tests {
         let mut intent = MovementIntent::new();
         intent.set_walk(1.0);
         intent.set_walk_speed(0.5);
-        assert_eq!(intent.effective_walk(), 0.5);
+        assert_relative_eq!(intent.effective_walk(), 0.5);
 
         intent.set_fly(-1.0);
         intent.set_fly_speed(0.5);
-        assert_eq!(intent.effective_fly(), -0.5);
+        assert_relative_eq!(intent.effective_fly(), -0.5);
 
         // Clamps to valid range
         intent.set_walk_speed(2.0);
-        assert_eq!(intent.walk_speed, 1.0);
+        assert_relative_eq!(intent.walk_speed, 1.0);
 
         intent.set_fly_speed(-1.0);
-        assert_eq!(intent.fly_speed, 0.0);
+        assert_relative_eq!(intent.fly_speed, 0.0);
     }
 
     #[test]
@@ -393,17 +403,17 @@ mod tests {
     fn movement_intent_set_fly_horizontal() {
         let mut intent = MovementIntent::new();
         intent.set_fly_horizontal(0.5);
-        assert_eq!(intent.fly_horizontal, 0.5);
+        assert_relative_eq!(intent.fly_horizontal, 0.5);
 
         intent.set_fly_horizontal(-0.8);
-        assert_eq!(intent.fly_horizontal, -0.8);
+        assert_relative_eq!(intent.fly_horizontal, -0.8);
 
         // Clamps to valid range
         intent.set_fly_horizontal(2.0);
-        assert_eq!(intent.fly_horizontal, 1.0);
+        assert_relative_eq!(intent.fly_horizontal, 1.0);
 
         intent.set_fly_horizontal(-2.0);
-        assert_eq!(intent.fly_horizontal, -1.0);
+        assert_relative_eq!(intent.fly_horizontal, -1.0);
     }
 
     #[test]
@@ -435,9 +445,9 @@ mod tests {
         assert!(!intent.is_walking());
         assert!(!intent.is_flying());
         assert!(!intent.is_flying_horizontal());
-        assert_eq!(intent.walk, 0.0);
-        assert_eq!(intent.fly, 0.0);
-        assert_eq!(intent.fly_horizontal, 0.0);
+        assert_relative_eq!(intent.walk, 0.0);
+        assert_relative_eq!(intent.fly, 0.0);
+        assert_relative_eq!(intent.fly_horizontal, 0.0);
     }
 
     #[test]
