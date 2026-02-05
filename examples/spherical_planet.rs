@@ -87,7 +87,7 @@ fn main() {
     App::new()
         .add_plugins(DefaultPlugins.set(WindowPlugin {
             primary_window: Some(Window {
-                title: format!("Spherical Planet ({}) - Character Controller Example", backend_name()).into(),
+                title: format!("Spherical Planet ({}) - Character Controller Example", backend_name()),
                 resolution: (1280, 720).into(),
                 ..default()
             }),
@@ -282,8 +282,8 @@ fn spawn_surface_slope(
 
 /// Updates the player's gravity to match the planet.
 ///
-/// Gravity points toward the planet center and is stored in CharacterController.
-/// The up direction is derived from gravity via controller.ideal_up().
+/// Gravity points toward the planet center and is stored in `CharacterController`.
+/// The up direction is derived from gravity via `controller.ideal_up()`.
 /// The internal gravity system then applies it when not grounded.
 fn update_player_orientation_and_gravity(
     planet: Res<PlanetConfig>,

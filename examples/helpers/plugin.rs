@@ -12,10 +12,6 @@ use std::marker::PhantomData;
 use super::{DiagnosticsData, backend_name, config_panel_ui, diagnostics_panel_ui, respawn_player};
 
 // Backend-specific velocity types
-#[cfg(feature = "rapier2d")]
-use bevy_rapier2d::prelude::{ExternalForce as RapierExternalForce, ExternalImpulse as RapierExternalImpulse, Velocity as RapierVelocity};
-
-#[cfg(feature = "avian2d")]
 use avian2d::prelude::{ConstantForce as AvianConstantForce, LinearVelocity as AvianLinearVelocity};
 
 /// Resource containing the UI panel state.
@@ -223,24 +219,29 @@ impl Default for CharacterControllerUiConfig {
 ///
 /// # Example
 ///
-/// ```ignore
+/// ```rust
+/// # use bevy::prelude::*;
+/// # use msg_character_controller::prelude::*;
+/// # use msg_character_controller_examples_helpers::*;
 /// #[derive(Component)]
 /// struct Player;
 ///
-/// // Basic usage
-/// App::new()
-///     .add_plugins(CharacterControllerUiPlugin::<Player>::default())
-///     // ...
+/// fn basic_usage() {
+///     // Basic usage
+///     let mut app = App::new();
+///     app.add_plugins(CharacterControllerUiPlugin::<Player>::default());
+/// }
 ///
-/// // With custom spawn position and defaults
-/// App::new()
-///     .insert_resource(SpawnConfig::new(Vec2::new(0.0, 200.0)))
-///     .insert_resource(DefaultControllerSettings::new(
-///         ControllerConfig::player().with_float_height(5.0),
-///         Vec2::new(0.0, -980.0),
-///     ))
-///     .add_plugins(CharacterControllerUiPlugin::<Player>::default())
-///     // ...
+/// fn with_custom_config() {
+///     // With custom spawn position and defaults
+///     let mut app = App::new();
+///     app.insert_resource(SpawnConfig::new(Vec2::new(0.0, 200.0)))
+///         .insert_resource(DefaultControllerSettings::new(
+///             ControllerConfig::player().with_float_height(5.0),
+///             Vec2::new(0.0, -980.0),
+///         ))
+///         .add_plugins(CharacterControllerUiPlugin::<Player>::default());
+/// }
 /// ```
 pub struct CharacterControllerUiPlugin<M: Component> {
     config: CharacterControllerUiConfig,
@@ -320,33 +321,16 @@ impl<M: Component> Plugin for CharacterControllerUiPlugin<M> {
         app.init_resource::<SpawnConfig>();
         app.init_resource::<DefaultControllerSettings>();
 
-        // Add the UI systems - use backend-specific implementations
+        // Add the UI systems
         app.add_systems(
             EguiPrimaryContextPass,
             (
                 toggle_panels_visibility,
                 show_help_text,
-            ),
-        );
-
-        #[cfg(feature = "rapier2d")]
-        app.add_systems(
-            EguiPrimaryContextPass,
-            (
-                character_controller_settings_ui_system_rapier::<M>,
-                character_controller_diagnostics_ui_system_rapier::<M>,
-            )
-                .after(show_help_text),
-        );
-
-        #[cfg(feature = "avian2d")]
-        app.add_systems(
-            EguiPrimaryContextPass,
-            (
                 character_controller_settings_ui_system_avian::<M>,
                 character_controller_diagnostics_ui_system_avian::<M>,
             )
-                .after(show_help_text),
+                .chain(),
         );
     }
 }
@@ -402,12 +386,8 @@ fn show_help_text(mut contexts: EguiContexts, ui_state: Res<CharacterControllerU
                 .inner_margin(egui::Margin::symmetric(8, 4))
                 .show(ui, |ui| {
                     ui.horizontal(|ui| {
-                        // Backend color indicator
-                        let backend_color = if backend_name() == "Rapier2D" {
-                            egui::Color32::from_rgb(255, 140, 0) // Orange for Rapier
-                        } else {
-                            egui::Color32::from_rgb(100, 200, 255) // Blue for Avian
-                        };
+                        // Backend color indicator (Blue for Avian)
+                        let backend_color = egui::Color32::from_rgb(100, 200, 255);
 
                         // Draw a small colored circle
                         let (rect, _) = ui.allocate_exact_size(
@@ -426,139 +406,8 @@ fn show_help_text(mut contexts: EguiContexts, ui_state: Res<CharacterControllerU
         });
 }
 
-// ==================== Rapier2D Backend Systems ====================
-
-#[cfg(feature = "rapier2d")]
-fn character_controller_settings_ui_system_rapier<M: Component>(
-    mut contexts: EguiContexts,
-    mut config_query: Query<
-        (
-            &mut ControllerConfig,
-            &mut CharacterController,
-            &mut Transform,
-            &mut RapierVelocity,
-            &mut RapierExternalImpulse,
-            &mut RapierExternalForce,
-            &mut MovementIntent,
-        ),
-        With<M>,
-    >,
-    ui_state: Res<CharacterControllerUiState>,
-    panel_config: Res<CharacterControllerUiPanelConfig>,
-    spawn_config: Res<SpawnConfig>,
-    default_settings: Res<DefaultControllerSettings>,
-) {
-    if ui_state.frame_count <= 2 || !ui_state.show_panels || !panel_config.show_config_panel {
-        return;
-    }
-
-    let Ok(ctx) = contexts.ctx_mut() else {
-        return;
-    };
-
-    let Ok((
-        mut config,
-        mut controller,
-        mut transform,
-        mut velocity,
-        mut external_impulse,
-        mut external_force,
-        mut movement_intent,
-    )) = config_query.single_mut()
-    else {
-        return;
-    };
-
-    egui::Window::new("Controller Settings")
-        .default_pos(panel_config.config_window_pos)
-        .default_width(300.0)
-        .default_height(400.0)
-        .collapsible(true)
-        .resizable(true)
-        .show(ctx, |ui| {
-            egui::ScrollArea::vertical().show(ui, |ui| {
-                ui.horizontal(|ui| {
-                    if ui.button("Reset to Defaults").clicked() {
-                        *config = default_settings.config.clone();
-                        controller.gravity = default_settings.gravity;
-                    }
-                    if ui.button("Respawn Player").clicked() {
-                        respawn_player(
-                            spawn_config.get_position(),
-                            &mut transform,
-                            &mut controller,
-                            &mut movement_intent,
-                        );
-                        velocity.linvel = Vec2::ZERO;
-                        velocity.angvel = 0.0;
-                        external_impulse.impulse = Vec2::ZERO;
-                        external_impulse.torque_impulse = 0.0;
-                        external_force.force = Vec2::ZERO;
-                        external_force.torque = 0.0;
-                    }
-                });
-                ui.add_space(8.0);
-                config_panel_ui(ui, &mut config, &mut controller);
-            });
-        });
-}
-
-#[cfg(feature = "rapier2d")]
-fn character_controller_diagnostics_ui_system_rapier<M: Component>(
-    mut contexts: EguiContexts,
-    diagnostics_query: Query<
-        (
-            &ControllerConfig,
-            &CharacterController,
-            &Transform,
-            &RapierVelocity,
-            Option<&MovementIntent>,
-            Option<&RapierExternalForce>,
-            Option<&RapierExternalImpulse>,
-        ),
-        With<M>,
-    >,
-    ui_state: Res<CharacterControllerUiState>,
-    panel_config: Res<CharacterControllerUiPanelConfig>,
-) {
-    if ui_state.frame_count <= 2 || !ui_state.show_panels || !panel_config.show_diagnostics_panel {
-        return;
-    }
-
-    let Ok(ctx) = contexts.ctx_mut() else {
-        return;
-    };
-
-    let Ok((config_ref, controller_ref, transform_ref, velocity_ref, movement, ext_force, ext_impulse)) =
-        diagnostics_query.single()
-    else {
-        return;
-    };
-
-    egui::Window::new("Diagnostics")
-        .default_pos(panel_config.diagnostics_window_pos)
-        .default_width(280.0)
-        .default_height(400.0)
-        .collapsible(true)
-        .resizable(true)
-        .show(ctx, |ui| {
-            let data = DiagnosticsData {
-                controller: controller_ref,
-                config: config_ref,
-                transform: transform_ref,
-                velocity: velocity_ref.linvel,
-                angular_velocity: velocity_ref.angvel,
-                movement_intent: movement,
-                external_force: ext_force.map(|f| f.force),
-                external_impulse: ext_impulse.map(|i| i.impulse),
-            };
-            diagnostics_panel_ui(ui, &data);
-        });
-}
-
 // ==================== Avian2D Backend Systems ====================
 
-#[cfg(feature = "avian2d")]
 fn character_controller_settings_ui_system_avian<M: Component>(
     mut contexts: EguiContexts,
     mut config_query: Query<
@@ -607,7 +456,7 @@ fn character_controller_settings_ui_system_avian<M: Component>(
             egui::ScrollArea::vertical().show(ui, |ui| {
                 ui.horizontal(|ui| {
                     if ui.button("Reset to Defaults").clicked() {
-                        *config = default_settings.config.clone();
+                        *config = default_settings.config;
                         controller.gravity = default_settings.gravity;
                     }
                     if ui.button("Respawn Player").clicked() {
@@ -627,7 +476,6 @@ fn character_controller_settings_ui_system_avian<M: Component>(
         });
 }
 
-#[cfg(feature = "avian2d")]
 fn character_controller_diagnostics_ui_system_avian<M: Component>(
     mut contexts: EguiContexts,
     diagnostics_query: Query<

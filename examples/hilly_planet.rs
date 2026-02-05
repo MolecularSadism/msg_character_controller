@@ -52,8 +52,8 @@ const PLAYER_RADIUS: f32 = 6.0;
 const PLANET_CENTER: Vec2 = Vec2::ZERO;
 const PLANET_BASE_RADIUS: f32 = 300.0;
 const HILL_AMPLITUDE: f32 = 30.0; // Height variation for hills
-const HILL_FREQUENCY: usize = 12; // Number of major hills around the planet
-const PLANET_SEGMENTS: usize = 96; // Segments for planet surface
+const HILL_FREQUENCY: f32 = 12.0; // Number of major hills around the planet
+const PLANET_SEGMENTS: u32 = 96; // Segments for planet surface
 
 // ==================== Components ====================
 
@@ -78,9 +78,9 @@ impl Default for PlanetConfig {
 /// Generate the radius at a given angle with hills.
 fn planet_radius_at_angle(angle: f32) -> f32 {
     // Create multiple overlapping sine waves for interesting terrain
-    let hill1 = (angle * HILL_FREQUENCY as f32).sin() * HILL_AMPLITUDE;
-    let hill2 = (angle * (HILL_FREQUENCY as f32 * 2.3)).sin() * (HILL_AMPLITUDE * 0.4);
-    let hill3 = (angle * (HILL_FREQUENCY as f32 * 0.5)).sin() * (HILL_AMPLITUDE * 0.6);
+    let hill1 = (angle * HILL_FREQUENCY).sin() * HILL_AMPLITUDE;
+    let hill2 = (angle * (HILL_FREQUENCY * 2.3)).sin() * (HILL_AMPLITUDE * 0.4);
+    let hill3 = (angle * (HILL_FREQUENCY * 0.5)).sin() * (HILL_AMPLITUDE * 0.6);
 
     PLANET_BASE_RADIUS + hill1 + hill2 + hill3
 }
@@ -106,7 +106,7 @@ fn main() {
     App::new()
         .add_plugins(DefaultPlugins.set(WindowPlugin {
             primary_window: Some(Window {
-                title: format!("Hilly Planet ({}) - 16px/m Physics", backend_name()).into(),
+                title: format!("Hilly Planet ({}) - 16px/m Physics", backend_name()),
                 resolution: (1280, 720).into(),
                 ..default()
             }),
@@ -197,8 +197,7 @@ fn setup(
     // Physics info
     commands.spawn((
         Text::new(format!(
-            "16 px/meter | Gravity: {:.2} px/s² (9.81 m/s²)",
-            GRAVITY_STRENGTH
+            "16 px/meter | Gravity: {GRAVITY_STRENGTH:.2} px/s² (9.81 m/s²)"
         )),
         TextFont {
             font_size: 16.0,
@@ -238,10 +237,12 @@ fn spawn_hilly_planet(
     materials: &mut ResMut<Assets<ColorMaterial>>,
 ) {
     // Generate vertices for the hilly planet surface
-    let mut vertices: Vec<Vec2> = Vec::with_capacity(PLANET_SEGMENTS);
+    let mut vertices: Vec<Vec2> = Vec::with_capacity(PLANET_SEGMENTS as usize);
+    let segments_f = PLANET_SEGMENTS as f32;
 
     for i in 0..PLANET_SEGMENTS {
-        let angle = (i as f32 / PLANET_SEGMENTS as f32) * TAU;
+        let i_f32 = i as f32;
+        let angle = (i_f32 / segments_f) * TAU;
         let radius = planet_radius_at_angle(angle);
         let x = angle.cos() * radius;
         let y = angle.sin() * radius;
@@ -337,8 +338,8 @@ fn spawn_surface_slope(
 
 /// Updates the player's gravity to match the planet.
 ///
-/// Gravity points toward the planet center and is stored in CharacterController.
-/// The up direction is derived from gravity via controller.ideal_up().
+/// Gravity points toward the planet center and is stored in `CharacterController`.
+/// The up direction is derived from gravity via `controller.ideal_up()`.
 /// The internal gravity system then applies it when not grounded.
 fn update_player_orientation_and_gravity(
     planet: Res<PlanetConfig>,

@@ -7,7 +7,7 @@
 //! - **A/D**: Walk horizontally (with ground friction)
 //! - **W**: Jump
 //! - **Arrow Keys**: Flying propulsion in all directions (up/down/left/right)
-//!   - Uses separate flying configuration (fly_max_speed, vertical ratio, etc.)
+//!   - Uses separate flying configuration (`fly_max_speed`, vertical ratio, etc.)
 //!   - Horizontal flying uses full speed regardless of grounded state
 
 use bevy::prelude::*;
@@ -57,14 +57,14 @@ impl Default for ControlsPlugin {
 }
 
 impl ControlsPlugin {
-    /// Creates a new ControlsPlugin with both input handling and camera following.
+    /// Creates a new `ControlsPlugin` with both input handling and camera following.
     pub fn new() -> Self {
         Self {
             camera_follow: true,
         }
     }
 
-    /// Creates a ControlsPlugin with only input handling (no camera follow).
+    /// Creates a `ControlsPlugin` with only input handling (no camera follow).
     ///
     /// Use this when you want to implement custom camera behavior.
     pub fn input_only() -> Self {
@@ -102,7 +102,7 @@ impl Plugin for ControlsPlugin {
 /// - **A/D**: Walk horizontally (uses ground friction when grounded)
 /// - **W**: Jump (press to jump, hold for higher jumps)
 /// - **Arrow Keys**: Flying propulsion (up/down/left/right)
-///   - Uses fly_max_speed and fly_vertical_speed_ratio configs
+///   - Uses `fly_max_speed` and `fly_vertical_speed_ratio` configs
 ///   - Horizontal flying uses full speed (no air control reduction)
 ///   - When grounded, horizontal flying uses walking friction
 ///

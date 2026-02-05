@@ -9,38 +9,22 @@ An advanced 2D **floating rigidbody character controller** for the [Bevy](https:
 ## Features
 
 - **Floating rigidbody** - Hovers above ground using a spring-damper system rather than resting directly on surfaces
-- **Physics backend abstraction** - Supports [Avian2D](https://github.com/Jondolf/avian) (default) and [Rapier2D](https://rapier.rs/)
+- **Physics backend** - Uses [Avian2D](https://github.com/Jondolf/avian) physics engine (formerly XPBD)
 - **Movement system** - Walking with slope handling, flying/jetpack propulsion
 - **Jumping** - With coyote time, input buffering, and variable height (hold to jump higher)
 - **Wall mechanics** - Wall jumping and wall clinging with configurable dampening
 - **Stair stepping** - Automatic step climbing with shapecast detection
 - **Gravity-relative directions** - Supports non-standard gravity (e.g., spherical planets)
 
-**Backend Status:**
-- **Rapier2D**: Fully tested and production-ready (24/24 tests passing)
-- **Avian2D**: Functional but has known issues with collision layers (8/17 tests failing). Recommended to use Rapier2D for production until Avian2D collision layer support is fixed.
-
 ## Installation
 
-### With Avian2D (default)
-
 ```toml
 [dependencies]
-msg_character_controller = { git = "https://github.com/MolecularSadism/msg_character_controller", tag = "v0.2.0" }
-avian2d = "0.4"
-```
-
-### With Rapier2D (Recommended)
-
-```toml
-[dependencies]
-msg_character_controller = { git = "https://github.com/MolecularSadism/msg_character_controller", tag = "v0.2.0", default-features = false, features = ["rapier2d"] }
-bevy_rapier2d = "0.32"
+msg_character_controller = { git = "https://github.com/MolecularSadism/msg_character_controller", tag = "v0.3.0" }
+avian2d = "0.5"
 ```
 
 ## Quick Start
-
-### With Avian2D
 
 ```rust
 use bevy::prelude::*;
@@ -62,50 +46,8 @@ fn spawn_character(mut commands: Commands) {
         Transform::from_xyz(0.0, 100.0, 0.0),
         CharacterController::new(),
         ControllerConfig::default(),
-        Collider::capsule(4.0, 8.0),
+        Collider::capsule(8.0, 4.0), // height, radius
         LockedAxes::ROTATION_LOCKED,
-        GravityScale(0.0), // Controller manages gravity internally
-    ));
-}
-
-fn handle_input(
-    keyboard: Res<ButtonInput<KeyCode>>,
-    mut query: Query<&mut MovementIntent>,
-) {
-    for mut intent in &mut query {
-        let walk = keyboard.pressed(KeyCode::KeyD) as i32
-                 - keyboard.pressed(KeyCode::KeyA) as i32;
-        intent.set_walk(walk as f32);
-        intent.set_jump_pressed(keyboard.pressed(KeyCode::Space));
-    }
-}
-```
-
-### With Rapier2D
-
-```rust
-use bevy::prelude::*;
-use bevy_rapier2d::prelude::*;
-use msg_character_controller::prelude::*;
-
-fn main() {
-    App::new()
-        .add_plugins(DefaultPlugins)
-        .add_plugins(RapierPhysicsPlugin::<NoUserData>::default())
-        .add_plugins(CharacterControllerPlugin::<Rapier2dBackend>::default())
-        .add_systems(Startup, spawn_character)
-        .add_systems(Update, handle_input)
-        .run();
-}
-
-fn spawn_character(mut commands: Commands) {
-    commands.spawn((
-        Transform::from_xyz(0.0, 100.0, 0.0),
-        CharacterController::new(),
-        ControllerConfig::default(),
-        Collider::capsule_y(8.0, 4.0),
-        LockedAxes::ROTATION_LOCKED,
-        GravityScale(0.0),
     ));
 }
 
@@ -146,7 +88,7 @@ let config = ControllerConfig::default()
 
 ## Gravity
 
-The controller manages gravity internally through `CharacterController::gravity`. Disable the physics engine's gravity with `GravityScale(0.0)`:
+The controller manages gravity internally through `CharacterController::gravity`:
 
 ```rust
 // Standard downward gravity (default)
@@ -179,10 +121,11 @@ cargo run --example spherical_planet --features examples
 
 ## Bevy Version Compatibility
 
-| `msg_character_controller` | Bevy | `bevy_rapier2d` | `avian2d` |
-|----------------------------|------|-----------------|-----------|
-| 0.2                        | 0.17 | 0.32            | 0.4       |
-| 0.1                        | 0.16 | 0.31            | -         |
+| `msg_character_controller` | Bevy | `avian2d` | `rapier2d` |
+|----------------------------|------|-----------|------------|
+| 0.3                        | 0.18 | 0.5       | -          |
+| 0.2                        | 0.17 | 0.4       | 0.32       |
+| 0.1                        | 0.16 | -         | 0.31       |
 
 ## License
 

@@ -1,6 +1,6 @@
 [package]
 name = "msg_character_controller"
-version = "0.2.0"
+version = "0.3.0"
 edition = "2024"
 rust-version = "1.85"
 authors = ["ffmulks <63452434+ffmulks@users.noreply.github.com>"]
@@ -14,21 +14,18 @@ categories = ["game-development", "game-engines"]
 exclude = [".github/", "CLAUDE.md"]
 
 [dependencies]
-bevy = { version = "0.17", default-features = false }
+bevy = { version = "0.18", default-features = false }
 
 [dev-dependencies]
-avian2d = "0.4"
-bevy_rapier2d = { version = "0.32.0", features = ["simd-stable", "debug-render-2d"] }
-bevy_egui = "0.37"
+avian2d = { version = "0.5", features = ["2d"] }
+bevy_egui = "0.39"
+approx = "0.5"
 
 [features]
 default = ["avian2d"]
 # Physics backend: avian2d (Avian physics engine, formerly XPBD)
 # Usage: CharacterControllerPlugin::<Avian2dBackend>::default()
 avian2d = ["dep:avian2d"]
-# Physics backend: bevy_rapier2d (Rapier2D physics engine)
-# Usage: CharacterControllerPlugin::<Rapier2dBackend>::default()
-rapier2d = ["dep:bevy_rapier2d"]
 # Feature for running examples (requires platform windowing libs)
 examples = [
     "bevy/bevy_core_pipeline",
@@ -44,17 +41,12 @@ examples = [
 ]
 
 [dependencies.avian2d]
-version = "0.4"
+version = "0.5"
+features = ["2d"]
 optional = true
 
-[dependencies.bevy_rapier2d]
-version = "0.32.0"
-features = ["simd-stable", "debug-render-2d"]
-optional = true
-
-# Examples - work with either physics backend:
+# Examples:
 # - Avian2D (default): cargo run --example platform_box --features examples
-# - Rapier2D: cargo run --example platform_box --features "examples,rapier2d" --no-default-features
 [[example]]
 name = "platform_box"
 path = "examples/platform_box.rs"

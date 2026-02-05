@@ -1,7 +1,6 @@
 //! Physics backend abstraction for examples.
 //!
-//! This module provides backend-agnostic helpers for spawning physics entities,
-//! allowing examples to work with both Rapier2D and Avian2D without code duplication.
+//! This module provides helpers for spawning physics entities using `Avian2D`.
 
 use bevy::prelude::*;
 use bevy::time::Fixed;
@@ -9,43 +8,27 @@ use msg_character_controller::prelude::*;
 
 use super::{Player, create_capsule_mesh, create_circle_mesh, create_rectangle_mesh, create_triangle_mesh};
 
+// Re-export Avian2D types for convenience
+pub use avian2d::prelude::*;
+
 // ==================== Shared Physics Constants ====================
 
-/// Fixed update rate in Hz. Both Rapier2D and Avian2D use this for consistent simulation.
+/// Fixed update rate in Hz.
 pub const FIXED_UPDATE_HZ: f64 = 60.0;
 
-/// Default pixels per meter conversion. This ensures forces behave consistently
-/// across both physics backends.
+/// Default pixels per meter conversion.
 pub const DEFAULT_PIXELS_PER_METER: f32 = 10.0;
-
-// Re-export the active backend type for convenience
-#[cfg(feature = "rapier2d")]
-pub use bevy_rapier2d::prelude::*;
-
-#[cfg(feature = "avian2d")]
-pub use avian2d::prelude::*;
 
 // ==================== Backend Type Alias ====================
 
 /// The active physics backend type.
-#[cfg(feature = "rapier2d")]
-pub type ActiveBackend = Rapier2dBackend;
-
-#[cfg(feature = "avian2d")]
 pub type ActiveBackend = Avian2dBackend;
 
 // ==================== Backend Name ====================
 
 /// Returns the name of the active physics backend.
 pub fn backend_name() -> &'static str {
-    #[cfg(feature = "rapier2d")]
-    {
-        "Rapier2D"
-    }
-    #[cfg(feature = "avian2d")]
-    {
-        "Avian2D"
-    }
+    "Avian2D"
 }
 
 // ==================== Physics Plugin ====================
@@ -71,22 +54,23 @@ impl ExamplePhysicsPlugin {
 
 impl Plugin for ExamplePhysicsPlugin {
     fn build(&self, app: &mut App) {
-        // Set fixed timestep for consistent physics simulation across backends
+        // Set fixed timestep for consistent physics simulation
         app.insert_resource(Time::<Fixed>::from_hz(FIXED_UPDATE_HZ));
 
-        #[cfg(feature = "rapier2d")]
-        {
-            app.add_plugins(RapierPhysicsPlugin::<NoUserData>::pixels_per_meter(
-                self.pixels_per_meter,
-            ));
-            app.add_plugins(RapierDebugRenderPlugin::default());
-        }
-
-        #[cfg(feature = "avian2d")]
-        {
-            app.add_plugins(PhysicsPlugins::default().with_length_unit(self.pixels_per_meter));
-            app.add_plugins(PhysicsDebugPlugin::default());
-        }
+        app.add_plugins(PhysicsPlugins::default().with_length_unit(self.pixels_per_meter));
+        app.add_plugins(PhysicsDebugPlugin)
+                .insert_gizmo_config(
+            PhysicsGizmos {
+                collider_color: Some(Color::WHITE),
+                raycast_color: Some(Color::WHITE),
+                raycast_normal_color: Some(Color::WHITE),
+                shapecast_color: Some(Color::WHITE),
+                shapecast_normal_color: Some(Color::WHITE),
+                ..default()
+            },
+            GizmoConfig::default(),
+        )
+        ;
     }
 }
 
@@ -112,25 +96,15 @@ pub fn spawn_static_box(
     let mesh = meshes.add(create_rectangle_mesh(half_size.x, half_size.y));
     let material = materials.add(ColorMaterial::from_color(color));
 
-    #[cfg(feature = "rapier2d")]
-    commands.spawn((
-        Transform::from_translation(position.extend(0.0)),
-        GlobalTransform::default(),
-        RigidBody::Fixed,
-        Collider::cuboid(half_size.x, half_size.y),
-        Mesh2d(mesh),
-        MeshMaterial2d(material),
-    ));
-
-    #[cfg(feature = "avian2d")]
-    commands.spawn((
+    let entity = commands.spawn((
         Transform::from_translation(position.extend(0.0)),
         GlobalTransform::default(),
         RigidBody::Static,
         Collider::rectangle(half_size.x * 2.0, half_size.y * 2.0),
         Mesh2d(mesh),
         MeshMaterial2d(material),
-    ));
+    )).id();
+    eprintln!("spawn_static_box: Created platform entity {entity:?} at position {position:?} with half_size {half_size:?}");
 }
 
 /// Spawns a static rectangular collider with rotation.
@@ -146,17 +120,6 @@ pub fn spawn_static_box_rotated(
     let mesh = meshes.add(create_rectangle_mesh(half_size.x, half_size.y));
     let material = materials.add(ColorMaterial::from_color(color));
 
-    #[cfg(feature = "rapier2d")]
-    commands.spawn((
-        Transform::from_translation(position.extend(0.0)).with_rotation(rotation),
-        GlobalTransform::default(),
-        RigidBody::Fixed,
-        Collider::cuboid(half_size.x, half_size.y),
-        Mesh2d(mesh),
-        MeshMaterial2d(material),
-    ));
-
-    #[cfg(feature = "avian2d")]
     commands.spawn((
         Transform::from_translation(position.extend(0.0)).with_rotation(rotation),
         GlobalTransform::default(),
@@ -179,17 +142,6 @@ pub fn spawn_static_ball(
     let mesh = meshes.add(create_circle_mesh(radius, 24));
     let material = materials.add(ColorMaterial::from_color(color));
 
-    #[cfg(feature = "rapier2d")]
-    commands.spawn((
-        Transform::from_translation(position.extend(0.0)),
-        GlobalTransform::default(),
-        RigidBody::Fixed,
-        Collider::ball(radius),
-        Mesh2d(mesh),
-        MeshMaterial2d(material),
-    ));
-
-    #[cfg(feature = "avian2d")]
     commands.spawn((
         Transform::from_translation(position.extend(0.0)),
         GlobalTransform::default(),
@@ -212,33 +164,16 @@ pub fn spawn_static_slope(
     let mesh = meshes.add(create_triangle_mesh(vertices));
     let material = materials.add(ColorMaterial::from_color(color));
 
-    #[cfg(feature = "rapier2d")]
-    {
-        let collider = Collider::convex_hull(&vertices.to_vec())
-            .expect("Failed to create slope collider");
-        commands.spawn((
-            Transform::from_translation(position.extend(0.0)),
-            GlobalTransform::default(),
-            RigidBody::Fixed,
-            collider,
-            Mesh2d(mesh),
-            MeshMaterial2d(material),
-        ));
-    }
-
-    #[cfg(feature = "avian2d")]
-    {
-        let collider = Collider::convex_hull(vertices.to_vec())
-            .expect("Failed to create slope collider");
-        commands.spawn((
-            Transform::from_translation(position.extend(0.0)),
-            GlobalTransform::default(),
-            RigidBody::Static,
-            collider,
-            Mesh2d(mesh),
-            MeshMaterial2d(material),
-        ));
-    }
+    let collider = Collider::convex_hull(vertices.to_vec())
+        .expect("Failed to create slope collider");
+    commands.spawn((
+        Transform::from_translation(position.extend(0.0)),
+        GlobalTransform::default(),
+        RigidBody::Static,
+        collider,
+        Mesh2d(mesh),
+        MeshMaterial2d(material),
+    ));
 }
 
 /// Spawns a static triangle slope collider with rotation.
@@ -254,33 +189,16 @@ pub fn spawn_static_slope_rotated(
     let mesh = meshes.add(create_triangle_mesh(vertices));
     let material = materials.add(ColorMaterial::from_color(color));
 
-    #[cfg(feature = "rapier2d")]
-    {
-        let collider = Collider::convex_hull(&vertices.to_vec())
-            .expect("Failed to create slope collider");
-        commands.spawn((
-            Transform::from_translation(position.extend(0.0)).with_rotation(rotation),
-            GlobalTransform::default(),
-            RigidBody::Fixed,
-            collider,
-            Mesh2d(mesh),
-            MeshMaterial2d(material),
-        ));
-    }
-
-    #[cfg(feature = "avian2d")]
-    {
-        let collider = Collider::convex_hull(vertices.to_vec())
-            .expect("Failed to create slope collider");
-        commands.spawn((
-            Transform::from_translation(position.extend(0.0)).with_rotation(rotation),
-            GlobalTransform::default(),
-            RigidBody::Static,
-            collider,
-            Mesh2d(mesh),
-            MeshMaterial2d(material),
-        ));
-    }
+    let collider = Collider::convex_hull(vertices.to_vec())
+        .expect("Failed to create slope collider");
+    commands.spawn((
+        Transform::from_translation(position.extend(0.0)).with_rotation(rotation),
+        GlobalTransform::default(),
+        RigidBody::Static,
+        collider,
+        Mesh2d(mesh),
+        MeshMaterial2d(material),
+    ));
 }
 
 // ==================== Dynamic Collider Spawning ====================
@@ -297,25 +215,6 @@ pub fn spawn_dynamic_ball(
     let mesh = meshes.add(create_circle_mesh(radius, 24));
     let material = materials.add(ColorMaterial::from_color(color));
 
-    #[cfg(feature = "rapier2d")]
-    commands.spawn((
-        Transform::from_translation(position.extend(0.0)),
-        GlobalTransform::default(),
-        RigidBody::Dynamic,
-        Collider::ball(radius),
-        ExternalForce::default(),
-        Velocity::default(),
-        Restitution::coefficient(0.3),
-        Friction::coefficient(0.5),
-        Damping {
-            linear_damping: 0.2,
-            angular_damping: 0.5,
-        },
-        Mesh2d(mesh),
-        MeshMaterial2d(material),
-    ));
-
-    #[cfg(feature = "avian2d")]
     commands.spawn((
         Transform::from_translation(position.extend(0.0)),
         GlobalTransform::default(),
@@ -376,75 +275,37 @@ pub fn spawn_player(
     ));
     let material = materials.add(ColorMaterial::from_color(spawn_config.color));
 
-    #[cfg(feature = "rapier2d")]
-    {
-        let mut entity = commands.spawn((
-            Player,
-            Transform::from_translation(spawn_config.position.extend(1.0)),
-            GlobalTransform::default(),
-            Mesh2d(mesh),
-            MeshMaterial2d(material),
-        ));
+    let mut entity = commands.spawn((
+        Player,
+        Transform::from_translation(spawn_config.position.extend(1.0)),
+        GlobalTransform::default(),
+        Mesh2d(mesh),
+        MeshMaterial2d(material),
+    ));
 
-        entity.insert((
-            CharacterController::with_gravity(spawn_config.gravity),
-            spawn_config.config,
-            MovementIntent::default(),
-        ));
+    entity.insert((
+        CharacterController::with_gravity(spawn_config.gravity),
+        spawn_config.config,
+        MovementIntent::default(),
+    ));
 
-        entity.insert((
-            RigidBody::Dynamic,
-            Velocity::default(),
-            ExternalForce::default(),
-            ExternalImpulse::default(),
-            Collider::capsule_y(spawn_config.half_height / 2.0, spawn_config.radius),
-            GravityScale(0.0),
-            Damping {
-                linear_damping: 0.0,
-                angular_damping: spawn_config.angular_damping,
-            },
-        ));
+    entity.insert((
+        Collider::capsule(spawn_config.radius, spawn_config.half_height / 2.0),
+        GravityScale(0.0),
+    ));
 
-        if spawn_config.lock_rotation {
-            entity.insert(LockedAxes::ROTATION_LOCKED);
-        }
+    if spawn_config.lock_rotation {
+        entity.insert(LockedAxes::ROTATION_LOCKED);
     }
 
-    #[cfg(feature = "avian2d")]
-    {
-        let mut entity = commands.spawn((
-            Player,
-            Transform::from_translation(spawn_config.position.extend(1.0)),
-            GlobalTransform::default(),
-            Mesh2d(mesh),
-            MeshMaterial2d(material),
-        ));
-
-        entity.insert((
-            CharacterController::with_gravity(spawn_config.gravity),
-            spawn_config.config,
-            MovementIntent::default(),
-        ));
-
-        entity.insert((
-            Collider::capsule(spawn_config.radius, spawn_config.half_height / 2.0),
-            GravityScale(0.0),
-        ));
-
-        if spawn_config.lock_rotation {
-            entity.insert(LockedAxes::ROTATION_LOCKED);
-        }
-
-        if spawn_config.angular_damping > 0.0 {
-            entity.insert(AngularDamping(spawn_config.angular_damping));
-        }
+    if spawn_config.angular_damping > 0.0 {
+        entity.insert(AngularDamping(spawn_config.angular_damping));
     }
 }
 
 // ==================== Polyline Collider (for hilly planet) ====================
 
 /// Spawns a static polyline collider (for hilly planet terrain).
-#[cfg(feature = "rapier2d")]
 pub fn spawn_polyline_collider(
     commands: &mut Commands,
     meshes: &mut ResMut<Assets<Mesh>>,
@@ -456,43 +317,12 @@ pub fn spawn_polyline_collider(
     use super::create_polygon_mesh;
 
     // Create indices for closed polyline
+    let vertex_count = u32::try_from(vertices.len())
+        .expect("vertex count must fit in u32 for mesh indices");
     let mut indices: Vec<[u32; 2]> = Vec::with_capacity(vertices.len());
-    for i in 0..vertices.len() {
-        let next = (i + 1) % vertices.len();
-        indices.push([i as u32, next as u32]);
-    }
-
-    let collider = Collider::polyline(vertices.clone(), Some(indices));
-    let mesh = meshes.add(create_polygon_mesh(&vertices));
-    let material = materials.add(ColorMaterial::from_color(color));
-
-    commands.spawn((
-        Transform::from_translation(position.extend(-1.0)),
-        GlobalTransform::default(),
-        RigidBody::Fixed,
-        collider,
-        Mesh2d(mesh),
-        MeshMaterial2d(material),
-    ));
-}
-
-/// Spawns a static polyline collider (for hilly planet terrain).
-#[cfg(feature = "avian2d")]
-pub fn spawn_polyline_collider(
-    commands: &mut Commands,
-    meshes: &mut ResMut<Assets<Mesh>>,
-    materials: &mut ResMut<Assets<ColorMaterial>>,
-    position: Vec2,
-    vertices: Vec<Vec2>,
-    color: Color,
-) {
-    use super::create_polygon_mesh;
-
-    // Create indices for closed polyline
-    let mut indices: Vec<[u32; 2]> = Vec::with_capacity(vertices.len());
-    for i in 0..vertices.len() {
-        let next = (i + 1) % vertices.len();
-        indices.push([i as u32, next as u32]);
+    for i in 0..vertex_count {
+        let next = (i + 1) % vertex_count;
+        indices.push([i, next]);
     }
 
     let collider = Collider::polyline(vertices.clone(), Some(indices));

@@ -30,10 +30,10 @@ use crate::intent::MovementIntent;
 // PHASE 1: PREPARATION (Timer Ticking)
 // ============================================================================
 
-/// Process jump state: detect rising edge and create JumpRequests.
+/// Process jump state: detect rising edge and create `JumpRequests`.
 ///
 /// This system detects when `jump_pressed` transitions from false to true
-/// and creates a new JumpRequest with the configured `jump_buffer_time`.
+/// and creates a new `JumpRequest` with the configured `jump_buffer_time`.
 /// It also updates `jump_pressed_prev` for the next frame's edge detection.
 ///
 /// Note: This system does not process raw input (keyboard, gamepad, etc.).
@@ -89,7 +89,7 @@ pub fn expire_jump_requests(mut query: Query<&mut MovementIntent>) {
 
 /// Update coyote timer and jump spring filter timer.
 ///
-/// This system runs in IntentEvaluation phase before intent is evaluated,
+/// This system runs in `IntentEvaluation` phase before intent is evaluated,
 /// ensuring timers are current when checking jump validity.
 ///
 /// - Coyote timer: Reset when grounded OR touching wall (if wall jumping enabled)
@@ -137,13 +137,13 @@ pub fn update_timers(
 ///
 /// This system determines which type of jump should be performed based on
 /// ground and wall contact. The detection priority is:
-/// 1. Ground contact -> JumpType::Ground (normal jump)
-/// 2. Only left wall contact -> JumpType::LeftWall (wall jump)
-/// 3. Only right wall contact -> JumpType::RightWall (wall jump)
+/// 1. Ground contact -> `JumpType::Ground` (normal jump)
+/// 2. Only left wall contact -> `JumpType::LeftWall` (wall jump)
+/// 3. Only right wall contact -> `JumpType::RightWall` (wall jump)
 ///
-/// This runs after sensors and timers, before evaluate_intent, so that
+/// This runs after sensors and timers, before `evaluate_intent`, so that
 /// buffered jumps will process the correct jump type when contact is made.
-/// The last_jump_type is stored on the controller for coyote time to respect.
+/// The `last_jump_type` is stored on the controller for coyote time to respect.
 pub fn update_jump_type(mut query: Query<(&mut CharacterController, &ControllerConfig)>) {
     use crate::config::JumpType;
 
@@ -172,7 +172,7 @@ pub fn update_jump_type(mut query: Query<(&mut CharacterController, &ControllerC
     }
 }
 
-/// Evaluate MovementIntent and set intent flags on CharacterController.
+/// Evaluate `MovementIntent` and set intent flags on `CharacterController`.
 ///
 /// This system runs AFTER sensors to have access to current frame's floor data.
 /// It determines:
@@ -225,7 +225,7 @@ pub fn evaluate_intent<B: CharacterPhysicsBackend>(
 /// Accumulate floating spring force to maintain riding height.
 ///
 /// Simple spring-damper: F = k * displacement - c * velocity
-/// - displacement = target_height - current_height (positive = below target)
+/// - displacement = `target_height` - `current_height` (positive = below target)
 /// - velocity = vertical velocity (positive = moving up)
 ///
 /// When climbing stairs, the target height includes `active_stair_height` to
@@ -262,6 +262,15 @@ pub fn accumulate_spring_force<B: CharacterPhysicsBackend>(world: &mut World) {
         let Some(ref floor) = controller.floor else {
             continue;
         };
+
+        // Skip spring force if the surface slope exceeds max_slope_angle
+        // This prevents the spring from activating on walls when the character rotates
+        // and the ground caster points at a steep/vertical surface
+        // The slope_angle is calculated using the absolute surface normal vs ideal_up (gravity),
+        // not relative to the actor's rotation
+        if controller.slope_angle > config.max_slope_angle {
+            continue;
+        }
 
         if controller.upward_intent() {
             continue;
@@ -334,13 +343,12 @@ pub fn accumulate_spring_force<B: CharacterPhysicsBackend>(world: &mut World) {
         let gravity_magnitude = controller.gravity.length();
         let max_spring_force = config
             .spring_max_force
-            .map(|f| f * mass)
-            .unwrap_or_else(|| {
+            .map_or_else(|| {
                 // Fallback: maximum based on counteracting gravity force plus reasonable acceleration.
                 // F = m * g, so max force = m * g * 3 + spring contribution
                 gravity_magnitude * mass * 3.0
                     + config.spring_strength * config.grounding_distance * mass
-            });
+            }, |f| f * mass);
         let clamped_spring_force = spring_force.clamp(-max_spring_force, max_spring_force);
 
         // When upward propulsion is intended or within filter window, reject downward spring forces
@@ -371,17 +379,21 @@ pub fn accumulate_spring_force<B: CharacterPhysicsBackend>(world: &mut World) {
     }
 }
 
-/// Accumulate stair climbing forces and update active_stair_height.
+/// Accumulate stair climbing forces and update `active_stair_height`.
 ///
 /// When a step is detected that is higher than the float height but within
 /// the max climb height, this system:
 /// 1. Sets `active_stair_height` to the measured step height (used by the spring system)
-/// 2. Applies extra upward force based on max_spring_force * climb_force_multiplier
+/// 2. Applies extra upward force based on `max_spring_force` * `climb_force_multiplier`
 ///
-/// Using max_spring_force provides responsive climbing since it represents the
+/// Using `max_spring_force` provides responsive climbing since it represents the
 /// maximum force the spring system can apply.
 ///
 /// When no step is detected, `active_stair_height` is reset to 0.
+///
+/// # Panics
+///
+/// Never panics in normal operation. Entities are filtered to only those with `stair_config`.
 pub fn accumulate_stair_climb_force<B: CharacterPhysicsBackend>(world: &mut World) {
     // Collect entities with stair config
     let entities: Vec<(Entity, ControllerConfig, CharacterController)> = world
@@ -419,11 +431,10 @@ pub fn accumulate_stair_climb_force<B: CharacterPhysicsBackend>(world: &mut Worl
             // Calculate max spring force (same formula as floating spring system)
             let max_spring_force = config
                 .spring_max_force
-                .map(|f| f * mass)
-                .unwrap_or_else(|| {
+                .map_or_else(|| {
                     gravity_magnitude * mass * 3.0
                         + config.spring_strength * config.grounding_distance * mass
-                });
+                }, |f| f * mass);
 
             let climb_force = up * max_spring_force * stair_config.climb_force_multiplier;
 
@@ -450,7 +461,7 @@ pub fn accumulate_stair_climb_force<B: CharacterPhysicsBackend>(world: &mut Worl
 /// uses the same `jump_spring_filter_window` as the spring system for consistency.
 ///
 /// Note: Gravity is always applied internally by this system. To change the
-/// gravity affecting a character, modify CharacterController::gravity directly.
+/// gravity affecting a character, modify `CharacterController::gravity` directly.
 pub fn accumulate_gravity<B: CharacterPhysicsBackend>(world: &mut World) {
     let dt = B::get_fixed_timestep(world);
 
@@ -859,7 +870,7 @@ pub fn apply_walk<B: CharacterPhysicsBackend>(world: &mut World) {
 /// - Upward propulsion is boosted by gravity based on `fly_gravity_compensation`
 /// - Vertical speed is scaled by `fly_vertical_speed_ratio`
 /// - When grounded: applies friction to horizontal flying like walking
-/// - When airborne: horizontal flying uses full fly_max_speed (no air control reduction)
+/// - When airborne: horizontal flying uses full `fly_max_speed` (no air control reduction)
 /// - Flying downwards: stops propulsion at max speed but does not counteract gravity
 /// - Flying downwards is disabled while grounded (only horizontal and up work grounded)
 pub fn apply_fly<B: CharacterPhysicsBackend>(world: &mut World) {
@@ -976,12 +987,12 @@ pub fn apply_fly<B: CharacterPhysicsBackend>(world: &mut World) {
 ///
 /// Jumping requires being grounded, touching a wall (with wall jumping enabled),
 /// or within coyote time (which covers both ground and wall contact).
-/// Jump requests are consumed directly from MovementIntent.
+/// Jump requests are consumed directly from `MovementIntent`.
 ///
-/// Jump direction depends on the jump type stored in last_jump_type:
+/// Jump direction depends on the jump type stored in `last_jump_type`:
 /// - Ground: Jump along ideal up (not affected by slope)
-/// - LeftWall: Jump diagonally up-right at configured angle
-/// - RightWall: Jump diagonally up-left at configured angle
+/// - `LeftWall`: Jump diagonally up-right at configured angle
+/// - `RightWall`: Jump diagonally up-left at configured angle
 ///
 /// Note: Expired jump requests are removed by `expire_jump_requests` before
 /// this system runs, so we just check if a request exists.
@@ -1000,9 +1011,7 @@ pub fn apply_jump<B: CharacterPhysicsBackend>(world: &mut World) {
         .iter(world)
         .filter_map(|(e, config, controller, intent)| {
             // Check if there's a valid jump request
-            if intent.jump_request.is_none() {
-                return None;
-            }
+            intent.jump_request.as_ref()?;
 
             // Can jump if: grounded, touching wall (with wall jumping), or within coyote time
             let has_contact = controller.is_grounded(config)
@@ -1219,12 +1228,11 @@ pub fn accumulate_upright_torque<B: CharacterPhysicsBackend>(world: &mut World) 
         // Clamp total torque to configured max, or use formula-based fallback.
         let max_torque = config
             .upright_max_torque
-            .map(|t| t * inertia)
-            .unwrap_or_else(|| {
+            .map_or_else(|| {
                 // Fallback: maximum based on spring torque at full rotation error (PI).
                 let max_spring_torque = config.upright_torque_strength * consts::PI * inertia;
                 max_spring_torque * 3.0
-            });
+            }, |t| t * inertia);
         let clamped_torque = total_torque.clamp(-max_torque, max_torque);
 
         B::apply_torque(world, entity, clamped_torque);

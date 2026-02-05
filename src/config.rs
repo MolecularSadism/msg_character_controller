@@ -6,11 +6,6 @@
 use bevy::prelude::*;
 use std::time::Duration;
 
-#[cfg(feature = "rapier2d")]
-use bevy_rapier2d::prelude::{
-    ExternalForce, ExternalImpulse, LockedAxes, ReadMassProperties, RigidBody, Velocity,
-};
-
 #[cfg(feature = "avian2d")]
 use avian2d::prelude::{
     ConstantForce, ConstantTorque, LockedAxes as AvianLockedAxes, RigidBody as AvianRigidBody,
@@ -58,7 +53,6 @@ pub enum JumpType {
 #[derive(Component, Reflect, Debug, Clone)]
 #[reflect(Component)]
 #[require(MovementIntent, Transform)]
-#[cfg_attr(feature = "rapier2d", require(RigidBody, Velocity, ReadMassProperties, ExternalForce, ExternalImpulse, LockedAxes))]
 #[cfg_attr(feature = "avian2d", require(AvianRigidBody, ConstantForce, ConstantTorque, AvianLockedAxes))]
 pub struct CharacterController {
     // === Collision Data (Option<CollisionData> for each direction) ===
@@ -86,13 +80,17 @@ pub struct CharacterController {
     pub step_detected: bool,
     /// Height of the detected step (if any).
     pub step_height: f32,
+    /// Whether the character is moving downward (falling).
+    /// Set by velocity detection system each frame. Used by fall gravity to determine
+    /// if jump apex has been crossed (even when jump button is still held).
+    pub falling: bool,
     /// Timer tracking time since last grounded (for coyote time).
     /// When grounded, this timer is reset. When not grounded, it ticks.
     /// Coyote time is valid while the timer has not finished.
     #[reflect(ignore)]
     pub coyote_timer: Timer,
     /// The type of jump that should be performed based on last contact.
-    /// Updated by wall contact detection system. Used by apply_jump to determine
+    /// Updated by wall contact detection system. Used by `apply_jump` to determine
     /// jump direction. Ground contact takes priority over wall contact.
     pub last_jump_type: JumpType,
 
@@ -146,7 +144,7 @@ pub struct CharacterController {
 
     // === Intent State (set by evaluate_intent, used by force systems) ===
     /// Whether the character intends to propel upward this frame.
-    /// Set by evaluate_intent system based on MovementIntent.
+    /// Set by `evaluate_intent` system based on `MovementIntent`.
     /// Used by spring system to filter downward forces immediately.
     pub intends_upward_propulsion: bool,
 
@@ -156,22 +154,22 @@ pub struct CharacterController {
     pub gravity: Vec2,
 
     // === Force Accumulation (internal) ===
-    /// Forces accumulated during the current frame (not yet applied to ExternalForce).
+    /// Forces accumulated during the current frame (not yet applied to `ExternalForce`).
     #[reflect(ignore)]
     pub(crate) accumulated_force: Vec2,
-    /// Torque accumulated during the current frame (not yet applied to ExternalForce).
+    /// Torque accumulated during the current frame (not yet applied to `ExternalForce`).
     #[reflect(ignore)]
     pub(crate) accumulated_torque: f32,
-    /// Forces that were applied to ExternalForce last frame (to be subtracted next frame).
+    /// Forces that were applied to `ExternalForce` last frame (to be subtracted next frame).
     #[reflect(ignore)]
     pub(crate) applied_force: Vec2,
-    /// Torque that was applied to ExternalForce last frame (to be subtracted next frame).
+    /// Torque that was applied to `ExternalForce` last frame (to be subtracted next frame).
     #[reflect(ignore)]
     pub(crate) applied_torque: f32,
 
     // === Internal (used by systems, kept pub(crate)) ===
     /// Distance from collider center to bottom (auto-detected from Collider).
-    /// For a capsule, this is half_height + radius.
+    /// For a capsule, this is `half_height` + radius.
     pub(crate) collider_bottom_offset: f32,
 
     // === Ground Reaction Force (for dynamic ground interaction) ===
@@ -203,6 +201,7 @@ impl Default for CharacterController {
             slope_angle: 0.0,
             step_detected: false,
             step_height: 0.0,
+            falling: false,
             // Coyote timer starts finished (not grounded) - will be reset when grounded
             // Duration is set by the system based on config.coyote_time
             coyote_timer: Timer::new(Duration::ZERO, TimerMode::Once),
@@ -252,11 +251,13 @@ impl Default for CharacterController {
 
 impl CharacterController {
     /// Create a new controller with default gravity.
+    #[must_use] 
     pub fn new() -> Self {
         Self::default()
     }
 
     /// Create a new controller with custom gravity.
+    #[must_use] 
     pub fn with_gravity(gravity: Vec2) -> Self {
         Self {
             gravity,
@@ -277,6 +278,7 @@ impl CharacterController {
     ///
     /// If gravity is zero, defaults to `Vec2::Y`.
     #[inline]
+    #[must_use] 
     pub fn ideal_up(&self) -> Vec2 {
         let normalized = self.gravity.normalize_or_zero();
         if normalized == Vec2::ZERO {
@@ -288,12 +290,14 @@ impl CharacterController {
 
     /// Get the ideal "down" direction for raycasts (same as gravity direction).
     #[inline]
+    #[must_use] 
     pub fn ideal_down(&self) -> Vec2 {
         -self.ideal_up()
     }
 
     /// Get the ideal "right" direction for raycasts (perpendicular to ideal up).
     #[inline]
+    #[must_use] 
     pub fn ideal_right(&self) -> Vec2 {
         let up = self.ideal_up();
         Vec2::new(up.y, -up.x)
@@ -301,6 +305,7 @@ impl CharacterController {
 
     /// Get the ideal "left" direction for raycasts (perpendicular to ideal up).
     #[inline]
+    #[must_use] 
     pub fn ideal_left(&self) -> Vec2 {
         -self.ideal_right()
     }
@@ -310,17 +315,20 @@ impl CharacterController {
     /// This is used for rotating shapes in raycasts to align with the ideal
     /// coordinate system.
     #[inline]
+    #[must_use] 
     pub fn ideal_up_angle(&self) -> f32 {
         self.ideal_up().to_angle()
     }
 
     /// Builder: set stair configuration.
+    #[must_use] 
     pub fn with_stair_config(mut self, config: StairConfig) -> Self {
         self.stair_config = Some(config);
         self
     }
 
     /// Builder: disable stair stepping.
+    #[must_use] 
     pub fn without_stair_stepping(mut self) -> Self {
         self.stair_config = None;
         self
@@ -343,11 +351,13 @@ impl CharacterController {
     }
 
     /// Check if stair stepping is enabled.
+    #[must_use] 
     pub fn stair_stepping_enabled(&self) -> bool {
         self.stair_config.as_ref().is_some_and(|c| c.enabled)
     }
 
-    /// Check if grounded (floor detected within riding_height + grounding_distance).
+    /// Check if grounded (floor detected within `riding_height` + `grounding_distance`).
+    #[must_use] 
     pub fn is_grounded(&self, config: &ControllerConfig) -> bool {
         if let Some(ref floor) = self.floor {
             let riding_height = self.riding_height(config);
@@ -358,42 +368,50 @@ impl CharacterController {
     }
 
     /// Get the ground normal if floor is detected.
+    #[must_use] 
     pub fn ground_normal(&self) -> Vec2 {
-        self.floor.as_ref().map(|f| f.normal).unwrap_or(Vec2::Y)
+        self.floor.as_ref().map_or(Vec2::Y, |f| f.normal)
     }
 
     /// Get the ground entity if floor is detected.
+    #[must_use] 
     pub fn ground_entity(&self) -> Option<Entity> {
         self.floor.as_ref().and_then(|f| f.entity)
     }
 
     /// Get the ground tangent vector (for movement direction along slopes).
+    #[must_use] 
     pub fn ground_tangent(&self) -> Vec2 {
         let normal = self.ground_normal();
         Vec2::new(normal.y, -normal.x)
     }
 
     /// Check if touching any wall.
+    #[must_use] 
     pub fn touching_wall(&self) -> bool {
         self.left_wall.is_some() || self.right_wall.is_some()
     }
 
     /// Check if touching left wall.
+    #[must_use] 
     pub fn touching_left_wall(&self) -> bool {
         self.left_wall.is_some()
     }
 
     /// Check if touching right wall.
+    #[must_use] 
     pub fn touching_right_wall(&self) -> bool {
         self.right_wall.is_some()
     }
 
     /// Check if touching ceiling.
+    #[must_use] 
     pub fn touching_ceiling(&self) -> bool {
         self.ceiling.is_some()
     }
 
     /// Get the wall normal if touching a wall in the given direction.
+    #[must_use] 
     pub fn wall_normal(&self, direction: f32) -> Option<Vec2> {
         if direction < 0.0 {
             self.left_wall.as_ref().map(|w| w.normal)
@@ -405,23 +423,29 @@ impl CharacterController {
     }
 
     /// Check if on a slope that requires extra handling.
+    #[must_use] 
     pub fn is_on_slope(&self, config: &ControllerConfig) -> bool {
         self.is_grounded(config) && self.slope_angle.abs() > 0.1
     }
 
     /// Get the raw distance to ground (for debugging/testing).
-    pub fn ground_distance(&self) -> f32 {
-        self.floor.as_ref().map(|f| f.distance).unwrap_or(f32::MAX)
+    /// Returns None if no ground is detected.
+    #[must_use] 
+    pub fn ground_distance(&self) -> Option<f32> {
+        self.floor.as_ref().map(|f| f.distance)
     }
 
     /// Check if ground was detected by raycast (for debugging/testing).
+    #[must_use] 
     pub fn ground_detected(&self) -> bool {
         self.floor.is_some()
     }
 
     /// Get the ground contact point in world space (for debugging/testing).
-    pub fn ground_contact_point(&self) -> Vec2 {
-        self.floor.as_ref().map(|f| f.point).unwrap_or(Vec2::ZERO)
+    /// Returns None if no ground is detected.
+    #[must_use] 
+    pub fn ground_contact_point(&self) -> Option<Vec2> {
+        self.floor.as_ref().map(|f| f.point)
     }
 
     /// Reset all detection state (called at start of each frame).
@@ -440,32 +464,36 @@ impl CharacterController {
     }
 
     /// Get the base riding height (desired height from ground to collider center).
-    /// This is float_height + collider_bottom_offset (half_height + radius for capsule).
-    /// Does NOT include active_stair_height - use effective_riding_height for that.
+    /// This is `float_height` + `collider_bottom_offset` (`half_height` + radius for capsule).
+    /// Does NOT include `active_stair_height` - use `effective_riding_height` for that.
     #[inline]
+    #[must_use] 
     pub fn riding_height(&self, config: &ControllerConfig) -> f32 {
         config.float_height + self.collider_bottom_offset
     }
 
     /// Get the effective riding height including stair climbing adjustment.
-    /// This is riding_height + active_stair_height.
+    /// This is `riding_height` + `active_stair_height`.
     /// Use this for the floating spring system when climbing stairs.
     #[inline]
+    #[must_use] 
     pub fn effective_riding_height(&self, config: &ControllerConfig) -> f32 {
         self.riding_height(config) + self.active_stair_height
     }
 
-    /// Get the capsule half height (half_height + radius for capsule).
-    /// This is the collider_bottom_offset.
+    /// Get the capsule half height (`half_height` + radius for capsule).
+    /// This is the `collider_bottom_offset`.
     #[inline]
+    #[must_use] 
     pub fn capsule_half_height(&self) -> f32 {
         self.collider_bottom_offset
     }
 
     /// Check if within spring active range.
     /// Active when:
-    /// - Distance <= riding_height + grounding_distance
-    /// - Distance > capsule_half_height - EPSILON (physics collision threshold)
+    /// - Distance <= `riding_height` + `grounding_distance`
+    /// - Distance > `capsule_half_height` - EPSILON (physics collision threshold)
+    #[must_use] 
     pub fn in_spring_range(&self, config: &ControllerConfig) -> bool {
         if let Some(ref floor) = self.floor {
             let riding_height = self.riding_height(config);
@@ -478,7 +506,8 @@ impl CharacterController {
     }
 
     /// Check if physics collision should take over (very close to ground).
-    /// True when floor distance < capsule_half_height - EPSILON.
+    /// True when floor distance < `capsule_half_height` - EPSILON.
+    #[must_use] 
     pub fn physics_collision_active(&self) -> bool {
         if let Some(ref floor) = self.floor {
             floor.distance < self.collider_bottom_offset - f32::EPSILON
@@ -499,6 +528,7 @@ impl CharacterController {
 
     /// Check if within the jump spring filter window.
     /// Returns true if downward spring forces should be filtered.
+    #[must_use] 
     pub fn in_jump_spring_filter_window(&self) -> bool {
         !self.jump_spring_filter_timer.is_finished()
     }
@@ -509,6 +539,7 @@ impl CharacterController {
     /// This combines same-frame intent (`intends_upward_propulsion`) with
     /// cross-frame filtering (`jump_spring_filter_window`) for consistent behavior.
     #[inline]
+    #[must_use] 
     pub fn upward_intent(&self) -> bool {
         self.intends_upward_propulsion || self.in_jump_spring_filter_window()
     }
@@ -529,6 +560,7 @@ impl CharacterController {
 
     /// Check if within coyote time window.
     /// Returns true if the character can still jump after leaving ground or wall.
+    #[must_use] 
     pub fn in_coyote_time(&self) -> bool {
         !self.coyote_timer.is_finished()
     }
@@ -547,6 +579,7 @@ impl CharacterController {
 
     /// Check if we are within the jump cancel window.
     /// Returns true if the jump was recent enough to be cancelled.
+    #[must_use] 
     pub fn in_jump_cancel_window(&self) -> bool {
         !self.jumped_timer.is_finished()
     }
@@ -563,6 +596,7 @@ impl CharacterController {
 
     /// Check if fall gravity is currently active.
     /// Returns true if fall gravity should be applied.
+    #[must_use] 
     pub fn fall_gravity_active(&self) -> bool {
         !self.fall_gravity_timer.is_finished()
     }
@@ -586,12 +620,14 @@ impl CharacterController {
 
     /// Check if wall jump movement blocking is currently active.
     /// Returns true if movement toward the wall should be blocked.
+    #[must_use] 
     pub fn wall_jump_movement_blocked(&self) -> bool {
         !self.wall_jump_movement_block_timer.is_finished()
     }
 
     /// Get the direction that is currently blocked by wall jump movement blocking.
     /// Returns positive for rightward, negative for leftward, or 0 if not blocked.
+    #[must_use] 
     pub fn get_wall_jump_blocked_direction(&self) -> f32 {
         if self.wall_jump_movement_blocked() {
             self.wall_jump_blocked_direction
@@ -603,7 +639,7 @@ impl CharacterController {
     // === Recently Jumped Timer Methods ===
 
     /// Record that a jump just occurred.
-    /// This starts the recently_jumped timer which blocks fall gravity and coyote jumps.
+    /// This starts the `recently_jumped` timer which blocks fall gravity and coyote jumps.
     pub fn record_recently_jumped(&mut self, recently_jumped_duration: f32) {
         if recently_jumped_duration > 0.0 {
             self.recently_jumped_timer
@@ -614,6 +650,7 @@ impl CharacterController {
 
     /// Check if we recently jumped.
     /// Returns true if fall gravity should be blocked and coyote timer should not reset.
+    #[must_use] 
     pub fn recently_jumped(&self) -> bool {
         !self.recently_jumped_timer.is_finished()
     }
@@ -621,7 +658,7 @@ impl CharacterController {
     // === Jump Max Ascent Timer Methods ===
 
     /// Record a jump for max ascent tracking.
-    /// This starts the jump_max_ascent timer which forces fall gravity when expired.
+    /// This starts the `jump_max_ascent` timer which forces fall gravity when expired.
     pub fn record_jump_max_ascent(&mut self, jump_max_ascent_duration: f32) {
         if jump_max_ascent_duration > 0.0 {
             self.jump_max_ascent_timer
@@ -632,12 +669,14 @@ impl CharacterController {
 
     /// Check if within the max ascent window.
     /// Returns true if the jump is still in its max ascent period.
+    #[must_use] 
     pub fn in_jump_max_ascent_window(&self) -> bool {
         !self.jump_max_ascent_timer.is_finished()
     }
 
     /// Check if the max ascent timer just finished this frame.
     /// Returns true if fall gravity should be forced due to timer expiration.
+    #[must_use] 
     pub fn jump_max_ascent_expired(&self) -> bool {
         self.jump_max_ascent_timer.just_finished()
     }
@@ -662,7 +701,7 @@ impl CharacterController {
         self.intends_upward_propulsion = false;
     }
 
-    /// Prepare for a new frame: returns the forces to subtract from ExternalForce.
+    /// Prepare for a new frame: returns the forces to subtract from `ExternalForce`.
     /// After calling this, accumulators are cleared and applied values are zeroed.
     pub(crate) fn prepare_new_frame(&mut self) -> (Vec2, f32) {
         let to_subtract = (self.applied_force, self.applied_torque);
@@ -673,7 +712,7 @@ impl CharacterController {
         to_subtract
     }
 
-    /// Finalize the frame: returns the accumulated forces to apply to ExternalForce.
+    /// Finalize the frame: returns the accumulated forces to apply to `ExternalForce`.
     /// Moves accumulated values to applied for next frame's subtraction.
     pub(crate) fn finalize_frame(&mut self) -> (Vec2, f32) {
         let to_apply = (self.accumulated_force, self.accumulated_torque);
@@ -710,10 +749,11 @@ impl CharacterController {
 
 /// Configuration parameters for the character controller.
 ///
-/// All raycast lengths are DERIVED from float_height and other settings.
+/// All raycast lengths are DERIVED from `float_height` and other settings.
 /// No hardcoded magic numbers.
 #[derive(Component, Reflect, Debug, Clone, Copy)]
 #[reflect(Component)]
+#[allow(clippy::struct_excessive_bools)] // Feature flags are appropriate for configuration
 pub struct ControllerConfig {
     // === Float Settings ===
     /// Target height to float above ground (in world units/pixels).
@@ -721,22 +761,22 @@ pub struct ControllerConfig {
     ///
     /// For a capsule with `Collider::capsule_y(half_height, radius)`, the system
     /// automatically detects the collider dimensions and adds them internally.
-    /// So if you set float_height=1.0, the bottom of the capsule will float
+    /// So if you set `float_height=1.0`, the bottom of the capsule will float
     /// 1 pixel above the ground.
     pub float_height: f32,
 
-    /// Distance beyond riding_height where the character is still considered grounded.
-    /// The spring remains active within this range, restoring the character to riding_height.
-    /// Also used as the buffer zone above riding_height where grounding_strength applies.
-    /// Total grounded range is: riding_height + grounding_distance.
+    /// Distance beyond `riding_height` where the character is still considered grounded.
+    /// The spring remains active within this range, restoring the character to `riding_height`.
+    /// Also used as the buffer zone above `riding_height` where `grounding_strength` applies.
+    /// Total grounded range is: `riding_height` + `grounding_distance`.
     pub grounding_distance: f32,
 
     /// Distance for wall and ceiling detection (extends from collider surface).
-    /// Separate from grounding_distance to allow independent tuning.
+    /// Separate from `grounding_distance` to allow independent tuning.
     pub surface_detection_distance: f32,
 
-    /// Multiplier for downward spring force when character is within grounding_distance
-    /// above the riding_height. This helps keep the character grounded when slightly floating.
+    /// Multiplier for downward spring force when character is within `grounding_distance`
+    /// above the `riding_height`. This helps keep the character grounded when slightly floating.
     /// A value of 1.0 means no extra force, 2.0 doubles the downward force, etc.
     pub grounding_strength: f32,
 
@@ -781,7 +821,7 @@ pub struct ControllerConfig {
     // === Flying Settings ===
     /// Maximum flying speed (units/second).
     /// This is the speed used for flying propulsion in all directions.
-    /// Defaults to same as max_speed.
+    /// Defaults to same as `max_speed`.
     pub fly_max_speed: f32,
 
     /// Ratio of vertical flying speed relative to horizontal.
@@ -830,20 +870,20 @@ pub struct ControllerConfig {
     pub uphill_gravity_multiplier: f32,
 
     // === Sensor Settings (multipliers - actual lengths derived from float_height) ===
-    /// Ground cast length = float_height * ground_cast_multiplier.
+    /// Ground cast length = `float_height` * `ground_cast_multiplier`.
     /// Higher values detect ground from further away (good for falling).
     pub ground_cast_multiplier: f32,
 
     /// Width of the ground detection shapecast.
     pub ground_cast_width: f32,
 
-    /// Wall cast length = ground_cast_width * wall_cast_multiplier.
+    /// Wall cast length = `ground_cast_width` * `wall_cast_multiplier`.
     pub wall_cast_multiplier: f32,
 
     /// Height of wall detection shapecasts.
     pub wall_cast_height: f32,
 
-    /// Ceiling cast length = float_height * ceiling_cast_multiplier.
+    /// Ceiling cast length = `float_height` * `ceiling_cast_multiplier`.
     pub ceiling_cast_multiplier: f32,
 
     /// Width of ceiling detection shapecast.
@@ -860,7 +900,7 @@ pub struct ControllerConfig {
     pub jump_buffer_time: f32,
 
     /// Gravity multiplier when jump is cancelled early.
-    /// This multiplier is applied to gravity during the fall_gravity_duration
+    /// This multiplier is applied to gravity during the `fall_gravity_duration`
     /// window after the player releases the jump button or crosses the zenith.
     pub fall_gravity: f32,
 
@@ -887,7 +927,7 @@ pub struct ControllerConfig {
 
     /// Whether wall jumps should retain the same upward height as normal jumps.
     /// When true: wall jumps have the same vertical component as ground jumps,
-    /// with horizontal velocity added on top to achieve the wall_jump_angle.
+    /// with horizontal velocity added on top to achieve the `wall_jump_angle`.
     /// When false: the jump vector is rotated, reducing vertical component.
     pub wall_jump_retain_height: bool,
 
@@ -897,13 +937,14 @@ pub struct ControllerConfig {
     pub jump_cancel_window: f32,
 
     /// Duration (seconds) for which fall gravity is applied after cancellation.
-    /// During this time, gravity is multiplied by fall_gravity.
+    /// During this time, gravity is multiplied by `fall_gravity`.
     pub fall_gravity_duration: f32,
 
     /// Duration (seconds) after a jump during which the character is considered
     /// to have "recently jumped". During this window:
     /// - Fall gravity cannot be triggered (protects against velocity flicker)
     /// - Coyote timer will not be reset (prevents coyote time after jumping)
+    ///
     /// Set to 0.0 to disable.
     pub recently_jumped_duration: f32,
 
@@ -929,7 +970,7 @@ pub struct ControllerConfig {
     /// Damping coefficient for the upright torque.
     pub upright_torque_damping: f32,
 
-    /// Target angle for upright torque (radians). None = derived from gravity via ideal_up_angle().
+    /// Target angle for upright torque (radians). None = derived from gravity via `ideal_up_angle()`.
     pub upright_target_angle: Option<f32>,
 
     /// Maximum torque to apply for uprighting.
@@ -1016,25 +1057,29 @@ impl Default for ControllerConfig {
 }
 
 impl ControllerConfig {
-    /// Get the wall cast length (derived from ground_cast_width).
+    /// Get the wall cast length (derived from `ground_cast_width`).
     #[inline]
+    #[must_use] 
     pub fn wall_cast_length(&self) -> f32 {
         self.ground_cast_width * self.wall_cast_multiplier
     }
 
     /// Builder: set float height.
+    #[must_use] 
     pub fn with_float_height(mut self, height: f32) -> Self {
         self.float_height = height;
         self
     }
 
     /// Builder: set ground cast width.
+    #[must_use] 
     pub fn with_ground_cast_width(mut self, width: f32) -> Self {
         self.ground_cast_width = width;
         self
     }
 
     /// Builder: set spring parameters.
+    #[must_use] 
     pub fn with_spring(mut self, strength: f32, damping: f32) -> Self {
         self.spring_strength = strength;
         self.spring_damping = damping;
@@ -1042,6 +1087,7 @@ impl ControllerConfig {
     }
 
     /// Builder: set spring strength only (maintains damping ratio).
+    #[must_use] 
     pub fn with_spring_strength(mut self, strength: f32) -> Self {
         let ratio = self.spring_damping / self.spring_strength;
         self.spring_strength = strength;
@@ -1051,6 +1097,7 @@ impl ControllerConfig {
 
     /// Builder: set maximum spring force.
     /// Clamps the total spring force applied for floating.
+    #[must_use] 
     pub fn with_spring_max_force(mut self, max_force: f32) -> Self {
         self.spring_max_force = Some(max_force);
         self
@@ -1058,12 +1105,14 @@ impl ControllerConfig {
 
     /// Builder: set maximum velocity for spring force.
     /// If already moving toward the target at this speed or faster, no force is applied.
+    #[must_use] 
     pub fn with_spring_max_velocity(mut self, max_velocity: f32) -> Self {
         self.spring_max_velocity = Some(max_velocity);
         self
     }
 
     /// Builder: set movement parameters.
+    #[must_use] 
     pub fn with_movement(mut self, max_speed: f32, acceleration: f32) -> Self {
         self.max_speed = max_speed;
         self.acceleration = acceleration;
@@ -1071,30 +1120,35 @@ impl ControllerConfig {
     }
 
     /// Builder: set max speed.
+    #[must_use] 
     pub fn with_max_speed(mut self, max_speed: f32) -> Self {
         self.max_speed = max_speed;
         self
     }
 
     /// Builder: set friction.
+    #[must_use] 
     pub fn with_friction(mut self, friction: f32) -> Self {
         self.friction = friction;
         self
     }
 
     /// Builder: set air friction.
+    #[must_use] 
     pub fn with_air_friction(mut self, air_friction: f32) -> Self {
         self.air_friction = air_friction;
         self
     }
 
     /// Builder: set air control.
+    #[must_use] 
     pub fn with_air_control(mut self, air_control: f32) -> Self {
         self.air_control = air_control;
         self
     }
 
     /// Builder: set flying max speed.
+    #[must_use] 
     pub fn with_fly_max_speed(mut self, speed: f32) -> Self {
         self.fly_max_speed = speed;
         self
@@ -1102,12 +1156,14 @@ impl ControllerConfig {
 
     /// Builder: set flying vertical speed ratio.
     /// 1.0 = same speed, 0.5 = vertical is half horizontal speed.
+    #[must_use] 
     pub fn with_fly_vertical_speed_ratio(mut self, ratio: f32) -> Self {
         self.fly_vertical_speed_ratio = ratio;
         self
     }
 
     /// Builder: set flying acceleration.
+    #[must_use] 
     pub fn with_fly_acceleration(mut self, acceleration: f32) -> Self {
         self.fly_acceleration = acceleration;
         self
@@ -1115,6 +1171,7 @@ impl ControllerConfig {
 
     /// Builder: set flying vertical acceleration ratio.
     /// 1.0 = same acceleration, 0.5 = vertical is half horizontal acceleration.
+    #[must_use] 
     pub fn with_fly_vertical_acceleration_ratio(mut self, ratio: f32) -> Self {
         self.fly_vertical_acceleration_ratio = ratio;
         self
@@ -1122,30 +1179,35 @@ impl ControllerConfig {
 
     /// Builder: set flying gravity compensation.
     /// 0.0 = no compensation, 1.0 = full compensation.
+    #[must_use] 
     pub fn with_fly_gravity_compensation(mut self, compensation: f32) -> Self {
         self.fly_gravity_compensation = compensation;
         self
     }
 
     /// Builder: set coyote time.
+    #[must_use] 
     pub fn with_coyote_time(mut self, time: f32) -> Self {
         self.coyote_time = time;
         self
     }
 
     /// Builder: set jump buffer time.
+    #[must_use] 
     pub fn with_jump_buffer_time(mut self, time: f32) -> Self {
         self.jump_buffer_time = time;
         self
     }
 
     /// Builder: enable or disable upright torque.
+    #[must_use] 
     pub fn with_upright_torque_enabled(mut self, enabled: bool) -> Self {
         self.upright_torque_enabled = enabled;
         self
     }
 
     /// Builder: set upright torque parameters.
+    #[must_use] 
     pub fn with_upright_torque(mut self, strength: f32, damping: f32) -> Self {
         self.upright_torque_strength = strength;
         self.upright_torque_damping = damping;
@@ -1153,12 +1215,14 @@ impl ControllerConfig {
     }
 
     /// Builder: set jump speed.
+    #[must_use] 
     pub fn with_jump_speed(mut self, speed: f32) -> Self {
         self.jump_speed = speed;
         self
     }
 
     /// Builder: set fall gravity multiplier.
+    #[must_use] 
     pub fn with_fall_gravity(mut self, multiplier: f32) -> Self {
         self.fall_gravity = multiplier;
         self
@@ -1166,6 +1230,7 @@ impl ControllerConfig {
 
     /// Builder: set jump cancel window duration.
     /// Duration after jumping during which the jump can be cancelled.
+    #[must_use] 
     pub fn with_jump_cancel_window(mut self, duration: f32) -> Self {
         self.jump_cancel_window = duration;
         self
@@ -1173,6 +1238,7 @@ impl ControllerConfig {
 
     /// Builder: set fall gravity duration.
     /// Duration for which fall gravity is applied after cancellation.
+    #[must_use] 
     pub fn with_fall_gravity_duration(mut self, duration: f32) -> Self {
         self.fall_gravity_duration = duration;
         self
@@ -1180,6 +1246,7 @@ impl ControllerConfig {
 
     /// Builder: set recently jumped duration.
     /// Duration after a jump during which fall gravity is blocked and coyote timer won't reset.
+    #[must_use] 
     pub fn with_recently_jumped_duration(mut self, duration: f32) -> Self {
         self.recently_jumped_duration = duration;
         self
@@ -1187,6 +1254,7 @@ impl ControllerConfig {
 
     /// Builder: set jump max ascent duration.
     /// Maximum duration of jump ascent before fall gravity is forced.
+    #[must_use] 
     pub fn with_jump_max_ascent_duration(mut self, duration: f32) -> Self {
         self.jump_max_ascent_duration = duration;
         self
@@ -1194,12 +1262,14 @@ impl ControllerConfig {
 
     /// Builder: set jump upward velocity compensation (0.0-1.0).
     /// Controls how much pre-existing upward velocity reduces the jump impulse.
+    #[must_use] 
     pub fn with_jump_upward_velocity_compensation(mut self, compensation: f32) -> Self {
         self.jump_upward_velocity_compensation = compensation.clamp(0.0, 1.0);
         self
     }
 
     /// Builder: set upright target angle.
+    #[must_use] 
     pub fn with_upright_target_angle(mut self, angle: f32) -> Self {
         self.upright_target_angle = Some(angle);
         self
@@ -1207,6 +1277,7 @@ impl ControllerConfig {
 
     /// Builder: set maximum upright torque.
     /// Clamps the total torque applied for uprighting.
+    #[must_use] 
     pub fn with_upright_max_torque(mut self, max_torque: f32) -> Self {
         self.upright_max_torque = Some(max_torque);
         self
@@ -1214,6 +1285,7 @@ impl ControllerConfig {
 
     /// Builder: set maximum angular velocity for upright torque.
     /// If already rotating toward the target at this speed or faster, no torque is applied.
+    #[must_use] 
     pub fn with_upright_max_angular_velocity(mut self, max_velocity: f32) -> Self {
         self.upright_max_angular_velocity = Some(max_velocity);
         self
@@ -1221,12 +1293,14 @@ impl ControllerConfig {
 
     /// Builder: set jump spring filter duration.
     /// Duration after jump/upward propulsion during which downward spring forces are filtered.
+    #[must_use] 
     pub fn with_jump_spring_filter_duration(mut self, duration: f32) -> Self {
         self.jump_spring_filter_duration = duration;
         self
     }
 
     /// Builder: enable or disable wall jumping.
+    #[must_use] 
     pub fn with_wall_jumping(mut self, enabled: bool) -> Self {
         self.wall_jumping = enabled;
         self
@@ -1234,6 +1308,7 @@ impl ControllerConfig {
 
     /// Builder: set wall jump angle (radians from vertical).
     /// 0 = straight up, PI/4 (45°) = diagonal.
+    #[must_use] 
     pub fn with_wall_jump_angle(mut self, angle: f32) -> Self {
         self.wall_jump_angle = angle;
         self
@@ -1241,6 +1316,7 @@ impl ControllerConfig {
 
     /// Builder: set wall jump movement block duration.
     /// Duration (seconds) after a wall jump during which movement toward the wall is blocked.
+    #[must_use] 
     pub fn with_wall_jump_movement_block_duration(mut self, duration: f32) -> Self {
         self.wall_jump_movement_block_duration = duration;
         self
@@ -1248,6 +1324,7 @@ impl ControllerConfig {
 
     /// Builder: set wall jump velocity compensation (0.0-1.0).
     /// Controls how much downward velocity is cancelled before a wall jump.
+    #[must_use] 
     pub fn with_wall_jump_velocity_compensation(mut self, compensation: f32) -> Self {
         self.wall_jump_velocity_compensation = compensation.clamp(0.0, 1.0);
         self
@@ -1256,18 +1333,21 @@ impl ControllerConfig {
     /// Builder: set whether wall jumps retain the same height as normal jumps.
     /// When true, the vertical component matches a ground jump with horizontal added on top.
     /// When false, the jump vector is rotated (classic behavior).
+    #[must_use] 
     pub fn with_wall_jump_retain_height(mut self, retain: bool) -> Self {
         self.wall_jump_retain_height = retain;
         self
     }
 
     /// Builder: set grounding distance.
+    #[must_use] 
     pub fn with_grounding_distance(mut self, distance: f32) -> Self {
         self.grounding_distance = distance;
         self
     }
 
     /// Builder: set grounding strength.
+    #[must_use] 
     pub fn with_grounding_strength(mut self, strength: f32) -> Self {
         self.grounding_strength = strength;
         self
@@ -1278,8 +1358,8 @@ impl ControllerConfig {
 ///
 /// The stair climbing system works by casting a ray downward in front of the character
 /// (in the direction of movement intent) to detect steps. If a step is detected that is:
-/// - Higher than the float_height (requires climbing)
-/// - Lower than max_climb_height (climbable)
+/// - Higher than the `float_height` (requires climbing)
+/// - Lower than `max_climb_height` (climbable)
 ///
 /// Then the system applies extra upward force and temporarily raises the riding height.
 #[derive(Component, Reflect, Debug, Clone, Copy)]
@@ -1296,7 +1376,7 @@ pub struct StairConfig {
     pub stair_cast_width: f32,
 
     /// Offset from the collider radius for the stair detection cast.
-    /// The cast origin is placed at: position + movement_direction * (radius + stair_cast_offset)
+    /// The cast origin is placed at: position + `movement_direction` * (radius + `stair_cast_offset`)
     /// Default is 2.0 pixels outside the collider radius.
     pub stair_cast_offset: f32,
 
@@ -1304,9 +1384,9 @@ pub struct StairConfig {
     /// are not considered stairs (they're handled by the normal spring system).
     pub stair_tolerance: f32,
 
-    /// Extra upward force multiplier when climbing stairs, as a multiple of max_spring_force.
+    /// Extra upward force multiplier when climbing stairs, as a multiple of `max_spring_force`.
     /// For example, 1.0 means apply the full max spring force as extra upward force.
-    /// Using max_spring_force provides responsive climbing compared to gravity-based force.
+    /// Using `max_spring_force` provides responsive climbing compared to gravity-based force.
     pub climb_force_multiplier: f32,
 
     /// Whether stair stepping is enabled.
@@ -1329,6 +1409,7 @@ impl Default for StairConfig {
 
 impl StairConfig {
     /// Create a disabled stair config.
+    #[must_use] 
     pub fn disabled() -> Self {
         Self {
             enabled: false,
@@ -1337,30 +1418,35 @@ impl StairConfig {
     }
 
     /// Builder: set max climb height.
+    #[must_use] 
     pub fn with_max_climb_height(mut self, height: f32) -> Self {
         self.max_climb_height = height;
         self
     }
 
     /// Builder: set stair cast width.
+    #[must_use] 
     pub fn with_stair_cast_width(mut self, width: f32) -> Self {
         self.stair_cast_width = width;
         self
     }
 
     /// Builder: set stair cast offset from collider radius.
+    #[must_use] 
     pub fn with_stair_cast_offset(mut self, offset: f32) -> Self {
         self.stair_cast_offset = offset;
         self
     }
 
     /// Builder: set stair tolerance.
+    #[must_use] 
     pub fn with_stair_tolerance(mut self, tolerance: f32) -> Self {
         self.stair_tolerance = tolerance;
         self
     }
 
     /// Builder: set climb force multiplier.
+    #[must_use] 
     pub fn with_climb_force_multiplier(mut self, multiplier: f32) -> Self {
         self.climb_force_multiplier = multiplier;
         self
@@ -1370,6 +1456,7 @@ impl StairConfig {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use approx::assert_relative_eq;
     use std::f32::consts::FRAC_PI_2;
 
     #[test]
@@ -1456,7 +1543,7 @@ mod tests {
         let config = ControllerConfig::default();
 
         // Wall cast derived from ground_cast_width
-        assert_eq!(
+        assert_relative_eq!(
             config.wall_cast_length(),
             config.ground_cast_width * config.wall_cast_multiplier
         );
@@ -1473,11 +1560,11 @@ mod tests {
     fn stair_config_default() {
         let config = StairConfig::default();
         assert!(config.enabled);
-        assert_eq!(config.max_climb_height, 11.0);
-        assert_eq!(config.stair_cast_width, 2.0);
-        assert_eq!(config.stair_cast_offset, 3.0);
-        assert_eq!(config.stair_tolerance, 2.0);
-        assert_eq!(config.climb_force_multiplier, 2.0);
+        assert_relative_eq!(config.max_climb_height, 11.0);
+        assert_relative_eq!(config.stair_cast_width, 2.0);
+        assert_relative_eq!(config.stair_cast_offset, 3.0);
+        assert_relative_eq!(config.stair_tolerance, 2.0);
+        assert_relative_eq!(config.climb_force_multiplier, 2.0);
     }
 
     #[test]
@@ -1495,11 +1582,11 @@ mod tests {
             .with_stair_tolerance(2.0)
             .with_climb_force_multiplier(3.0);
 
-        assert_eq!(config.max_climb_height, 12.0);
-        assert_eq!(config.stair_cast_width, 8.0);
-        assert_eq!(config.stair_cast_offset, 3.0);
-        assert_eq!(config.stair_tolerance, 2.0);
-        assert_eq!(config.climb_force_multiplier, 3.0);
+        assert_relative_eq!(config.max_climb_height, 12.0);
+        assert_relative_eq!(config.stair_cast_width, 8.0);
+        assert_relative_eq!(config.stair_cast_offset, 3.0);
+        assert_relative_eq!(config.stair_tolerance, 2.0);
+        assert_relative_eq!(config.climb_force_multiplier, 3.0);
     }
 
     #[test]
@@ -1510,11 +1597,11 @@ mod tests {
 
         // Without stair climbing
         let base_height = controller.riding_height(&config);
-        assert_eq!(controller.effective_riding_height(&config), base_height);
+        assert_relative_eq!(controller.effective_riding_height(&config), base_height);
 
         // With stair climbing
         controller.active_stair_height = 5.0;
-        assert_eq!(
+        assert_relative_eq!(
             controller.effective_riding_height(&config),
             base_height + 5.0
         );

@@ -7,7 +7,7 @@
 **Key Features:**
 - Floating rigidbody that hovers above ground
 - Spring-damper system for ground detection and height maintenance
-- Physics backend abstraction (currently supports Rapier2D via `bevy_rapier2d`)
+- Physics backend using Avian2D (formerly XPBD)
 - Movement intent system for player/AI control
 - Jump with coyote time and input buffering
 - Wall jumping and wall clinging
@@ -15,15 +15,11 @@
 - Slope handling
 - Gravity-relative directions (supports non-standard gravity like spherical planets)
 
-## Rapier Physics Integration
+## Avian2D Physics Integration
 
-**IMPORTANT**: Rapier runs in `PostFixedUpdate`, NOT in `FixedUpdate`.
+The character controller uses Avian2D's component-based collision detection via `ShapeCaster` and `ShapeHits` components. Ground, wall, and ceiling detection use child entities with shape casters that are automatically spawned and configured.
 
-Do NOT order CharacterControllerSet relative to Rapier's PhysicsSet. The character controller systems run in FixedUpdate, and Rapier processes ExternalForce/ExternalImpulse in PostFixedUpdate after FixedUpdate completes.
-
-The correct flow is:
-1. FixedUpdate: Character controller systems accumulate forces into ExternalForce/ExternalImpulse
-2. PostFixedUpdate: Rapier reads ExternalForce/ExternalImpulse and simulates physics
+The controller systems run in `FixedUpdate` and accumulate forces into `ConstantForce` and `ConstantTorque` components, which Avian processes in its physics schedule.
 
 ## Architecture
 
@@ -39,23 +35,23 @@ The correct flow is:
 
 ### Physics Backend Trait
 
-`CharacterPhysicsBackend` (`src/backend.rs`) abstracts physics engine operations:
+`CharacterPhysicsBackend` (`src/backend/traits.rs`) abstracts physics engine operations:
 - `get_velocity`, `set_velocity`, `apply_impulse`, `apply_force`
 - `get_mass`, `get_principal_inertia`
 - `get_rotation`, `get_angular_velocity`, `apply_torque`
 
-The Rapier2D implementation is in `src/rapier.rs` behind the `rapier2d` feature.
+The Avian2D implementation is in `src/backend/avian.rs` behind the `avian2d` feature (default).
 
 ### System Phases
 
 Systems run in `FixedUpdate` in six ordered phases via `CharacterControllerSet`:
 
 1. **Preparation** - Process jump state (edge detection), tick timers, remove expired jump requests
-2. **Sensors** - Ground/wall/ceiling detection via raycasts (runs in Rapier backend plugin)
+2. **Sensors** - Ground/wall/ceiling detection via ShapeCaster components (runs in Avian backend plugin)
 3. **IntentEvaluation** - Update timers, determine jump type, evaluate intent flags
 4. **ForceAccumulation** - Accumulate spring force, stair climb force, gravity, upright torque
 5. **IntentApplication** - Apply fall gravity, jump impulse, walk impulse, fly impulse, wall clinging
-6. **FinalApplication** - Apply accumulated forces to physics (runs in Rapier backend plugin)
+6. **FinalApplication** - Apply accumulated forces to physics (runs in Avian backend plugin)
 
 ## Key Files
 
@@ -65,8 +61,8 @@ Systems run in `FixedUpdate` in six ordered phases via `CharacterControllerSet`:
 | `src/config.rs` | `CharacterController`, `ControllerConfig`, `StairConfig`, `JumpType` |
 | `src/intent.rs` | `MovementIntent`, `JumpRequest` |
 | `src/systems.rs` | All controller systems (spring, gravity, movement, jump, etc.) |
-| `src/backend.rs` | `CharacterPhysicsBackend` trait |
-| `src/rapier.rs` | Rapier2D backend implementation, sensor systems |
+| `src/backend/traits.rs` | `CharacterPhysicsBackend` trait |
+| `src/backend/avian.rs` | Avian2D backend implementation, sensor systems |
 | `src/collision.rs` | `CollisionData` struct |
 
 ## Building & Running
@@ -85,15 +81,15 @@ cargo doc --open
 
 ## Testing
 
-Integration tests are in `tests/integration.rs`. Tests use a minimal Bevy app with Rapier physics:
+Integration tests are in `tests/avian2d.rs`. Tests use a minimal Bevy app with Avian2D physics:
 
 ```rust
 fn create_test_app() -> App {
     let mut app = App::new();
     app.add_plugins(MinimalPlugins);
     app.add_plugins(TransformPlugin);
-    app.add_plugins(RapierPhysicsPlugin::<NoUserData>::default());
-    app.add_plugins(CharacterControllerPlugin::<Rapier2dBackend>::default());
+    app.add_plugins(PhysicsPlugins::default());
+    app.add_plugins(CharacterControllerPlugin::<Avian2dBackend>::default());
     app.insert_resource(Time::<Fixed>::from_hz(60.0));
     app.finish();
     app.cleanup();
@@ -101,7 +97,7 @@ fn create_test_app() -> App {
 }
 ```
 
-Characters are spawned with `GravityScale(0.0)` to disable Rapier's gravity (controller manages gravity internally via `CharacterController::gravity`).
+The controller manages gravity internally via `CharacterController::gravity`.
 
 ## Common Patterns
 
@@ -112,9 +108,8 @@ commands.spawn((
     Transform::from_translation(position.extend(0.0)),
     CharacterController::new(),  // or ::with_gravity(custom_gravity)
     ControllerConfig::default(), // or ::player() / ::ai()
-    Collider::capsule_y(8.0, 4.0),
+    Collider::capsule(8.0, 4.0), // height, radius
     LockedAxes::ROTATION_LOCKED, // Optional: lock rotation for simple platformers
-    GravityScale(0.0), // Disable Rapier gravity
 ));
 ```
 

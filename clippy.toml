@@ -1,0 +1,7 @@
+# Clippy configuration for msg_character_controller
+# Run with: cargo clippy --all-targets --all-features
+
+# Enable pedantic lints by default (configured via command line: -W clippy::pedantic)
+
+# Exceptions to pedantic lints:
+# These are allowed because they're common in Bevy plugin/system APIs

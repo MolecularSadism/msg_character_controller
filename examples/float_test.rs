@@ -2,8 +2,9 @@
 //!
 //! This example specifically tests if the character controller's floating spring
 //! system is working. It spawns a character high in the air above a platform.
+#![allow(unexpected_cfgs)]
 //!
-//! If floating works: The character should descend and hover at float_height above the platform
+//! If floating works: The character should descend and hover at `float_height` above the platform
 //! If floating doesn't work: The character will fall through or sit directly on the platform
 //!
 //! ## Controls
@@ -57,7 +58,7 @@ fn main() {
     App::new()
         .add_plugins(DefaultPlugins.set(WindowPlugin {
             primary_window: Some(Window {
-                title: format!("Float Test ({}) - Character Controller", backend_name()).into(),
+                title: format!("Float Test ({}) - Character Controller", backend_name()),
                 resolution: (1280, 720).into(),
                 ..default()
             }),
@@ -133,13 +134,12 @@ fn setup(
 
     println!("=== FLOAT TEST SETUP ===");
     println!("Spawning player at Y: {}", spawn_pos.y);
-    println!("Platform top at Y: {}", platform_top);
+    println!("Platform top at Y: {platform_top}");
     println!(
-        "Float height (gap from capsule bottom to ground): {}",
-        float_height
+        "Float height (gap from capsule bottom to ground): {float_height}"
     );
-    println!("Collider bottom offset: {}", collider_bottom_offset);
-    println!("Expected center Y: {}", expected_hover_y);
+    println!("Collider bottom offset: {collider_bottom_offset}");
+    println!("Expected center Y: {expected_hover_y}");
 
     // Spawn player with rotation locked for this test
     spawn_player(
@@ -207,7 +207,7 @@ fn debug_floating(
         gap_from_ground,
         velocity.linvel.y,
         controller.ground_detected(),
-        controller.ground_distance(),
+        controller.ground_distance().unwrap_or(f32::INFINITY),
         grounded_str,
         gap_from_ground
     );
@@ -271,7 +271,7 @@ fn debug_floating(
         gap_from_ground,
         velocity.0.y,
         controller.ground_detected(),
-        controller.ground_distance(),
+        controller.ground_distance().unwrap_or(f32::INFINITY),
         grounded_str,
         gap_from_ground
     );

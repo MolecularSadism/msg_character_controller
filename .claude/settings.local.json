@@ -9,7 +9,21 @@
       "Bash(cargo doc:*)",
       "Read(//c/Users/fmulk/.cargo/registry/src/**)",
       "Bash(timeout 5 cargo run:*)",
-      "Bash(git add:*)"
+      "Bash(git add:*)",
+      "WebSearch",
+      "Bash(cargo check:*)",
+      "Bash(cargo info:*)",
+      "Bash(git commit:*)",
+      "Bash(cargo clippy-pedantic:*)",
+      "Bash(cargo tree:*)",
+      "Bash(git log:*)",
+      "WebFetch(domain:github.com)",
+      "WebFetch(domain:docs.rs)",
+      "Bash(cargo clippy:*)",
+      "Bash(curl:*)",
+      "Bash(timeout:*)",
+      "Bash(ls:*)",
+      "Bash(grep:*)"
     ],
     "deny": [],
     "ask": []
