@@ -204,23 +204,25 @@ fn spawn_obstacles(
     );
 
     for i in 0..=5 {
+        let i_f32 = f32::from(i);
         spawn_static_ball(
             commands,
             meshes,
             materials,
-            Vec2::new(50.0 + 13.0 * i as f32, -BOX_HEIGHT / 2.0 + 10.0 * i as f32),
+            Vec2::new(50.0 + 13.0 * i_f32, -BOX_HEIGHT / 2.0 + 10.0 * i_f32),
             5.0,
             Color::srgb(0.8, 0.2, 0.2),
         );
     }
 
     for i in 0..=5 {
+        let i_f32 = f32::from(i);
         spawn_static_ball(
             commands,
             meshes,
             materials,
             Vec2::new(
-                -BOX_WIDTH / 2.0 + WALL_THICKNESS + 150.0 + 20.0 * i as f32,
+                -BOX_WIDTH / 2.0 + WALL_THICKNESS + 150.0 + 20.0 * i_f32,
                 -BOX_HEIGHT / 2.0 + 5.0,
             ),
             5.0,
@@ -229,12 +231,13 @@ fn spawn_obstacles(
     }
 
     for i in 0..=5 {
+        let i_f32 = f32::from(i);
         spawn_static_ball(
             commands,
             meshes,
             materials,
             Vec2::new(
-                -BOX_WIDTH / 2.0 + WALL_THICKNESS + 20.0 + 20.0 * i as f32,
+                -BOX_WIDTH / 2.0 + WALL_THICKNESS + 20.0 + 20.0 * i_f32,
                 -BOX_HEIGHT / 2.0,
             ),
             5.0,

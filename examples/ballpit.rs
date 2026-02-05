@@ -47,7 +47,7 @@ const BOX_HEIGHT: f32 = 400.0;
 const WALL_THICKNESS: f32 = 20.0;
 
 const BALL_RADIUS: f32 = 12.0;
-const BALL_COUNT: usize = 40;
+const BALL_COUNT: u32 = 40;
 
 const PX_PER_M: f32 = 10.0;
 
@@ -202,13 +202,16 @@ fn spawn_balls(
     let base_y = -BOX_HEIGHT / 2.0 + BALL_RADIUS + 5.0;
 
     // Spawn balls in a grid pattern
-    let cols = 8;
+    let cols: u32 = 8;
     let rows = BALL_COUNT / cols + 1;
-    let spacing_x = (half_width * 2.0) / (cols as f32);
+    let cols_f32 = cols as f32;
+    let ball_count_f32 = BALL_COUNT as f32;
+    let spacing_x = (half_width * 2.0) / cols_f32;
     let spacing_y = BALL_RADIUS * 2.5;
 
-    let mut count = 0;
+    let mut count: u32 = 0;
     for row in 0..rows {
+        let row_f32 = row as f32;
         for col in 0..cols {
             if count >= BALL_COUNT {
                 break;
@@ -216,11 +219,13 @@ fn spawn_balls(
 
             // Offset every other row for a more natural look
             let x_offset = if row % 2 == 0 { 0.0 } else { spacing_x / 2.0 };
-            let x = -half_width + spacing_x / 2.0 + col as f32 * spacing_x + x_offset;
-            let y = base_y + row as f32 * spacing_y;
+            let column_f32 = col as f32;
+            let x = -half_width + spacing_x / 2.0 + column_f32 * spacing_x + x_offset;
+            let y = base_y + row_f32 * spacing_y;
 
             // Vary ball color slightly for visual interest
-            let hue = (count as f32 / BALL_COUNT as f32) * 0.3 + 0.55; // Blue to purple range
+            let count_f32 = count as f32;
+            let hue = (count_f32 / ball_count_f32) * 0.3 + 0.55; // Blue to purple range
             let color = Color::hsl(hue * 360.0, 0.7, 0.5);
 
             spawn_dynamic_ball(

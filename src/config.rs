@@ -753,6 +753,7 @@ impl CharacterController {
 /// No hardcoded magic numbers.
 #[derive(Component, Reflect, Debug, Clone, Copy)]
 #[reflect(Component)]
+#[allow(clippy::struct_excessive_bools)] // Feature flags are appropriate for configuration
 pub struct ControllerConfig {
     // === Float Settings ===
     /// Target height to float above ground (in world units/pixels).
@@ -943,6 +944,7 @@ pub struct ControllerConfig {
     /// to have "recently jumped". During this window:
     /// - Fall gravity cannot be triggered (protects against velocity flicker)
     /// - Coyote timer will not be reset (prevents coyote time after jumping)
+    ///
     /// Set to 0.0 to disable.
     pub recently_jumped_duration: f32,
 
@@ -1454,6 +1456,7 @@ impl StairConfig {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use approx::assert_relative_eq;
     use std::f32::consts::FRAC_PI_2;
 
     #[test]
@@ -1540,7 +1543,7 @@ mod tests {
         let config = ControllerConfig::default();
 
         // Wall cast derived from ground_cast_width
-        assert_eq!(
+        assert_relative_eq!(
             config.wall_cast_length(),
             config.ground_cast_width * config.wall_cast_multiplier
         );
@@ -1557,11 +1560,11 @@ mod tests {
     fn stair_config_default() {
         let config = StairConfig::default();
         assert!(config.enabled);
-        assert_eq!(config.max_climb_height, 11.0);
-        assert_eq!(config.stair_cast_width, 2.0);
-        assert_eq!(config.stair_cast_offset, 3.0);
-        assert_eq!(config.stair_tolerance, 2.0);
-        assert_eq!(config.climb_force_multiplier, 2.0);
+        assert_relative_eq!(config.max_climb_height, 11.0);
+        assert_relative_eq!(config.stair_cast_width, 2.0);
+        assert_relative_eq!(config.stair_cast_offset, 3.0);
+        assert_relative_eq!(config.stair_tolerance, 2.0);
+        assert_relative_eq!(config.climb_force_multiplier, 2.0);
     }
 
     #[test]
@@ -1579,11 +1582,11 @@ mod tests {
             .with_stair_tolerance(2.0)
             .with_climb_force_multiplier(3.0);
 
-        assert_eq!(config.max_climb_height, 12.0);
-        assert_eq!(config.stair_cast_width, 8.0);
-        assert_eq!(config.stair_cast_offset, 3.0);
-        assert_eq!(config.stair_tolerance, 2.0);
-        assert_eq!(config.climb_force_multiplier, 3.0);
+        assert_relative_eq!(config.max_climb_height, 12.0);
+        assert_relative_eq!(config.stair_cast_width, 8.0);
+        assert_relative_eq!(config.stair_cast_offset, 3.0);
+        assert_relative_eq!(config.stair_tolerance, 2.0);
+        assert_relative_eq!(config.climb_force_multiplier, 3.0);
     }
 
     #[test]
@@ -1594,11 +1597,11 @@ mod tests {
 
         // Without stair climbing
         let base_height = controller.riding_height(&config);
-        assert_eq!(controller.effective_riding_height(&config), base_height);
+        assert_relative_eq!(controller.effective_riding_height(&config), base_height);
 
         // With stair climbing
         controller.active_stair_height = 5.0;
-        assert_eq!(
+        assert_relative_eq!(
             controller.effective_riding_height(&config),
             base_height + 5.0
         );

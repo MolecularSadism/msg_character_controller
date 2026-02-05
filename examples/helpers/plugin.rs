@@ -219,24 +219,29 @@ impl Default for CharacterControllerUiConfig {
 ///
 /// # Example
 ///
-/// ```ignore
+/// ```rust
+/// # use bevy::prelude::*;
+/// # use msg_character_controller::prelude::*;
+/// # use msg_character_controller_examples_helpers::*;
 /// #[derive(Component)]
 /// struct Player;
 ///
-/// // Basic usage
-/// App::new()
-///     .add_plugins(CharacterControllerUiPlugin::<Player>::default())
-///     // ...
+/// fn basic_usage() {
+///     // Basic usage
+///     let mut app = App::new();
+///     app.add_plugins(CharacterControllerUiPlugin::<Player>::default());
+/// }
 ///
-/// // With custom spawn position and defaults
-/// App::new()
-///     .insert_resource(SpawnConfig::new(Vec2::new(0.0, 200.0)))
-///     .insert_resource(DefaultControllerSettings::new(
-///         ControllerConfig::player().with_float_height(5.0),
-///         Vec2::new(0.0, -980.0),
-///     ))
-///     .add_plugins(CharacterControllerUiPlugin::<Player>::default())
-///     // ...
+/// fn with_custom_config() {
+///     // With custom spawn position and defaults
+///     let mut app = App::new();
+///     app.insert_resource(SpawnConfig::new(Vec2::new(0.0, 200.0)))
+///         .insert_resource(DefaultControllerSettings::new(
+///             ControllerConfig::player().with_float_height(5.0),
+///             Vec2::new(0.0, -980.0),
+///         ))
+///         .add_plugins(CharacterControllerUiPlugin::<Player>::default());
+/// }
 /// ```
 pub struct CharacterControllerUiPlugin<M: Component> {
     config: CharacterControllerUiConfig,

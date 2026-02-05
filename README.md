@@ -121,11 +121,11 @@ cargo run --example spherical_planet --features examples
 
 ## Bevy Version Compatibility
 
-| `msg_character_controller` | Bevy | `avian2d` |
-|----------------------------|------|-----------|
-| 0.3                        | 0.18 | 0.5       |
-| 0.2                        | 0.17 | 0.4       |
-| 0.1                        | 0.16 | -         |
+| `msg_character_controller` | Bevy | `avian2d` | `rapier2d` |
+|----------------------------|------|-----------|------------|
+| 0.3                        | 0.18 | 0.5       | -          |
+| 0.2                        | 0.17 | 0.4       | 0.32       |
+| 0.1                        | 0.16 | -         | 0.31       |
 
 ## License
 

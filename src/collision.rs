@@ -34,12 +34,13 @@ impl CollisionData {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use approx::assert_relative_eq;
 
     #[test]
     fn sensor_cast_hit() {
         let cast = CollisionData::new(5.0, Vec2::Y, Vec2::new(10.0, 0.0), None);
 
-        assert_eq!(cast.distance, 5.0);
+        assert_relative_eq!(cast.distance, 5.0);
         assert_eq!(cast.normal, Vec2::Y);
         assert_eq!(cast.point, Vec2::new(10.0, 0.0));
     }

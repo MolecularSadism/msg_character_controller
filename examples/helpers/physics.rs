@@ -1,6 +1,6 @@
 //! Physics backend abstraction for examples.
 //!
-//! This module provides helpers for spawning physics entities using Avian2D.
+//! This module provides helpers for spawning physics entities using `Avian2D`.
 
 use bevy::prelude::*;
 use bevy::time::Fixed;
@@ -104,7 +104,7 @@ pub fn spawn_static_box(
         Mesh2d(mesh),
         MeshMaterial2d(material),
     )).id();
-    eprintln!("spawn_static_box: Created platform entity {:?} at position {:?} with half_size {:?}", entity, position, half_size);
+    eprintln!("spawn_static_box: Created platform entity {entity:?} at position {position:?} with half_size {half_size:?}");
 }
 
 /// Spawns a static rectangular collider with rotation.
@@ -317,10 +317,12 @@ pub fn spawn_polyline_collider(
     use super::create_polygon_mesh;
 
     // Create indices for closed polyline
+    let vertex_count = u32::try_from(vertices.len())
+        .expect("vertex count must fit in u32 for mesh indices");
     let mut indices: Vec<[u32; 2]> = Vec::with_capacity(vertices.len());
-    for i in 0..vertices.len() {
-        let next = (i + 1) % vertices.len();
-        indices.push([i as u32, next as u32]);
+    for i in 0..vertex_count {
+        let next = (i + 1) % vertex_count;
+        indices.push([i, next]);
     }
 
     let collider = Collider::polyline(vertices.clone(), Some(indices));
