@@ -33,7 +33,7 @@ pub fn float_settings_ui(ui: &mut egui::Ui, config: &mut ControllerConfig) {
         ui.horizontal(|ui| {
             ui.label("Height:");
             ui.add(
-                egui::DragValue::new(&mut config.float_height)
+                egui::DragValue::new(&mut config.floating.float_height)
                     .speed(0.1)
                     .range(0.0..=100.0),
             );
@@ -41,7 +41,7 @@ pub fn float_settings_ui(ui: &mut egui::Ui, config: &mut ControllerConfig) {
         ui.horizontal(|ui| {
             ui.label("Grounding Distance:");
             ui.add(
-                egui::DragValue::new(&mut config.grounding_distance)
+                egui::DragValue::new(&mut config.floating.grounding_distance)
                     .speed(0.1)
                     .range(0.0..=20.0),
             );
@@ -49,7 +49,7 @@ pub fn float_settings_ui(ui: &mut egui::Ui, config: &mut ControllerConfig) {
         ui.horizontal(|ui| {
             ui.label("Surface Detection:");
             ui.add(
-                egui::DragValue::new(&mut config.surface_detection_distance)
+                egui::DragValue::new(&mut config.floating.surface_detection_distance)
                     .speed(0.1)
                     .range(0.0..=50.0),
             );
@@ -57,7 +57,7 @@ pub fn float_settings_ui(ui: &mut egui::Ui, config: &mut ControllerConfig) {
         ui.horizontal(|ui| {
             ui.label("Grounding Strength:");
             ui.add(
-                egui::DragValue::new(&mut config.grounding_strength)
+                egui::DragValue::new(&mut config.floating.grounding_strength)
                     .speed(0.1)
                     .range(0.1..=10.0),
             );
@@ -71,7 +71,7 @@ pub fn spring_settings_ui(ui: &mut egui::Ui, config: &mut ControllerConfig) {
         ui.horizontal(|ui| {
             ui.label("Strength:");
             ui.add(
-                egui::DragValue::new(&mut config.spring_strength)
+                egui::DragValue::new(&mut config.spring.strength)
                     .speed(100.0)
                     .range(0.0..=1_000_000_000.0),
             );
@@ -79,18 +79,18 @@ pub fn spring_settings_ui(ui: &mut egui::Ui, config: &mut ControllerConfig) {
         ui.horizontal(|ui| {
             ui.label("Damping:");
             ui.add(
-                egui::DragValue::new(&mut config.spring_damping)
+                egui::DragValue::new(&mut config.spring.damping)
                     .speed(10.0)
                     .range(0.0..=1_000_000_000.0),
             );
         });
 
-        // spring_max_force is Option<f32>
-        let mut has_max_force = config.spring_max_force.is_some();
-        let mut max_force = config.spring_max_force.unwrap_or(3000.0);
+        // spring.max_force is Option<f32>
+        let mut has_max_force = config.spring.max_force.is_some();
+        let mut max_force = config.spring.max_force.unwrap_or(3000.0);
         ui.horizontal(|ui| {
             if ui.checkbox(&mut has_max_force, "Max Force:").changed() {
-                config.spring_max_force = if has_max_force { Some(max_force) } else { None };
+                config.spring.max_force = if has_max_force { Some(max_force) } else { None };
             }
             if has_max_force
                 && ui
@@ -101,16 +101,16 @@ pub fn spring_settings_ui(ui: &mut egui::Ui, config: &mut ControllerConfig) {
                     )
                     .changed()
                 {
-                    config.spring_max_force = Some(max_force);
+                    config.spring.max_force = Some(max_force);
                 }
         });
 
-        // spring_max_velocity is Option<f32>
-        let mut has_max_vel = config.spring_max_velocity.is_some();
-        let mut max_vel = config.spring_max_velocity.unwrap_or(100.0);
+        // spring.max_velocity is Option<f32>
+        let mut has_max_vel = config.spring.max_velocity.is_some();
+        let mut max_vel = config.spring.max_velocity.unwrap_or(100.0);
         ui.horizontal(|ui| {
             if ui.checkbox(&mut has_max_vel, "Max Velocity:").changed() {
-                config.spring_max_velocity = if has_max_vel { Some(max_vel) } else { None };
+                config.spring.max_velocity = if has_max_vel { Some(max_vel) } else { None };
             }
             if has_max_vel
                 && ui
@@ -121,7 +121,7 @@ pub fn spring_settings_ui(ui: &mut egui::Ui, config: &mut ControllerConfig) {
                     )
                     .changed()
                 {
-                    config.spring_max_velocity = Some(max_vel);
+                    config.spring.max_velocity = Some(max_vel);
                 }
         });
     });
@@ -133,7 +133,7 @@ pub fn movement_settings_ui(ui: &mut egui::Ui, config: &mut ControllerConfig) {
         ui.horizontal(|ui| {
             ui.label("Max Speed:");
             ui.add(
-                egui::DragValue::new(&mut config.max_speed)
+                egui::DragValue::new(&mut config.walking.max_speed)
                     .speed(1.0)
                     .range(0.0..=100_000.0),
             );
@@ -141,7 +141,7 @@ pub fn movement_settings_ui(ui: &mut egui::Ui, config: &mut ControllerConfig) {
         ui.horizontal(|ui| {
             ui.label("Acceleration:");
             ui.add(
-                egui::DragValue::new(&mut config.acceleration)
+                egui::DragValue::new(&mut config.walking.acceleration)
                     .speed(10.0)
                     .range(0.0..=100_000.0),
             );
@@ -149,7 +149,7 @@ pub fn movement_settings_ui(ui: &mut egui::Ui, config: &mut ControllerConfig) {
         ui.horizontal(|ui| {
             ui.label("Friction:");
             ui.add(
-                egui::DragValue::new(&mut config.friction)
+                egui::DragValue::new(&mut config.walking.friction)
                     .speed(0.005)
                     .range(0.0..=1.0),
             );
@@ -157,7 +157,7 @@ pub fn movement_settings_ui(ui: &mut egui::Ui, config: &mut ControllerConfig) {
         ui.horizontal(|ui| {
             ui.label("Air Control:");
             ui.add(
-                egui::DragValue::new(&mut config.air_control)
+                egui::DragValue::new(&mut config.walking.air_control)
                     .speed(0.01)
                     .range(0.0..=1.0),
             );
@@ -165,23 +165,23 @@ pub fn movement_settings_ui(ui: &mut egui::Ui, config: &mut ControllerConfig) {
         ui.horizontal(|ui| {
             ui.label("Air Friction:");
             ui.add(
-                egui::DragValue::new(&mut config.air_friction)
+                egui::DragValue::new(&mut config.walking.air_friction)
                     .speed(0.005)
                     .range(0.0..=1.0)
                     .fixed_decimals(3),
             );
         });
-        ui.checkbox(&mut config.wall_clinging, "Wall Clinging");
-        ui.add_enabled_ui(config.wall_clinging, |ui| {
+        ui.checkbox(&mut config.walking.wall_clinging, "Wall Clinging");
+        ui.add_enabled_ui(config.walking.wall_clinging, |ui| {
             ui.horizontal(|ui| {
                 ui.label("Dampening:");
                 ui.add(
-                    egui::DragValue::new(&mut config.wall_clinging_dampening)
+                    egui::DragValue::new(&mut config.walking.wall_clinging_dampening)
                         .speed(0.01)
                         .range(0.0..=1.0),
                 );
             });
-            ui.checkbox(&mut config.wall_clinging_dampen_upward, "Dampen Upward");
+            ui.checkbox(&mut config.walking.wall_clinging_dampen_upward, "Dampen Upward");
         });
     });
 }
@@ -192,7 +192,7 @@ pub fn flying_settings_ui(ui: &mut egui::Ui, config: &mut ControllerConfig) {
         ui.horizontal(|ui| {
             ui.label("Max Speed:");
             ui.add(
-                egui::DragValue::new(&mut config.fly_max_speed)
+                egui::DragValue::new(&mut config.flying.max_speed)
                     .speed(1.0)
                     .range(0.0..=100_000.0),
             );
@@ -200,7 +200,7 @@ pub fn flying_settings_ui(ui: &mut egui::Ui, config: &mut ControllerConfig) {
         ui.horizontal(|ui| {
             ui.label("Vertical Speed Ratio:");
             ui.add(
-                egui::Slider::new(&mut config.fly_vertical_speed_ratio, 0.0..=2.0)
+                egui::Slider::new(&mut config.flying.vertical_speed_ratio, 0.0..=2.0)
                     .fixed_decimals(2),
             );
         });
@@ -209,7 +209,7 @@ pub fn flying_settings_ui(ui: &mut egui::Ui, config: &mut ControllerConfig) {
         ui.horizontal(|ui| {
             ui.label("Acceleration:");
             ui.add(
-                egui::DragValue::new(&mut config.fly_acceleration)
+                egui::DragValue::new(&mut config.flying.acceleration)
                     .speed(10.0)
                     .range(0.0..=100_000.0),
             );
@@ -217,7 +217,7 @@ pub fn flying_settings_ui(ui: &mut egui::Ui, config: &mut ControllerConfig) {
         ui.horizontal(|ui| {
             ui.label("Vertical Accel Ratio:");
             ui.add(
-                egui::Slider::new(&mut config.fly_vertical_acceleration_ratio, 0.0..=2.0)
+                egui::Slider::new(&mut config.flying.vertical_acceleration_ratio, 0.0..=2.0)
                     .fixed_decimals(2),
             );
         });
@@ -226,7 +226,7 @@ pub fn flying_settings_ui(ui: &mut egui::Ui, config: &mut ControllerConfig) {
         ui.horizontal(|ui| {
             ui.label("Gravity Compensation:");
             ui.add(
-                egui::Slider::new(&mut config.fly_gravity_compensation, 0.0..=2.0)
+                egui::Slider::new(&mut config.flying.gravity_compensation, 0.0..=2.0)
                     .fixed_decimals(2),
             );
         });
@@ -237,7 +237,7 @@ pub fn flying_settings_ui(ui: &mut egui::Ui, config: &mut ControllerConfig) {
 /// Renders the slope settings collapsible section.
 pub fn slope_settings_ui(ui: &mut egui::Ui, config: &mut ControllerConfig) {
     ui.collapsing("Slope Settings", |ui| {
-        let mut angle_deg = config.max_slope_angle.to_degrees();
+        let mut angle_deg = config.walking.max_slope_angle.to_degrees();
         ui.horizontal(|ui| {
             ui.label("Max Slope Angle (deg):");
             if ui
@@ -248,13 +248,13 @@ pub fn slope_settings_ui(ui: &mut egui::Ui, config: &mut ControllerConfig) {
                 )
                 .changed()
             {
-                config.max_slope_angle = angle_deg.to_radians();
+                config.walking.max_slope_angle = angle_deg.to_radians();
             }
         });
         ui.horizontal(|ui| {
             ui.label("Uphill Gravity Mult:");
             ui.add(
-                egui::DragValue::new(&mut config.uphill_gravity_multiplier)
+                egui::DragValue::new(&mut config.walking.uphill_gravity_multiplier)
                     .speed(0.1)
                     .range(0.0..=10.0),
             );
@@ -268,7 +268,7 @@ pub fn sensor_settings_ui(ui: &mut egui::Ui, config: &mut ControllerConfig) {
         ui.horizontal(|ui| {
             ui.label("Ground Mult:");
             ui.add(
-                egui::DragValue::new(&mut config.ground_cast_multiplier)
+                egui::DragValue::new(&mut config.sensors.ground_cast_multiplier)
                     .speed(0.1)
                     .range(1.0..=20.0),
             );
@@ -276,7 +276,7 @@ pub fn sensor_settings_ui(ui: &mut egui::Ui, config: &mut ControllerConfig) {
         ui.horizontal(|ui| {
             ui.label("Ground Width:");
             ui.add(
-                egui::DragValue::new(&mut config.ground_cast_width)
+                egui::DragValue::new(&mut config.sensors.ground_cast_width)
                     .speed(0.1)
                     .range(0.0..=50.0),
             );
@@ -284,7 +284,7 @@ pub fn sensor_settings_ui(ui: &mut egui::Ui, config: &mut ControllerConfig) {
         ui.horizontal(|ui| {
             ui.label("Wall Mult:");
             ui.add(
-                egui::DragValue::new(&mut config.wall_cast_multiplier)
+                egui::DragValue::new(&mut config.sensors.wall_cast_multiplier)
                     .speed(0.1)
                     .range(0.0..=5.0),
             );
@@ -292,7 +292,7 @@ pub fn sensor_settings_ui(ui: &mut egui::Ui, config: &mut ControllerConfig) {
         ui.horizontal(|ui| {
             ui.label("Wall Height:");
             ui.add(
-                egui::DragValue::new(&mut config.wall_cast_height)
+                egui::DragValue::new(&mut config.sensors.wall_cast_height)
                     .speed(0.1)
                     .range(0.0..=50.0),
             );
@@ -300,7 +300,7 @@ pub fn sensor_settings_ui(ui: &mut egui::Ui, config: &mut ControllerConfig) {
         ui.horizontal(|ui| {
             ui.label("Ceiling Mult:");
             ui.add(
-                egui::DragValue::new(&mut config.ceiling_cast_multiplier)
+                egui::DragValue::new(&mut config.sensors.ceiling_cast_multiplier)
                     .speed(0.1)
                     .range(0.0..=10.0),
             );
@@ -308,7 +308,7 @@ pub fn sensor_settings_ui(ui: &mut egui::Ui, config: &mut ControllerConfig) {
         ui.horizontal(|ui| {
             ui.label("Ceiling Width:");
             ui.add(
-                egui::DragValue::new(&mut config.ceiling_cast_width)
+                egui::DragValue::new(&mut config.sensors.ceiling_cast_width)
                     .speed(0.1)
                     .range(0.0..=50.0),
             );
@@ -322,7 +322,7 @@ pub fn jump_settings_ui(ui: &mut egui::Ui, config: &mut ControllerConfig) {
         ui.horizontal(|ui| {
             ui.label("Speed:");
             ui.add(
-                egui::DragValue::new(&mut config.jump_speed)
+                egui::DragValue::new(&mut config.jumping.speed)
                     .speed(100.0)
                     .range(0.0..=1_000_000_000.0),
             );
@@ -330,7 +330,7 @@ pub fn jump_settings_ui(ui: &mut egui::Ui, config: &mut ControllerConfig) {
         ui.horizontal(|ui| {
             ui.label("Coyote Time:");
             ui.add(
-                egui::DragValue::new(&mut config.coyote_time)
+                egui::DragValue::new(&mut config.jumping.coyote_time)
                     .speed(0.01)
                     .range(0.0..=1.0),
             );
@@ -338,7 +338,7 @@ pub fn jump_settings_ui(ui: &mut egui::Ui, config: &mut ControllerConfig) {
         ui.horizontal(|ui| {
             ui.label("Buffer Time:");
             ui.add(
-                egui::DragValue::new(&mut config.jump_buffer_time)
+                egui::DragValue::new(&mut config.jumping.buffer_time)
                     .speed(0.01)
                     .range(0.0..=1.0),
             );
@@ -346,14 +346,14 @@ pub fn jump_settings_ui(ui: &mut egui::Ui, config: &mut ControllerConfig) {
         ui.horizontal(|ui| {
             ui.label("Fall Gravity:");
             ui.add(
-                egui::DragValue::new(&mut config.fall_gravity)
+                egui::DragValue::new(&mut config.jumping.fall_gravity)
                     .speed(0.1)
                     .range(0.0..=100.0),
             );
         });
 
         // Fall gravity duration (displayed in ms for user-friendliness)
-        let mut fall_gravity_ms = config.fall_gravity_duration * 1000.0;
+        let mut fall_gravity_ms = config.jumping.fall_gravity_duration * 1000.0;
         ui.horizontal(|ui| {
             ui.label("Fall Gravity Duration (ms):");
             if ui
@@ -364,7 +364,7 @@ pub fn jump_settings_ui(ui: &mut egui::Ui, config: &mut ControllerConfig) {
                 )
                 .changed()
             {
-                config.fall_gravity_duration = fall_gravity_ms / 1000.0;
+                config.jumping.fall_gravity_duration = fall_gravity_ms / 1000.0;
             }
         });
         ui.label("(how long extra gravity is applied)");
@@ -372,14 +372,14 @@ pub fn jump_settings_ui(ui: &mut egui::Ui, config: &mut ControllerConfig) {
         ui.horizontal(|ui| {
             ui.label("Spring Filter Duration:");
             ui.add(
-                egui::DragValue::new(&mut config.jump_spring_filter_duration)
+                egui::DragValue::new(&mut config.spring.jump_filter_duration)
                     .speed(0.01)
                     .range(0.0..=1.0),
             );
         });
 
         // Recently jumped duration (displayed in ms for user-friendliness)
-        let mut recently_jumped_ms = config.recently_jumped_duration * 1000.0;
+        let mut recently_jumped_ms = config.jumping.recently_jumped_duration * 1000.0;
         ui.horizontal(|ui| {
             ui.label("Recently Jumped (ms):");
             if ui
@@ -390,13 +390,13 @@ pub fn jump_settings_ui(ui: &mut egui::Ui, config: &mut ControllerConfig) {
                 )
                 .changed()
             {
-                config.recently_jumped_duration = recently_jumped_ms / 1000.0;
+                config.jumping.recently_jumped_duration = recently_jumped_ms / 1000.0;
             }
         });
         ui.label("(blocks fall gravity trigger)");
 
         // Max ascent duration (displayed in ms for user-friendliness)
-        let mut max_ascent_ms = config.jump_max_ascent_duration * 1000.0;
+        let mut max_ascent_ms = config.jumping.max_ascent_duration * 1000.0;
         ui.horizontal(|ui| {
             ui.label("Max Ascent (ms):");
             if ui
@@ -407,7 +407,7 @@ pub fn jump_settings_ui(ui: &mut egui::Ui, config: &mut ControllerConfig) {
                 )
                 .changed()
             {
-                config.jump_max_ascent_duration = max_ascent_ms / 1000.0;
+                config.jumping.max_ascent_duration = max_ascent_ms / 1000.0;
             }
         });
         ui.label("(forces fall gravity after duration, 0 = disabled)");
@@ -415,7 +415,7 @@ pub fn jump_settings_ui(ui: &mut egui::Ui, config: &mut ControllerConfig) {
         ui.horizontal(|ui| {
             ui.label("Upward Vel. Compensation:");
             ui.add(
-                egui::Slider::new(&mut config.jump_upward_velocity_compensation, 0.0..=1.0)
+                egui::Slider::new(&mut config.jumping.upward_velocity_compensation, 0.0..=1.0)
                     .fixed_decimals(2),
             );
         });
@@ -426,9 +426,9 @@ pub fn jump_settings_ui(ui: &mut egui::Ui, config: &mut ControllerConfig) {
 /// Renders the wall jump settings collapsible section.
 pub fn wall_jump_settings_ui(ui: &mut egui::Ui, config: &mut ControllerConfig) {
     ui.collapsing("Wall Jump Settings", |ui| {
-        ui.checkbox(&mut config.wall_jumping, "Enabled");
-        ui.add_enabled_ui(config.wall_jumping, |ui| {
-            let mut angle_deg = config.wall_jump_angle.to_degrees();
+        ui.checkbox(&mut config.wall_jumping.enabled, "Enabled");
+        ui.add_enabled_ui(config.wall_jumping.enabled, |ui| {
+            let mut angle_deg = config.wall_jumping.angle.to_degrees();
             ui.horizontal(|ui| {
                 ui.label("Angle (deg):");
                 if ui
@@ -439,13 +439,13 @@ pub fn wall_jump_settings_ui(ui: &mut egui::Ui, config: &mut ControllerConfig) {
                     )
                     .changed()
                 {
-                    config.wall_jump_angle = angle_deg.to_radians();
+                    config.wall_jumping.angle = angle_deg.to_radians();
                 }
             });
-            ui.label("(0° = straight up, 45° = diagonal)");
+            ui.label("(0\u{b0} = straight up, 45\u{b0} = diagonal)");
 
             // Wall jump movement block duration (displayed in ms for user-friendliness)
-            let mut block_duration_ms = config.wall_jump_movement_block_duration * 1000.0;
+            let mut block_duration_ms = config.wall_jumping.movement_block_duration * 1000.0;
             ui.horizontal(|ui| {
                 ui.label("Movement Block (ms):");
                 if ui
@@ -456,7 +456,7 @@ pub fn wall_jump_settings_ui(ui: &mut egui::Ui, config: &mut ControllerConfig) {
                     )
                     .changed()
                 {
-                    config.wall_jump_movement_block_duration = block_duration_ms / 1000.0;
+                    config.wall_jumping.movement_block_duration = block_duration_ms / 1000.0;
                 }
             });
             ui.label("(blocks movement toward wall after jump)");
@@ -464,13 +464,13 @@ pub fn wall_jump_settings_ui(ui: &mut egui::Ui, config: &mut ControllerConfig) {
             ui.horizontal(|ui| {
                 ui.label("Velocity Compensation:");
                 ui.add(
-                    egui::Slider::new(&mut config.wall_jump_velocity_compensation, 0.0..=1.0)
+                    egui::Slider::new(&mut config.wall_jumping.velocity_compensation, 0.0..=1.0)
                         .fixed_decimals(2),
                 );
             });
             ui.label("(0 = none, 1 = full downward velocity cancel)");
 
-            ui.checkbox(&mut config.wall_jump_retain_height, "Retain Height");
+            ui.checkbox(&mut config.wall_jumping.retain_height, "Retain Height");
             ui.label("(same jump height as ground, horizontal added free)");
         });
     });
@@ -479,11 +479,11 @@ pub fn wall_jump_settings_ui(ui: &mut egui::Ui, config: &mut ControllerConfig) {
 /// Renders the upright torque settings collapsible section.
 pub fn upright_torque_settings_ui(ui: &mut egui::Ui, config: &mut ControllerConfig) {
     ui.collapsing("Upright Torque Settings", |ui| {
-        ui.checkbox(&mut config.upright_torque_enabled, "Enabled");
+        ui.checkbox(&mut config.upright.enabled, "Enabled");
         ui.horizontal(|ui| {
             ui.label("Torque Strength:");
             ui.add(
-                egui::DragValue::new(&mut config.upright_torque_strength)
+                egui::DragValue::new(&mut config.upright.strength)
                     .speed(10.0)
                     .range(0.0..=1_000_000.0),
             );
@@ -491,17 +491,17 @@ pub fn upright_torque_settings_ui(ui: &mut egui::Ui, config: &mut ControllerConf
         ui.horizontal(|ui| {
             ui.label("Torque Damping:");
             ui.add(
-                egui::DragValue::new(&mut config.upright_torque_damping)
+                egui::DragValue::new(&mut config.upright.damping)
                     .speed(1.0)
                     .range(0.0..=1_000_000.0),
             );
         });
-        // upright_target_angle is Option<f32> - handle separately
-        let mut has_target = config.upright_target_angle.is_some();
-        let mut target_deg = config.upright_target_angle.unwrap_or(0.0).to_degrees();
+        // upright.target_angle is Option<f32> - handle separately
+        let mut has_target = config.upright.target_angle.is_some();
+        let mut target_deg = config.upright.target_angle.unwrap_or(0.0).to_degrees();
         ui.horizontal(|ui| {
             if ui.checkbox(&mut has_target, "Target Angle:").changed() {
-                config.upright_target_angle = if has_target {
+                config.upright.target_angle = if has_target {
                     Some(target_deg.to_radians())
                 } else {
                     None
@@ -516,16 +516,16 @@ pub fn upright_torque_settings_ui(ui: &mut egui::Ui, config: &mut ControllerConf
                     )
                     .changed()
                 {
-                    config.upright_target_angle = Some(target_deg.to_radians());
+                    config.upright.target_angle = Some(target_deg.to_radians());
                 }
         });
 
-        // upright_max_torque is Option<f32>
-        let mut has_max_torque = config.upright_max_torque.is_some();
-        let mut max_torque = config.upright_max_torque.unwrap_or(1_000_000.0);
+        // upright.max_torque is Option<f32>
+        let mut has_max_torque = config.upright.max_torque.is_some();
+        let mut max_torque = config.upright.max_torque.unwrap_or(1_000_000.0);
         ui.horizontal(|ui| {
             if ui.checkbox(&mut has_max_torque, "Max Torque:").changed() {
-                config.upright_max_torque = if has_max_torque {
+                config.upright.max_torque = if has_max_torque {
                     Some(max_torque)
                 } else {
                     None
@@ -540,16 +540,16 @@ pub fn upright_torque_settings_ui(ui: &mut egui::Ui, config: &mut ControllerConf
                     )
                     .changed()
                 {
-                    config.upright_max_torque = Some(max_torque);
+                    config.upright.max_torque = Some(max_torque);
                 }
         });
 
-        // upright_max_angular_velocity is Option<f32>
-        let mut has_max_vel = config.upright_max_angular_velocity.is_some();
-        let mut max_vel = config.upright_max_angular_velocity.unwrap_or(10.0);
+        // upright.max_angular_velocity is Option<f32>
+        let mut has_max_vel = config.upright.max_angular_velocity.is_some();
+        let mut max_vel = config.upright.max_angular_velocity.unwrap_or(10.0);
         ui.horizontal(|ui| {
             if ui.checkbox(&mut has_max_vel, "Max Angular Vel:").changed() {
-                config.upright_max_angular_velocity =
+                config.upright.max_angular_velocity =
                     if has_max_vel { Some(max_vel) } else { None };
             }
             if has_max_vel
@@ -561,7 +561,7 @@ pub fn upright_torque_settings_ui(ui: &mut egui::Ui, config: &mut ControllerConf
                     )
                     .changed()
                 {
-                    config.upright_max_angular_velocity = Some(max_vel);
+                    config.upright.max_angular_velocity = Some(max_vel);
                 }
         });
     });

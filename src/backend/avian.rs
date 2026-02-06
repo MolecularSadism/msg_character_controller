@@ -358,7 +358,7 @@ pub fn spawn_ground_caster(
     character: Entity,
     config: &ControllerConfig,
 ) {
-    let half_width = config.ground_cast_width / 2.0;
+    let half_width = config.sensors.ground_cast_width / 2.0;
 
     let child = commands.spawn((
         Name::new("GroundCaster"),
@@ -398,7 +398,7 @@ pub fn spawn_left_wall_caster(
     character: Entity,
     config: &ControllerConfig,
 ) {
-    let half_height = config.wall_cast_height / 2.0;
+    let half_height = config.sensors.wall_cast_height / 2.0;
     let child = commands.spawn((
         LeftWallCaster,
         CasterOfCharacter(character), // Relationship: belongs to this character
@@ -436,7 +436,7 @@ pub fn spawn_right_wall_caster(
     character: Entity,
     config: &ControllerConfig,
 ) {
-    let half_height = config.wall_cast_height / 2.0;
+    let half_height = config.sensors.wall_cast_height / 2.0;
     let child = commands.spawn((
         RightWallCaster,
         CasterOfCharacter(character), // Relationship: belongs to this character
@@ -490,7 +490,7 @@ pub fn spawn_ceiling_caster(
     character: Entity,
     config: &ControllerConfig,
 ) {
-    let half_width = config.ceiling_cast_width / 2.0;
+    let half_width = config.sensors.ceiling_cast_width / 2.0;
     let child = commands.spawn((
         CeilingCaster,
         CasterOfCharacter(character), // Relationship: belongs to this character
@@ -597,7 +597,7 @@ fn update_ground_caster_direction(
 
         // Update max_distance to cover riding_height + grounding_distance + buffer
         let riding_height = controller.riding_height(config);
-        shape_caster.max_distance = riding_height + config.grounding_distance + 1.0;
+        shape_caster.max_distance = riding_height + config.floating.grounding_distance + 1.0;
 
         // Inherit collision layers from parent
         if let Some(layers) = collision_layers {
@@ -636,7 +636,7 @@ fn update_wall_caster_directions(
 
         // Update max_distance: surface_detection_distance + radius + buffer
         let radius = collider.map_or(0.0, get_collider_radius);
-        shape_caster.max_distance = config.surface_detection_distance + radius + 1.0;
+        shape_caster.max_distance = config.floating.surface_detection_distance + radius + 1.0;
 
         // Inherit collision layers from parent
         if let Some(layers) = collision_layers {
@@ -662,7 +662,7 @@ fn update_wall_caster_directions(
 
         // Update max_distance: surface_detection_distance + radius + buffer
         let radius = collider.map_or(0.0, get_collider_radius);
-        shape_caster.max_distance = config.surface_detection_distance + radius + 1.0;
+        shape_caster.max_distance = config.floating.surface_detection_distance + radius + 1.0;
 
         // Inherit collision layers from parent
         if let Some(layers) = collision_layers {
@@ -695,7 +695,7 @@ fn update_ceiling_caster_direction(
         shape_caster.shape_rotation = 0.0;
 
         // Update max_distance: surface_detection_distance + capsule_half_height + buffer
-        shape_caster.max_distance = config.surface_detection_distance + controller.capsule_half_height() + 1.0;
+        shape_caster.max_distance = config.floating.surface_detection_distance + controller.capsule_half_height() + 1.0;
 
         // Inherit collision layers from parent
         if let Some(layers) = collision_layers {
@@ -1217,7 +1217,7 @@ pub fn avian_apply_fall_gravity(
 ) {
     for (mut forces, mut controller, config, intent) in &mut query {
         // Only process airborne entities with fall_gravity > 1.0
-        if controller.is_grounded(config) || config.fall_gravity <= 1.0 {
+        if controller.is_grounded(config) || config.jumping.fall_gravity <= 1.0 {
             continue;
         }
 
@@ -1231,7 +1231,7 @@ pub fn avian_apply_fall_gravity(
 
         // Trigger fall gravity if conditions are met
         if should_trigger && !controller.fall_gravity_active() {
-            controller.trigger_fall_gravity(config.fall_gravity_duration);
+            controller.trigger_fall_gravity(config.jumping.fall_gravity_duration);
         }
 
         // Apply fall gravity if the timer is active
@@ -1240,7 +1240,7 @@ pub fn avian_apply_fall_gravity(
             // The regular gravity system applies: gravity
             // We want to add: gravity * (fall_gravity - 1)
             // This way total becomes: gravity * fall_gravity
-            let fall_multiplier = config.fall_gravity - 1.0;
+            let fall_multiplier = config.jumping.fall_gravity - 1.0;
             forces.apply_linear_acceleration(controller.gravity * fall_multiplier);
         }
     }

@@ -79,7 +79,7 @@ fn spawn_character_with_config(app: &mut App, position: Vec2, config: Controller
         .id();
 
     // Spawn ground caster as direct child of character
-    let half_width = config.ground_cast_width / 2.0;
+    let half_width = config.sensors.ground_cast_width / 2.0;
     let ground_child = world.spawn((
         GroundCaster,
         CasterOfCharacter(entity),
@@ -98,7 +98,7 @@ fn spawn_character_with_config(app: &mut App, position: Vec2, config: Controller
     world.entity_mut(entity).add_child(ground_child);
 
     // Spawn left wall caster as direct child of character
-    let wall_half_height = config.wall_cast_height / 2.0;
+    let wall_half_height = config.sensors.wall_cast_height / 2.0;
     let left_wall_child = world.spawn((
         LeftWallCaster,
         CasterOfCharacter(entity),
@@ -135,7 +135,7 @@ fn spawn_character_with_config(app: &mut App, position: Vec2, config: Controller
     world.entity_mut(entity).add_child(right_wall_child);
 
     // Spawn ceiling caster as direct child of character
-    let ceiling_half_width = config.ceiling_cast_width / 2.0;
+    let ceiling_half_width = config.sensors.ceiling_cast_width / 2.0;
     let ceiling_child = world.spawn((
         CeilingCaster,
         CasterOfCharacter(entity),
@@ -224,7 +224,7 @@ fn spawn_character_with_gravity(app: &mut App, position: Vec2, gravity: Vec2) ->
         .id();
 
     // Spawn ground caster as direct child of character
-    let half_width = config.ground_cast_width / 2.0;
+    let half_width = config.sensors.ground_cast_width / 2.0;
     let ground_child = world.spawn((
         GroundCaster,
         CasterOfCharacter(entity),
@@ -243,7 +243,7 @@ fn spawn_character_with_gravity(app: &mut App, position: Vec2, gravity: Vec2) ->
     world.entity_mut(entity).add_child(ground_child);
 
     // Spawn left wall caster as direct child of character
-    let wall_half_height = config.wall_cast_height / 2.0;
+    let wall_half_height = config.sensors.wall_cast_height / 2.0;
     let left_wall_child = world.spawn((
         LeftWallCaster,
         CasterOfCharacter(entity),
@@ -280,7 +280,7 @@ fn spawn_character_with_gravity(app: &mut App, position: Vec2, gravity: Vec2) ->
     world.entity_mut(entity).add_child(right_wall_child);
 
     // Spawn ceiling caster as direct child of character
-    let ceiling_half_width = config.ceiling_cast_width / 2.0;
+    let ceiling_half_width = config.sensors.ceiling_cast_width / 2.0;
     let ceiling_child = world.spawn((
         CeilingCaster,
         CasterOfCharacter(entity),
@@ -405,7 +405,7 @@ mod ground_detection {
         );
 
         // PROOF: ground_distance should be less than character height
-        let ground_dist = controller.ground_distance().expect("Ground should have distance");
+        let ground_dist = controller.ground_distance();
         assert!(
             ground_dist < 20.0,
             "Ground distance should be less than character height: {ground_dist}"
@@ -443,7 +443,7 @@ mod ground_detection {
             "PROOF: is_grounded={}, ground_distance={:?}, riding_height+grounding_distance={}",
             controller.is_grounded(cfg),
             controller.ground_distance(),
-            controller.riding_height(cfg) + cfg.grounding_distance
+            controller.riding_height(cfg) + cfg.floating.grounding_distance
         );
 
         // PROOF: is_grounded should be true when within riding_height + grounding_distance
@@ -551,7 +551,7 @@ mod float_height {
         );
 
         // PROOF 2: Character should be floating above ground (not resting on it)
-        let ground_dist = controller.ground_distance().expect("Ground should be detected");
+        let ground_dist = controller.ground_distance();
         let capsule_bottom = transform.translation.y - controller.capsule_half_height();
         let ground_surface = 5.0; // Ground top surface at y=5
 
@@ -1152,7 +1152,7 @@ mod movement {
         // PROOF 3: Jump configuration should be properly set
         let (jump_speed, coyote_time) = {
             let cfg = app.world().get::<ControllerConfig>(character).unwrap();
-            (cfg.jump_speed, cfg.coyote_time)
+            (cfg.jumping.speed, cfg.jumping.coyote_time)
         };
         assert_relative_eq!(jump_speed, 90.0);
         assert_relative_eq!(coyote_time, 0.15);
@@ -1335,7 +1335,7 @@ mod collision_layers {
                 .id();
 
             // Spawn ground caster child
-            let half_width = config.ground_cast_width / 2.0;
+            let half_width = config.sensors.ground_cast_width / 2.0;
             let child = world.spawn((
                 GroundCaster,
                 CasterOfCharacter(entity),
@@ -1374,7 +1374,7 @@ mod collision_layers {
                 .id();
 
             // Spawn ground caster child
-            let half_width = config.ground_cast_width / 2.0;
+            let half_width = config.sensors.ground_cast_width / 2.0;
             let child = world.spawn((
                 GroundCaster,
                 CasterOfCharacter(entity),
@@ -1457,7 +1457,7 @@ mod collision_layers {
                 .id();
 
             // Spawn ground caster child
-            let half_width = config.ground_cast_width / 2.0;
+            let half_width = config.sensors.ground_cast_width / 2.0;
             let child = world.spawn((
                 GroundCaster,
                 CasterOfCharacter(entity),
@@ -1495,7 +1495,7 @@ mod collision_layers {
                 .id();
 
             // Spawn ground caster child
-            let half_width = config.ground_cast_width / 2.0;
+            let half_width = config.sensors.ground_cast_width / 2.0;
             let child = world.spawn((
                 GroundCaster,
                 CasterOfCharacter(entity),

@@ -207,7 +207,7 @@ fn debug_floating(
         gap_from_ground,
         velocity.linvel.y,
         controller.ground_detected(),
-        controller.ground_distance().unwrap_or(f32::INFINITY),
+        controller.ground_distance(),
         grounded_str,
         gap_from_ground
     );
@@ -271,7 +271,7 @@ fn debug_floating(
         gap_from_ground,
         velocity.0.y,
         controller.ground_detected(),
-        controller.ground_distance().unwrap_or(f32::INFINITY),
+        controller.ground_distance(),
         grounded_str,
         gap_from_ground
     );
