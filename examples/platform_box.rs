@@ -204,7 +204,7 @@ fn spawn_obstacles(
     );
 
     for i in 0..=5 {
-        let i_f32 = f32::from(i);
+        let i_f32 = i as f32;
         spawn_static_ball(
             commands,
             meshes,
@@ -216,7 +216,7 @@ fn spawn_obstacles(
     }
 
     for i in 0..=5 {
-        let i_f32 = f32::from(i);
+        let i_f32 = i as f32;
         spawn_static_ball(
             commands,
             meshes,
@@ -231,7 +231,7 @@ fn spawn_obstacles(
     }
 
     for i in 0..=5 {
-        let i_f32 = f32::from(i);
+        let i_f32 = i as f32;
         spawn_static_ball(
             commands,
             meshes,

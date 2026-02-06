@@ -47,7 +47,7 @@ pub fn process_jump_state(mut query: Query<(&mut MovementIntent, &ControllerConf
         // Detect rising edge: pressed this frame but not last frame
         if intent.jump_pressed && !intent.jump_pressed_prev {
             // Create a new jump request with the configured buffer time
-            intent.request_jump(config.jump_buffer_time);
+            intent.request_jump(config.jumping.buffer_time);
         }
 
         // Update previous state for next frame's edge detection
@@ -103,12 +103,12 @@ pub fn update_timers(
     for (mut controller, config) in &mut query {
         // Check if we have valid contact for coyote time
         let is_grounded = controller.is_grounded(config);
-        let has_wall_contact = config.wall_jumping && controller.touching_wall();
+        let has_wall_contact = config.wall_jumping.enabled && controller.touching_wall();
 
         // Reset coyote timer when we have any valid contact
         // BUT not if we recently jumped (prevents coyote time from being granted after a jump)
         if (is_grounded || has_wall_contact) && !controller.recently_jumped() {
-            controller.reset_coyote_timer(config.coyote_time);
+            controller.reset_coyote_timer(config.jumping.coyote_time);
         } else {
             controller.tick_coyote_timer(delta);
         }
@@ -155,7 +155,7 @@ pub fn update_jump_type(mut query: Query<(&mut CharacterController, &ControllerC
         }
 
         // Check wall contact (only if wall jumping is enabled)
-        if config.wall_jumping {
+        if config.wall_jumping.enabled {
             let touching_left = controller.touching_left_wall();
             let touching_right = controller.touching_right_wall();
 
@@ -199,13 +199,13 @@ pub fn evaluate_intent<B: CharacterPhysicsBackend>(
         // Expired requests are already removed by expire_jump_requests
         // Can jump if: grounded, touching wall (with wall jumping), or within coyote time
         let has_contact =
-            controller.is_grounded(config) || (config.wall_jumping && controller.touching_wall());
+            controller.is_grounded(config) || (config.wall_jumping.enabled && controller.touching_wall());
         let can_jump = has_contact || controller.in_coyote_time();
 
         // For wall jumps via coyote time, also check that last_jump_type is a wall type
         let valid_jump_type = match controller.last_jump_type {
             JumpType::Ground => true,
-            JumpType::LeftWall | JumpType::RightWall => config.wall_jumping,
+            JumpType::LeftWall | JumpType::RightWall => config.wall_jumping.enabled,
         };
 
         let intends_jump = intent.jump_request.is_some() && can_jump && valid_jump_type;
@@ -268,7 +268,7 @@ pub fn accumulate_spring_force<B: CharacterPhysicsBackend>(world: &mut World) {
         // and the ground caster points at a steep/vertical surface
         // The slope_angle is calculated using the absolute surface normal vs ideal_up (gravity),
         // not relative to the actor's rotation
-        if controller.slope_angle > config.max_slope_angle {
+        if controller.slope_angle > config.walking.max_slope_angle {
             continue;
         }
 
@@ -290,7 +290,7 @@ pub fn accumulate_spring_force<B: CharacterPhysicsBackend>(world: &mut World) {
 
         // Only apply spring within active range, unless filtering
         // During filtering, we still process the spring but filter downward forces
-        let max_range = target_height + config.grounding_distance;
+        let max_range = target_height + config.floating.grounding_distance;
 
         if current_height > max_range && !should_filter_downward {
             // Above max range and not filtering - skip spring entirely
@@ -304,7 +304,7 @@ pub fn accumulate_spring_force<B: CharacterPhysicsBackend>(world: &mut World) {
 
         // Check if already moving toward target fast enough (velocity clamp).
         // If moving in the correct direction at or above max velocity, skip force application.
-        if let Some(max_vel) = config.spring_max_velocity {
+        if let Some(max_vel) = config.spring.max_velocity {
             // Positive displacement means we need positive velocity (upward) to correct
             let moving_toward_target = (displacement > 0.0 && vertical_velocity > 0.0)
                 || (displacement < 0.0 && vertical_velocity < 0.0);
@@ -321,8 +321,8 @@ pub fn accumulate_spring_force<B: CharacterPhysicsBackend>(world: &mut World) {
             continue;
         }
 
-        let mut spring_force = (config.spring_strength * displacement
-            - config.spring_damping * vertical_velocity)
+        let mut spring_force = (config.spring.strength * displacement
+            - config.spring.damping * vertical_velocity)
             * mass;
 
         // Apply grounding_strength multiplier when character is slightly above target
@@ -332,22 +332,22 @@ pub fn accumulate_spring_force<B: CharacterPhysicsBackend>(world: &mut World) {
         // -displacement gives the height above target
         let height_above_target = -displacement;
         if displacement < 0.0
-            && height_above_target <= config.grounding_distance
+            && height_above_target <= config.floating.grounding_distance
             && spring_force < 0.0
         {
-            spring_force *= config.grounding_strength;
+            spring_force *= config.floating.grounding_strength;
         }
 
         // Clamp spring force to configured max, or use formula-based fallback.
         // The fallback prevents overflow when entering the spring zone at high velocity.
         let gravity_magnitude = controller.gravity.length();
         let max_spring_force = config
-            .spring_max_force
+            .spring.max_force
             .map_or_else(|| {
                 // Fallback: maximum based on counteracting gravity force plus reasonable acceleration.
                 // F = m * g, so max force = m * g * 3 + spring contribution
                 gravity_magnitude * mass * 3.0
-                    + config.spring_strength * config.grounding_distance * mass
+                    + config.spring.strength * config.floating.grounding_distance * mass
             }, |f| f * mass);
         let clamped_spring_force = spring_force.clamp(-max_spring_force, max_spring_force);
 
@@ -409,7 +409,7 @@ pub fn accumulate_stair_climb_force<B: CharacterPhysicsBackend>(world: &mut Worl
 
         // Check if a step is detected that requires climbing
         let should_climb = controller.step_detected
-            && controller.step_height > config.float_height + stair_config.stair_tolerance
+            && controller.step_height > config.floating.float_height + stair_config.stair_tolerance
             && controller.step_height <= stair_config.max_climb_height;
 
         if should_climb {
@@ -430,10 +430,10 @@ pub fn accumulate_stair_climb_force<B: CharacterPhysicsBackend>(world: &mut Worl
 
             // Calculate max spring force (same formula as floating spring system)
             let max_spring_force = config
-                .spring_max_force
+                .spring.max_force
                 .map_or_else(|| {
                     gravity_magnitude * mass * 3.0
-                        + config.spring_strength * config.grounding_distance * mass
+                        + config.spring.strength * config.floating.grounding_distance * mass
                 }, |f| f * mass);
 
             let climb_force = up * max_spring_force * stair_config.climb_force_multiplier;
@@ -517,7 +517,7 @@ pub fn apply_fall_gravity<B: CharacterPhysicsBackend>(world: &mut World) {
         .iter(world)
         .filter(|(_, config, controller, _)| {
             // Only process airborne entities with fall_gravity > 1.0
-            !controller.is_grounded(config) && config.fall_gravity > 1.0
+            !controller.is_grounded(config) && config.jumping.fall_gravity > 1.0
         })
         .map(|(e, config, controller, intent)| {
             // Check if jump button is pressed (player wants full jump height)
@@ -547,7 +547,7 @@ pub fn apply_fall_gravity<B: CharacterPhysicsBackend>(world: &mut World) {
         // Trigger fall gravity if conditions are met
         if should_trigger && !controller.fall_gravity_active() {
             if let Some(mut ctrl) = world.get_mut::<CharacterController>(entity) {
-                ctrl.trigger_fall_gravity(config.fall_gravity_duration);
+                ctrl.trigger_fall_gravity(config.jumping.fall_gravity_duration);
             }
         }
 
@@ -569,7 +569,7 @@ pub fn apply_fall_gravity<B: CharacterPhysicsBackend>(world: &mut World) {
                 // Skip if mass is invalid (entity may be despawned or not yet initialized)
                 continue;
             }
-            let fall_multiplier = config.fall_gravity - 1.0;
+            let fall_multiplier = config.jumping.fall_gravity - 1.0;
             let fall_gravity_impulse = controller.gravity * mass * dt * fall_multiplier;
             B::apply_impulse(world, entity, fall_gravity_impulse);
         }
@@ -603,8 +603,8 @@ pub fn apply_wall_clinging_dampening<B: CharacterPhysicsBackend>(world: &mut Wor
         .iter(world)
         .filter(|(_, config, controller, _)| {
             // Only process entities with wall clinging enabled and non-zero dampening
-            config.wall_clinging
-                && config.wall_clinging_dampening > 0.0
+            config.walking.wall_clinging
+                && config.walking.wall_clinging_dampening > 0.0
                 && controller.touching_wall()
         })
         .map(|(e, config, controller, intent)| (e, *config, controller.clone(), intent.clone()))
@@ -668,7 +668,7 @@ pub fn apply_wall_clinging_dampening<B: CharacterPhysicsBackend>(world: &mut Wor
         let down_velocity = velocity.dot(wall_down);
 
         // Calculate dampening factor
-        let dampening_factor = config.wall_clinging_dampening;
+        let dampening_factor = config.walking.wall_clinging_dampening;
 
         // Apply dampening based on movement direction along wall
         if down_velocity > 0.0 {
@@ -680,7 +680,7 @@ pub fn apply_wall_clinging_dampening<B: CharacterPhysicsBackend>(world: &mut Wor
             let dampening_impulse = -wall_down * velocity_reduction * mass;
 
             B::apply_impulse(world, entity, dampening_impulse);
-        } else if down_velocity < 0.0 && config.wall_clinging_dampen_upward {
+        } else if down_velocity < 0.0 && config.walking.wall_clinging_dampen_upward {
             // Moving upward along wall - only dampen if enabled
             // This creates a stickier wall cling effect
             let up_velocity = -down_velocity; // Make positive for calculation
@@ -731,7 +731,7 @@ pub fn apply_walk<B: CharacterPhysicsBackend>(world: &mut World) {
 
         // Check for wall clinging rejection
         let effective_walk = intent.effective_walk();
-        let wall_cling_blocked = !config.wall_clinging
+        let wall_cling_blocked = !config.walking.wall_clinging
             && ((effective_walk > 0.0 && controller.touching_right_wall())
                 || (effective_walk < 0.0 && controller.touching_left_wall()));
 
@@ -748,18 +748,18 @@ pub fn apply_walk<B: CharacterPhysicsBackend>(world: &mut World) {
         let desired_walk_speed = if walk_blocked {
             0.0
         } else {
-            effective_walk * config.max_speed
+            effective_walk * config.walking.max_speed
         };
         let walk_accel = if is_grounded {
-            config.acceleration
+            config.walking.acceleration
         } else {
-            config.acceleration * config.air_control
+            config.walking.acceleration * config.walking.air_control
         };
 
         if is_grounded && controller.ground_detected() {
             // GROUNDED: Move along slope surface using forces
             // Clamp the slope tangent to respect max_slope_angle
-            let slope_tangent = if controller.slope_angle <= config.max_slope_angle {
+            let slope_tangent = if controller.slope_angle <= config.walking.max_slope_angle {
                 // Within max slope angle, use actual slope tangent
                 controller.ground_tangent()
             } else {
@@ -776,8 +776,8 @@ pub fn apply_walk<B: CharacterPhysicsBackend>(world: &mut World) {
                 };
 
                 // Rotate ideal_right by max_slope_angle in the tilt direction
-                let cos_a = config.max_slope_angle.cos();
-                let sin_a = config.max_slope_angle.sin() * slope_tilt_sign;
+                let cos_a = config.walking.max_slope_angle.cos();
+                let sin_a = config.walking.max_slope_angle.sin() * slope_tilt_sign;
 
                 // Compute clamped tangent: right rotated by max_slope_angle in the (right, up) plane
                 Vec2::new(
@@ -800,7 +800,7 @@ pub fn apply_walk<B: CharacterPhysicsBackend>(world: &mut World) {
             let friction_factor = if walking_forward {
                 1.0
             } else {
-                1.0 - config.friction
+                1.0 - config.walking.friction
             };
             let new_slope_speed = (current_slope_speed + change) * friction_factor;
             let slope_velocity_delta = new_slope_speed - current_slope_speed;
@@ -838,7 +838,7 @@ pub fn apply_walk<B: CharacterPhysicsBackend>(world: &mut World) {
                 let friction_factor = if walking_forward {
                     1.0
                 } else {
-                    1.0 - config.air_friction
+                    1.0 - config.walking.air_friction
                 };
                 let new_horizontal = (current_horizontal + change) * friction_factor;
                 let horizontal_delta = new_horizontal - current_horizontal;
@@ -846,9 +846,9 @@ pub fn apply_walk<B: CharacterPhysicsBackend>(world: &mut World) {
                 // Apply impulse along right axis: I = m * dv
                 let walk_impulse = right * horizontal_delta * mass;
                 B::apply_impulse(world, entity, walk_impulse);
-            } else if config.air_friction > 0.0 && current_horizontal.abs() > 0.001 {
+            } else if config.walking.air_friction > 0.0 && current_horizontal.abs() > 0.001 {
                 // Not walking - apply air friction to slow down horizontal movement
-                let friction_factor = 1.0 - config.air_friction;
+                let friction_factor = 1.0 - config.walking.air_friction;
                 let new_horizontal = current_horizontal * friction_factor;
                 let horizontal_delta = new_horizontal - current_horizontal;
 
@@ -913,7 +913,7 @@ pub fn apply_fly<B: CharacterPhysicsBackend>(world: &mut World) {
             let current_vertical = current_velocity.dot(up);
 
             // Apply vertical speed ratio to the target speed
-            let vertical_max_speed = config.fly_max_speed * config.fly_vertical_speed_ratio;
+            let vertical_max_speed = config.flying.max_speed * config.flying.vertical_speed_ratio;
             let desired_vertical = intent.effective_fly() * vertical_max_speed;
 
             // When flying down: stop propulsion at max speed but don't counteract gravity
@@ -924,11 +924,11 @@ pub fn apply_fly<B: CharacterPhysicsBackend>(world: &mut World) {
             if should_apply_downward {
                 // Use fly_acceleration with vertical ratio as base
                 let mut fly_accel =
-                    config.fly_acceleration * config.fly_vertical_acceleration_ratio;
+                    config.flying.acceleration * config.flying.vertical_acceleration_ratio;
 
                 // Boost upward propulsion by gravity based on compensation setting
                 if fly_direction > 0.0 {
-                    fly_accel += controller.gravity.length() * config.fly_gravity_compensation;
+                    fly_accel += controller.gravity.length() * config.flying.gravity_compensation;
                 }
 
                 // Calculate velocity change toward target, clamped by max acceleration
@@ -943,7 +943,7 @@ pub fn apply_fly<B: CharacterPhysicsBackend>(world: &mut World) {
                 // Record upward propulsion when actively flying up
                 if fly_direction > 0.0 && change > 0.0 {
                     if let Some(mut controller) = world.get_mut::<CharacterController>(entity) {
-                        controller.record_upward_propulsion(config.jump_spring_filter_duration);
+                        controller.record_upward_propulsion(config.spring.jump_filter_duration);
                     }
                 }
             }
@@ -952,10 +952,10 @@ pub fn apply_fly<B: CharacterPhysicsBackend>(world: &mut World) {
         // === HORIZONTAL FLYING ===
         if intent.is_flying_horizontal() {
             let current_horizontal = current_velocity.dot(right);
-            let desired_horizontal = intent.effective_fly_horizontal() * config.fly_max_speed;
+            let desired_horizontal = intent.effective_fly_horizontal() * config.flying.max_speed;
 
             // Use fly_acceleration for horizontal flying
-            let fly_accel = config.fly_acceleration;
+            let fly_accel = config.flying.acceleration;
 
             // Calculate velocity change toward target, clamped by max acceleration
             let velocity_diff = desired_horizontal - current_horizontal;
@@ -968,9 +968,9 @@ pub fn apply_fly<B: CharacterPhysicsBackend>(world: &mut World) {
             let friction_factor = if flying_forward {
                 1.0
             } else if is_grounded {
-                1.0 - config.friction
+                1.0 - config.walking.friction
             } else {
-                1.0 - config.air_friction
+                1.0 - config.walking.air_friction
             };
 
             let new_horizontal = (current_horizontal + change) * friction_factor;
@@ -1015,13 +1015,13 @@ pub fn apply_jump<B: CharacterPhysicsBackend>(world: &mut World) {
 
             // Can jump if: grounded, touching wall (with wall jumping), or within coyote time
             let has_contact = controller.is_grounded(config)
-                || (config.wall_jumping && controller.touching_wall());
+                || (config.wall_jumping.enabled && controller.touching_wall());
             let can_jump = has_contact || controller.in_coyote_time();
 
             // For wall jumps via coyote time, also check that last_jump_type is valid
             let valid_jump_type = match controller.last_jump_type {
                 JumpType::Ground => true,
-                JumpType::LeftWall | JumpType::RightWall => config.wall_jumping,
+                JumpType::LeftWall | JumpType::RightWall => config.wall_jumping.enabled,
             };
 
             if can_jump && valid_jump_type {
@@ -1047,15 +1047,15 @@ pub fn apply_jump<B: CharacterPhysicsBackend>(world: &mut World) {
             JumpType::LeftWall => {
                 // Wall jump from left wall: jump up-right (away from wall)
                 let up = controller.ideal_up();
-                if config.wall_jump_retain_height {
+                if config.wall_jumping.retain_height {
                     // Retain height mode: same vertical as ground jump, add horizontal for angle
                     // The horizontal component is added "for free" on top of the full upward impulse
-                    let horizontal = config.wall_jump_angle.tan();
+                    let horizontal = config.wall_jumping.angle.tan();
                     let right = Vec2::new(up.y, -up.x); // 90° clockwise from up
                     up + right * horizontal
                 } else {
                     // Classic rotation mode: rotate ideal_up by wall_jump_angle clockwise
-                    let angle = -config.wall_jump_angle; // Negative to rotate clockwise
+                    let angle = -config.wall_jumping.angle; // Negative to rotate clockwise
                     let cos_a = angle.cos();
                     let sin_a = angle.sin();
                     Vec2::new(up.x * cos_a - up.y * sin_a, up.x * sin_a + up.y * cos_a).normalize()
@@ -1064,15 +1064,15 @@ pub fn apply_jump<B: CharacterPhysicsBackend>(world: &mut World) {
             JumpType::RightWall => {
                 // Wall jump from right wall: jump up-left (away from wall)
                 let up = controller.ideal_up();
-                if config.wall_jump_retain_height {
+                if config.wall_jumping.retain_height {
                     // Retain height mode: same vertical as ground jump, add horizontal for angle
                     // The horizontal component is added "for free" on top of the full upward impulse
-                    let horizontal = config.wall_jump_angle.tan();
+                    let horizontal = config.wall_jumping.angle.tan();
                     let right = Vec2::new(up.y, -up.x); // 90° clockwise from up
                     up - right * horizontal // Subtract right = add left
                 } else {
                     // Classic rotation mode: rotate ideal_up by wall_jump_angle counter-clockwise
-                    let angle = config.wall_jump_angle; // Positive to rotate counter-clockwise
+                    let angle = config.wall_jumping.angle; // Positive to rotate counter-clockwise
                     let cos_a = angle.cos();
                     let sin_a = angle.sin();
                     Vec2::new(up.x * cos_a - up.y * sin_a, up.x * sin_a + up.y * cos_a).normalize()
@@ -1097,7 +1097,7 @@ pub fn apply_jump<B: CharacterPhysicsBackend>(world: &mut World) {
             // Wall jumps: compensate based on config (0.0 = none, 1.0 = full)
             let compensation = match controller.last_jump_type {
                 JumpType::Ground => 1.0,
-                JumpType::LeftWall | JumpType::RightWall => config.wall_jump_velocity_compensation,
+                JumpType::LeftWall | JumpType::RightWall => config.wall_jumping.velocity_compensation,
             };
 
             if compensation > 0.0 {
@@ -1113,23 +1113,23 @@ pub fn apply_jump<B: CharacterPhysicsBackend>(world: &mut World) {
         // Scale by actual mass so velocity change equals jump_speed regardless of body mass.
         let effective_jump_speed = if vertical_velocity > 0.0 {
             // Reduce jump speed by current upward velocity, scaled by compensation factor
-            let reduction = vertical_velocity * config.jump_upward_velocity_compensation;
-            (config.jump_speed - reduction).max(0.0)
+            let reduction = vertical_velocity * config.jumping.upward_velocity_compensation;
+            (config.jumping.speed - reduction).max(0.0)
         } else {
-            config.jump_speed
+            config.jumping.speed
         };
         let impulse = jump_direction * effective_jump_speed * mass;
         B::apply_impulse(world, entity, impulse);
 
         // Record upward propulsion for spring force filtering and fall gravity tracking
         if let Some(mut controller) = world.get_mut::<CharacterController>(entity) {
-            controller.record_upward_propulsion(config.jump_spring_filter_duration);
+            controller.record_upward_propulsion(config.spring.jump_filter_duration);
             // Record jump for fall gravity system - tracks when we can cancel the jump
-            controller.record_jump(config.jump_cancel_window);
+            controller.record_jump(config.jumping.cancel_window);
             // Record recently jumped for fall gravity protection and coyote rejection
-            controller.record_recently_jumped(config.recently_jumped_duration);
+            controller.record_recently_jumped(config.jumping.recently_jumped_duration);
             // Record jump max ascent for forcing fall gravity after max duration
-            controller.record_jump_max_ascent(config.jump_max_ascent_duration);
+            controller.record_jump_max_ascent(config.jumping.max_ascent_duration);
 
             // For wall jumps, block movement toward the wall to help jump away correctly
             // LeftWall jump: block leftward movement (toward the left wall)
@@ -1137,13 +1137,13 @@ pub fn apply_jump<B: CharacterPhysicsBackend>(world: &mut World) {
             match controller.last_jump_type {
                 JumpType::LeftWall => {
                     controller.record_wall_jump_movement_block(
-                        config.wall_jump_movement_block_duration,
+                        config.wall_jumping.movement_block_duration,
                         -1.0, // Block leftward movement
                     );
                 }
                 JumpType::RightWall => {
                     controller.record_wall_jump_movement_block(
-                        config.wall_jump_movement_block_duration,
+                        config.wall_jumping.movement_block_duration,
                         1.0, // Block rightward movement
                     );
                 }
@@ -1165,7 +1165,7 @@ pub fn accumulate_upright_torque<B: CharacterPhysicsBackend>(world: &mut World) 
     let candidates: Vec<(Entity, ControllerConfig, CharacterController)> = world
         .query::<(Entity, &CharacterController, &ControllerConfig)>()
         .iter(world)
-        .filter(|(_, _, config)| config.upright_torque_enabled)
+        .filter(|(_, _, config)| config.upright.enabled)
         .map(|(e, controller, config)| (e, *config, controller.clone()))
         .collect();
 
@@ -1181,7 +1181,7 @@ pub fn accumulate_upright_torque<B: CharacterPhysicsBackend>(world: &mut World) 
 
         // Target angle: if not specified, use ideal_up angle minus PI/2 to get the body rotation
         let target_angle = config
-            .upright_target_angle
+            .upright.target_angle
             .unwrap_or_else(|| controller.ideal_up_angle() - consts::FRAC_PI_2);
 
         // Calculate angle error (shortest rotation to goal), normalized to [-PI, PI]
@@ -1205,32 +1205,32 @@ pub fn accumulate_upright_torque<B: CharacterPhysicsBackend>(world: &mut World) 
         // This is a standard second-order system: torque = -k*θ - c*ω
         // where k = spring strength, c = damping coefficient, θ = angle error, ω = angular velocity.
         // Scale by inertia so config values work consistently across different body shapes.
-        let damping_torque = -config.upright_torque_damping * angular_velocity * inertia;
+        let damping_torque = -config.upright.damping * angular_velocity * inertia;
 
         // Check if already rotating toward target fast enough (velocity clamp).
         // If at or above max velocity, only apply damping (no spring) to slow down.
         // This prevents the spring from adding more acceleration when we're already fast enough.
-        let spring_torque = if let Some(max_vel) = config.upright_max_angular_velocity {
+        let spring_torque = if let Some(max_vel) = config.upright.max_angular_velocity {
             let rotating_toward_target = (angle_error > 0.0 && angular_velocity > 0.0)
                 || (angle_error < 0.0 && angular_velocity < 0.0);
             if rotating_toward_target && angular_velocity.abs() >= max_vel {
                 // At max velocity - don't add more spring force, just let damping work
                 0.0
             } else {
-                config.upright_torque_strength * angle_error * inertia
+                config.upright.strength * angle_error * inertia
             }
         } else {
-            config.upright_torque_strength * angle_error * inertia
+            config.upright.strength * angle_error * inertia
         };
 
         let total_torque = spring_torque + damping_torque;
 
         // Clamp total torque to configured max, or use formula-based fallback.
         let max_torque = config
-            .upright_max_torque
+            .upright.max_torque
             .map_or_else(|| {
                 // Fallback: maximum based on spring torque at full rotation error (PI).
-                let max_spring_torque = config.upright_torque_strength * consts::PI * inertia;
+                let max_spring_torque = config.upright.strength * consts::PI * inertia;
                 max_spring_torque * 3.0
             }, |t| t * inertia);
         let clamped_torque = total_torque.clamp(-max_torque, max_torque);

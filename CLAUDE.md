@@ -28,7 +28,7 @@ The controller systems run in `FixedUpdate` and accumulate forces into `Constant
 | Component | Purpose |
 |-----------|---------|
 | `CharacterController` | Central hub for state: collision data, timers, gravity, force accumulation |
-| `ControllerConfig` | Tunable parameters: float height, spring strength, speeds, jump settings |
+| `ControllerConfig` | Tunable parameters organized into substructs (see below) |
 | `MovementIntent` | Input abstraction: walk, fly, jump_pressed |
 | `StairConfig` | Optional stair stepping configuration |
 | `CollisionData` | Stores raycast hit info (distance, normal, point, entity) |
@@ -53,12 +53,30 @@ Systems run in `FixedUpdate` in six ordered phases via `CharacterControllerSet`:
 5. **IntentApplication** - Apply fall gravity, jump impulse, walk impulse, fly impulse, wall clinging
 6. **FinalApplication** - Apply accumulated forces to physics (runs in Avian backend plugin)
 
+### ControllerConfig Substructs
+
+`ControllerConfig` is organized into logical substructs accessed as `config.substruct.field`:
+
+| Substruct | Fields | Purpose |
+|-----------|--------|---------|
+| `floating: FloatingConfig` | `float_height`, `grounding_distance`, `surface_detection_distance`, `grounding_strength` | Core hovering mechanics |
+| `spring: SpringConfig` | `strength`, `damping`, `max_force`, `max_velocity`, `jump_filter_duration` | Spring-damper system |
+| `walking: WalkingConfig` | `max_speed`, `acceleration`, `friction`, `air_control`, `air_friction`, `wall_clinging`, `wall_clinging_dampening`, `wall_clinging_dampen_upward`, `max_slope_angle`, `uphill_gravity_multiplier` | Ground movement, wall clinging, slopes |
+| `flying: FlyingConfig` | `max_speed`, `vertical_speed_ratio`, `acceleration`, `vertical_acceleration_ratio`, `gravity_compensation` | Aerial propulsion |
+| `jumping: JumpingConfig` | `speed`, `coyote_time`, `buffer_time`, `fall_gravity`, `cancel_window`, `fall_gravity_duration`, `recently_jumped_duration`, `max_ascent_duration`, `upward_velocity_compensation` | Core jump mechanics |
+| `wall_jumping: WallJumpingConfig` | `enabled`, `angle`, `velocity_compensation`, `retain_height`, `movement_block_duration` | Wall jump specifics |
+| `upright: UprightTorqueConfig` | `enabled`, `strength`, `damping`, `target_angle`, `max_torque`, `max_angular_velocity` | Rotation stabilization |
+| `sensors: SensorConfig` | `ground_cast_multiplier`, `ground_cast_width`, `wall_cast_multiplier`, `wall_cast_height`, `ceiling_cast_multiplier`, `ceiling_cast_width` | ShapeCaster dimensions |
+
+Top-level builder methods remain for convenience (e.g., `config.with_float_height(6.0)`).
+
 ## Key Files
 
 | File | Description |
 |------|-------------|
 | `src/lib.rs` | Plugin definition, system set ordering, system registration |
-| `src/config.rs` | `CharacterController`, `ControllerConfig`, `StairConfig`, `JumpType` |
+| `src/config/mod.rs` | `CharacterController`, `ControllerConfig`, `StairConfig`, `JumpType` |
+| `src/config/*.rs` | Config substruct definitions (`floating.rs`, `spring.rs`, `walking.rs`, etc.) |
 | `src/intent.rs` | `MovementIntent`, `JumpRequest` |
 | `src/systems.rs` | All controller systems (spring, gravity, movement, jump, etc.) |
 | `src/backend/traits.rs` | `CharacterPhysicsBackend` trait |
@@ -144,7 +162,7 @@ This enables spherical planet gameplay where "up" varies by position.
 
 1. **Force Isolation**: The controller tracks forces it applies to avoid interfering with external forces. Forces are subtracted at frame start and applied at frame end.
 
-2. **Jump Spring Filtering**: After jumping or flying up, downward spring forces are filtered for `jump_spring_filter_duration` to prevent counteracting the upward motion.
+2. **Jump Spring Filtering**: After jumping or flying up, downward spring forces are filtered for `spring.jump_filter_duration` to prevent counteracting the upward motion.
 
 3. **Coyote Time**: Tracks time since last grounded/wall contact. Jump requests are valid during this window even when airborne.
 
