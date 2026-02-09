@@ -89,9 +89,9 @@ Top-level builder methods remain for convenience (e.g., `config.with_float_heigh
 # Run tests
 cargo test
 
-# Run specific example
-cargo run --example platform_box --features examples
-cargo run --example spherical_planet --features examples
+# Run examples (uses Avian2D physics)
+cargo run --example platform_box
+cargo run --example spherical_planet
 
 # Build documentation
 cargo doc --open
