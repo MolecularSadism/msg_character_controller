@@ -139,6 +139,12 @@
 
 use bevy::prelude::*;
 
+// Re-export the physics backend's disabled-body marker under a common name.
+// Both Avian2D and Rapier call this component `RigidBodyDisabled`, so no
+// adapter layer is needed — just import whichever backend is active.
+#[cfg(feature = "avian2d")]
+pub(crate) use avian2d::prelude::RigidBodyDisabled;
+
 pub mod backend;
 pub mod collision;
 pub mod config;
@@ -475,9 +481,9 @@ impl<B: backend::CharacterPhysicsBackend> Plugin for CharacterControllerPlugin<B
         app.add_systems(
             FixedUpdate,
             (
-                systems::process_jump_state::<B>,
-                systems::tick_jump_request_timers::<B>,
-                systems::expire_jump_requests::<B>,
+                systems::process_jump_state,
+                systems::tick_jump_request_timers,
+                systems::expire_jump_requests,
             )
                 .chain()
                 .in_set(CharacterControllerSet::Preparation),
@@ -490,8 +496,8 @@ impl<B: backend::CharacterPhysicsBackend> Plugin for CharacterControllerPlugin<B
         app.add_systems(
             FixedUpdate,
             (
-                systems::update_timers::<B>,
-                systems::update_jump_type::<B>,
+                systems::update_timers,
+                systems::update_jump_type,
                 systems::evaluate_intent::<B>,
             )
                 .chain()

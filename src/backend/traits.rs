@@ -32,14 +32,6 @@ pub trait CharacterPhysicsBackend: 'static + Send + Sync {
     /// The velocity component type used by this backend.
     type VelocityComponent: Component;
 
-    /// The component used by the physics backend to mark a rigidbody as disabled.
-    ///
-    /// All character controller systems filter out entities that have this component,
-    /// making the controller fully dormant while the rigidbody is disabled.
-    ///
-    /// For Avian2D this is [`avian2d::prelude::RigidBodyDisabled`].
-    type RigidBodyDisabledMarker: Component;
-
     /// Returns the plugin that sets up this backend.
     fn plugin() -> impl Plugin;
 

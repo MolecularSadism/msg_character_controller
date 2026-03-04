@@ -22,6 +22,7 @@ use std::time::Duration;
 
 use bevy::prelude::*;
 
+use crate::RigidBodyDisabled;
 use crate::backend::CharacterPhysicsBackend;
 use crate::config::{CharacterController, ControllerConfig};
 use crate::intent::MovementIntent;
@@ -42,8 +43,8 @@ use crate::intent::MovementIntent;
 ///
 /// This must run before `tick_jump_request_timers` so that new requests
 /// are created before timers are ticked.
-pub fn process_jump_state<B: CharacterPhysicsBackend>(
-    mut query: Query<(&mut MovementIntent, &ControllerConfig), Without<B::RigidBodyDisabledMarker>>,
+pub fn process_jump_state(
+    mut query: Query<(&mut MovementIntent, &ControllerConfig), Without<RigidBodyDisabled>>,
 ) {
     for (mut intent, config) in &mut query {
         // Detect rising edge: pressed this frame but not last frame
@@ -61,9 +62,9 @@ pub fn process_jump_state<B: CharacterPhysicsBackend>(
 ///
 /// This system runs early in the frame to advance all jump request timers.
 /// It must run before `expire_jump_requests` which removes expired requests.
-pub fn tick_jump_request_timers<B: CharacterPhysicsBackend>(
+pub fn tick_jump_request_timers(
     time: Res<Time>,
-    mut query: Query<&mut MovementIntent, Without<B::RigidBodyDisabledMarker>>,
+    mut query: Query<&mut MovementIntent, Without<RigidBodyDisabled>>,
 ) {
     let delta = time.delta();
     for mut intent in &mut query {
@@ -78,8 +79,8 @@ pub fn tick_jump_request_timers<B: CharacterPhysicsBackend>(
 /// This system runs after `tick_jump_request_timers` and before `evaluate_intent`.
 /// It removes jump requests whose buffer timer has finished, so that downstream
 /// systems don't need to check buffer validity.
-pub fn expire_jump_requests<B: CharacterPhysicsBackend>(
-    mut query: Query<&mut MovementIntent, Without<B::RigidBodyDisabledMarker>>,
+pub fn expire_jump_requests(
+    mut query: Query<&mut MovementIntent, Without<RigidBodyDisabled>>,
 ) {
     for mut intent in &mut query {
         if let Some(ref jump) = intent.jump_request {
@@ -101,9 +102,9 @@ pub fn expire_jump_requests<B: CharacterPhysicsBackend>(
 ///
 /// - Coyote timer: Reset when grounded OR touching wall (if wall jumping enabled)
 /// - Jump spring filter timer: Always tick
-pub fn update_timers<B: CharacterPhysicsBackend>(
+pub fn update_timers(
     time: Res<Time<Fixed>>,
-    mut query: Query<(&mut CharacterController, &ControllerConfig), Without<B::RigidBodyDisabledMarker>>,
+    mut query: Query<(&mut CharacterController, &ControllerConfig), Without<RigidBodyDisabled>>,
 ) {
     let delta = Duration::from_secs_f64(time.delta_secs_f64());
 
@@ -151,8 +152,8 @@ pub fn update_timers<B: CharacterPhysicsBackend>(
 /// This runs after sensors and timers, before `evaluate_intent`, so that
 /// buffered jumps will process the correct jump type when contact is made.
 /// The `last_jump_type` is stored on the controller for coyote time to respect.
-pub fn update_jump_type<B: CharacterPhysicsBackend>(
-    mut query: Query<(&mut CharacterController, &ControllerConfig), Without<B::RigidBodyDisabledMarker>>,
+pub fn update_jump_type(
+    mut query: Query<(&mut CharacterController, &ControllerConfig), Without<RigidBodyDisabled>>,
 ) {
     use crate::config::JumpType;
 
@@ -196,7 +197,7 @@ pub fn update_jump_type<B: CharacterPhysicsBackend>(
 /// Note: Expired jump requests are removed by `expire_jump_requests` before
 /// this system runs, so we just check if a request exists.
 pub fn evaluate_intent<B: CharacterPhysicsBackend>(
-    mut query: Query<(&mut CharacterController, &ControllerConfig, &MovementIntent), Without<B::RigidBodyDisabledMarker>>,
+    mut query: Query<(&mut CharacterController, &ControllerConfig, &MovementIntent), Without<RigidBodyDisabled>>,
 ) {
     use crate::config::JumpType;
 
@@ -257,7 +258,7 @@ pub fn evaluate_intent<B: CharacterPhysicsBackend>(
 /// Upward spring forces always remain active.
 pub fn accumulate_spring_force<B: CharacterPhysicsBackend>(world: &mut World) {
     let entities: Vec<(Entity, ControllerConfig, CharacterController)> = world
-        .query_filtered::<(Entity, &ControllerConfig, &CharacterController), Without<B::RigidBodyDisabledMarker>>()
+        .query_filtered::<(Entity, &ControllerConfig, &CharacterController), Without<RigidBodyDisabled>>()
         .iter(world)
         .map(|(e, config, controller)| (e, *config, controller.clone()))
         .collect();
@@ -406,7 +407,7 @@ pub fn accumulate_spring_force<B: CharacterPhysicsBackend>(world: &mut World) {
 pub fn accumulate_stair_climb_force<B: CharacterPhysicsBackend>(world: &mut World) {
     // Collect entities with stair config
     let entities: Vec<(Entity, ControllerConfig, CharacterController)> = world
-        .query_filtered::<(Entity, &ControllerConfig, &CharacterController), Without<B::RigidBodyDisabledMarker>>()
+        .query_filtered::<(Entity, &ControllerConfig, &CharacterController), Without<RigidBodyDisabled>>()
         .iter(world)
         .filter(|(_, _, controller)| controller.stair_stepping_enabled())
         .map(|(e, config, controller)| (e, *config, controller.clone()))
@@ -476,7 +477,7 @@ pub fn accumulate_gravity<B: CharacterPhysicsBackend>(world: &mut World) {
 
     // Collect entities needing gravity
     let entities: Vec<(Entity, CharacterController, ControllerConfig)> = world
-        .query_filtered::<(Entity, &CharacterController, &ControllerConfig), Without<B::RigidBodyDisabledMarker>>()
+        .query_filtered::<(Entity, &CharacterController, &ControllerConfig), Without<RigidBodyDisabled>>()
         .iter(world)
         .filter(|(_, controller, config)| !controller.is_grounded(config))
         .map(|(e, controller, config)| (e, controller.clone(), *config))
@@ -522,7 +523,7 @@ pub fn apply_fall_gravity<B: CharacterPhysicsBackend>(world: &mut World) {
             &ControllerConfig,
             &CharacterController,
             &MovementIntent,
-        ), Without<B::RigidBodyDisabledMarker>>()
+        ), Without<RigidBodyDisabled>>()
         .iter(world)
         .filter(|(_, config, controller, _)| {
             // Only process airborne entities with fall_gravity > 1.0
@@ -608,7 +609,7 @@ pub fn apply_wall_clinging_dampening<B: CharacterPhysicsBackend>(world: &mut Wor
             &ControllerConfig,
             &CharacterController,
             &MovementIntent,
-        ), Without<B::RigidBodyDisabledMarker>>()
+        ), Without<RigidBodyDisabled>>()
         .iter(world)
         .filter(|(_, config, controller, _)| {
             // Only process entities with wall clinging enabled and non-zero dampening
@@ -720,7 +721,7 @@ pub fn apply_walk<B: CharacterPhysicsBackend>(world: &mut World) {
             &ControllerConfig,
             &MovementIntent,
             &CharacterController,
-        ), Without<B::RigidBodyDisabledMarker>>()
+        ), Without<RigidBodyDisabled>>()
         .iter(world)
         .map(|(e, config, intent, controller)| (e, *config, intent.clone(), controller.clone()))
         .collect();
@@ -894,7 +895,7 @@ pub fn apply_fly<B: CharacterPhysicsBackend>(world: &mut World) {
             &ControllerConfig,
             &MovementIntent,
             &CharacterController,
-        ), Without<B::RigidBodyDisabledMarker>>()
+        ), Without<RigidBodyDisabled>>()
         .iter(world)
         .map(|(e, config, intent, controller)| (e, *config, intent.clone(), controller.clone()))
         .collect();
@@ -1016,7 +1017,7 @@ pub fn apply_jump<B: CharacterPhysicsBackend>(world: &mut World) {
             &ControllerConfig,
             &CharacterController,
             &MovementIntent,
-        ), Without<B::RigidBodyDisabledMarker>>()
+        ), Without<RigidBodyDisabled>>()
         .iter(world)
         .filter_map(|(e, config, controller, intent)| {
             // Check if there's a valid jump request
@@ -1172,7 +1173,7 @@ pub fn apply_jump<B: CharacterPhysicsBackend>(world: &mut World) {
 pub fn accumulate_upright_torque<B: CharacterPhysicsBackend>(world: &mut World) {
     // First, collect entities that have upright torque enabled
     let candidates: Vec<(Entity, ControllerConfig, CharacterController)> = world
-        .query_filtered::<(Entity, &CharacterController, &ControllerConfig), Without<B::RigidBodyDisabledMarker>>()
+        .query_filtered::<(Entity, &CharacterController, &ControllerConfig), Without<RigidBodyDisabled>>()
         .iter(world)
         .filter(|(_, _, config)| config.upright.enabled)
         .map(|(e, controller, config)| (e, *config, controller.clone()))
