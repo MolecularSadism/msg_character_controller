@@ -78,7 +78,6 @@ pub struct Avian2dBackend;
 
 impl CharacterPhysicsBackend for Avian2dBackend {
     type VelocityComponent = LinearVelocity;
-    type RigidBodyDisabledMarker = RigidBodyDisabled;
 
     fn plugin() -> impl Plugin {
         Avian2dBackendPlugin
