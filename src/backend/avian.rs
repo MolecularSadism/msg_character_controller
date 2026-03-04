@@ -78,6 +78,7 @@ pub struct Avian2dBackend;
 
 impl CharacterPhysicsBackend for Avian2dBackend {
     type VelocityComponent = LinearVelocity;
+    type RigidBodyDisabledMarker = RigidBodyDisabled;
 
     fn plugin() -> impl Plugin {
         Avian2dBackendPlugin
@@ -296,7 +297,7 @@ fn spawn_detection_casters(
     mut commands: Commands,
     q_new_controllers: Query<
         (Entity, &CharacterController, &ControllerConfig),
-        (Without<CastersSpawned>, With<CharacterController>),
+        (Without<CastersSpawned>, With<CharacterController>, Without<RigidBodyDisabled>),
     >,
 ) {
     for (entity, controller, config) in &q_new_controllers {
@@ -583,7 +584,7 @@ pub fn spawn_stair_casters(
 /// The caster direction is set in local space since casters are children of the actor.
 fn update_ground_caster_direction(
     mut q_casters: Query<(&CasterOfCharacter, &mut ShapeCaster), With<GroundCaster>>,
-    q_controllers: Query<(&CharacterController, &ControllerConfig, Option<&CollisionLayers>)>,
+    q_controllers: Query<(&CharacterController, &ControllerConfig, Option<&CollisionLayers>), Without<RigidBodyDisabled>>,
 ) {
     for (caster_parent, mut shape_caster) in &mut q_casters {
         let Ok((controller, config, collision_layers)) = q_controllers.get(caster_parent.0) else {
@@ -621,7 +622,7 @@ fn update_ground_caster_direction(
 fn update_wall_caster_directions(
     mut q_left_casters: Query<(&CasterOfCharacter, &mut ShapeCaster), With<LeftWallCaster>>,
     mut q_right_casters: Query<(&CasterOfCharacter, &mut ShapeCaster), (With<RightWallCaster>, Without<LeftWallCaster>)>,
-    q_controllers: Query<(&CharacterController, &ControllerConfig, Option<&CollisionLayers>, Option<&Collider>)>,
+    q_controllers: Query<(&CharacterController, &ControllerConfig, Option<&CollisionLayers>, Option<&Collider>), Without<RigidBodyDisabled>>,
 ) {
     // Update left wall casters
     for (caster_parent, mut shape_caster) in &mut q_left_casters {
@@ -682,7 +683,7 @@ fn update_wall_caster_directions(
 /// The caster direction is set in local space since casters are children of the actor.
 fn update_ceiling_caster_direction(
     mut q_casters: Query<(&CasterOfCharacter, &mut ShapeCaster), With<CeilingCaster>>,
-    q_controllers: Query<(&CharacterController, &ControllerConfig, Option<&CollisionLayers>)>,
+    q_controllers: Query<(&CharacterController, &ControllerConfig, Option<&CollisionLayers>), Without<RigidBodyDisabled>>,
 ) {
     for (caster_parent, mut shape_caster) in &mut q_casters {
         let Ok((controller, config, collision_layers)) = q_controllers.get(caster_parent.0) else {
@@ -721,7 +722,7 @@ fn update_stair_casters(
         Option<&MovementIntent>,
         Option<&CollisionLayers>,
         Option<&Collider>,
-    )>,
+    ), Without<RigidBodyDisabled>>,
 ) {
     // Update stair casters
     for (caster_parent, mut shape_caster) in &mut q_stair_casters {
@@ -854,7 +855,7 @@ fn avian_ground_detection(
         &mut CharacterController,
         &ControllerConfig,
         Option<&Collider>,
-    )>,
+    ), Without<RigidBodyDisabled>>,
 ) {
     // First, reset detection state for all controllers
     for (_, mut controller, _, _) in &mut q_controllers {
@@ -919,7 +920,7 @@ fn get_collider_radius(collider: &Collider) -> f32 {
 fn avian_wall_detection(
     q_left_casters: Query<(&CasterOfCharacter, &ShapeHits, &GlobalTransform), With<LeftWallCaster>>,
     q_right_casters: Query<(&CasterOfCharacter, &ShapeHits, &GlobalTransform), With<RightWallCaster>>,
-    mut q_controllers: Query<&mut CharacterController>,
+    mut q_controllers: Query<&mut CharacterController, Without<RigidBodyDisabled>>,
 ) {
     // Process left wall hits
     for (caster_parent, shape_hits, caster_transform) in &q_left_casters {
@@ -975,7 +976,7 @@ fn avian_wall_detection(
 /// This system reads `ShapeHits` from ceiling caster child entities.
 fn avian_ceiling_detection(
     q_casters: Query<(&CasterOfCharacter, &ShapeHits, &GlobalTransform), With<CeilingCaster>>,
-    mut q_controllers: Query<&mut CharacterController>,
+    mut q_controllers: Query<&mut CharacterController, Without<RigidBodyDisabled>>,
 ) {
     for (caster_parent, shape_hits, caster_transform) in &q_casters {
         let Ok(mut controller) = q_controllers.get_mut(caster_parent.0) else {
@@ -1007,7 +1008,7 @@ fn avian_ceiling_detection(
 fn avian_stair_detection(
     q_stair_casters: Query<(&CasterOfCharacter, Option<&ShapeHits>, &ShapeCaster, &GlobalTransform), With<StairCaster>>,
     q_ground_casters: Query<(&CasterOfCharacter, Option<&ShapeHits>, &ShapeCaster, &GlobalTransform), (With<CurrentGroundCaster>, Without<StairCaster>)>,
-    mut q_controllers: Query<(Entity, &mut CharacterController)>,
+    mut q_controllers: Query<(Entity, &mut CharacterController), Without<RigidBodyDisabled>>,
 ) {
     for (entity, mut controller) in &mut q_controllers {
         let up = controller.ideal_up();
@@ -1108,7 +1109,7 @@ pub fn clear_controller_forces(
         &mut CharacterController,
         Option<&mut ConstantForce>,
         Option<&mut ConstantTorque>,
-    )>,
+    ), Without<RigidBodyDisabled>>,
 ) {
     for (mut controller, constant_force, constant_torque) in &mut q {
         // Get the forces we applied last frame and clear for the new frame
@@ -1162,7 +1163,7 @@ pub fn clear_reactive_forces(
 /// which is then used by fall gravity and other systems. This avoids query conflicts
 /// with the Forces API that needs mutable access to velocity.
 pub fn avian_detect_falling(
-    mut query: Query<(&mut CharacterController, &LinearVelocity)>,
+    mut query: Query<(&mut CharacterController, &LinearVelocity), Without<RigidBodyDisabled>>,
 ) {
     for (mut controller, velocity) in &mut query {
         let up = controller.ideal_up();
@@ -1180,7 +1181,7 @@ pub fn avian_detect_falling(
 /// This approach supports dynamic gravity that can change every frame (e.g., for
 /// spherical planets with radial gravity).
 pub fn avian_accumulate_gravity(
-    mut query: Query<(Forces, &CharacterController, &ControllerConfig)>,
+    mut query: Query<(Forces, &CharacterController, &ControllerConfig), Without<RigidBodyDisabled>>,
 ) {
     for (mut forces, controller, config) in &mut query {
         // Only apply gravity to airborne entities
@@ -1213,7 +1214,7 @@ pub fn avian_apply_fall_gravity(
         &mut CharacterController,
         &ControllerConfig,
         &MovementIntent,
-    )>,
+    ), Without<RigidBodyDisabled>>,
 ) {
     for (mut forces, mut controller, config, intent) in &mut query {
         // Only process airborne entities with fall_gravity > 1.0
@@ -1260,7 +1261,7 @@ pub fn apply_controller_forces(
         &mut CharacterController,
         Option<&mut ConstantForce>,
         Option<&mut ConstantTorque>,
-    )>,
+    ), Without<RigidBodyDisabled>>,
     mut ground_forces: Query<(&mut ConstantForce, &RigidBody), Without<CharacterController>>,
     mut reactive_messages: MessageWriter<ReactiveForceApplied>,
 ) {

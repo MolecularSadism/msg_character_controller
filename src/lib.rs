@@ -475,9 +475,9 @@ impl<B: backend::CharacterPhysicsBackend> Plugin for CharacterControllerPlugin<B
         app.add_systems(
             FixedUpdate,
             (
-                systems::process_jump_state,
-                systems::tick_jump_request_timers,
-                systems::expire_jump_requests,
+                systems::process_jump_state::<B>,
+                systems::tick_jump_request_timers::<B>,
+                systems::expire_jump_requests::<B>,
             )
                 .chain()
                 .in_set(CharacterControllerSet::Preparation),
@@ -490,8 +490,8 @@ impl<B: backend::CharacterPhysicsBackend> Plugin for CharacterControllerPlugin<B
         app.add_systems(
             FixedUpdate,
             (
-                systems::update_timers,
-                systems::update_jump_type,
+                systems::update_timers::<B>,
+                systems::update_jump_type::<B>,
                 systems::evaluate_intent::<B>,
             )
                 .chain()
