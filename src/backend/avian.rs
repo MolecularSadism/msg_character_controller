@@ -297,7 +297,7 @@ fn spawn_detection_casters(
     mut commands: Commands,
     q_new_controllers: Query<
         (Entity, &CharacterController, &ControllerConfig),
-        (Without<CastersSpawned>, With<CharacterController>, Without<RigidBodyDisabled>),
+        (Without<CastersSpawned>, With<CharacterController>),
     >,
 ) {
     for (entity, controller, config) in &q_new_controllers {
