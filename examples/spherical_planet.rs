@@ -7,10 +7,10 @@
 //! - Dynamic orientation that adjusts to the planet's surface
 //!
 //! ## Controls
-//! - **A/D** or **Left/Right**: Move horizontally
-//! - **W/Up**: Jump
-//! - **Space** (hold): Propulsion (fly up relative to planet)
-//! - **S/Down** (hold): Propulsion (fly down toward planet)
+//! - **A/D**: Move horizontally
+//! - **W**: Jump
+//! - **Arrow Up/Down** (hold): Propulsion (fly up/down relative to planet)
+//! - **Arrow Left/Right** (hold): Propulsion (fly left/right)
 //!
 //! The camera follows the player and the character's "up" direction
 //! always points away from the planet center.

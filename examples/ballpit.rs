@@ -10,10 +10,10 @@
 //! - A floor that the balls rest on
 //!
 //! ## Controls
-//! - **A/D** or **Left/Right**: Move horizontally
-//! - **W/Up**: Jump
-//! - **Space** (hold): Propulsion (fly upward)
-//! - **S/Down** (hold): Propulsion (fly downward)
+//! - **A/D**: Move horizontally
+//! - **W**: Jump
+//! - **Arrow Up/Down** (hold): Propulsion (fly up/down)
+//! - **Arrow Left/Right** (hold): Propulsion (fly left/right)
 //!
 //! The camera follows the player.
 //!
