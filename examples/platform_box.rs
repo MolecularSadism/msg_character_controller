@@ -7,10 +7,7 @@
 //! - A triangle slope on the right
 //!
 //! ## Controls
-//! - **A/D**: Move horizontally
-//! - **W**: Jump
-//! - **Arrow Up/Down** (hold): Propulsion (fly up/down)
-//! - **Arrow Left/Right** (hold): Propulsion (fly left/right)
+//! See the [`ControlsPlugin`](helpers::ControlsPlugin) docs for the full controls reference.
 //!
 //! The camera follows the player.
 //!
