@@ -139,6 +139,12 @@
 
 use bevy::prelude::*;
 
+// Re-export the physics backend's disabled-body marker under a common name.
+// Both Avian2D and Rapier call this component `RigidBodyDisabled`, so no
+// adapter layer is needed — just import whichever backend is active.
+#[cfg(feature = "avian2d")]
+pub(crate) use avian2d::prelude::RigidBodyDisabled;
+
 pub mod backend;
 pub mod collision;
 pub mod config;
