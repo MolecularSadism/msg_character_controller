@@ -8,10 +8,7 @@
 //! If floating doesn't work: The character will fall through or sit directly on the platform
 //!
 //! ## Controls
-//! - **A/D** or **Left/Right**: Move horizontally
-//! - **W/Up**: Jump
-//! - **Space** (hold): Propulsion (fly upward)
-//! - **S/Down** (hold): Propulsion (fly downward)
+//! See the [`ControlsPlugin`](helpers::ControlsPlugin) docs for the full controls reference.
 //!
 //! ## Running
 //! ```bash
