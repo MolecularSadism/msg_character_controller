@@ -1076,7 +1076,7 @@ impl Default for StairConfig {
             max_climb_height: 11.0,
             min_step_depth: 6.5, // Slightly more than float height
             stair_cast_width: 2.0,
-            stair_cast_offset: 3.0,
+            stair_cast_offset: 5.0,
             stair_tolerance: 2.0,
             climb_force_multiplier: 2.0,
             enabled: true,

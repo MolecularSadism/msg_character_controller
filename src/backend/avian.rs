@@ -537,18 +537,21 @@ pub fn spawn_stair_casters(
     let half_width = stair_config.stair_cast_width / 2.0;
 
     // Stair caster (forward-down detection) - starts disabled
+    // Note: ShapeCaster::disable() is &mut self (not a builder), so we set enabled=false separately.
+    let mut stair_shape_caster = ShapeCaster::new(
+        Collider::segment(Vec2::new(-half_width, 0.0), Vec2::new(half_width, 0.0)),
+        Vec2::ZERO,
+        0.0,
+        Dir2::NEG_Y,
+    ).with_max_distance(stair_config.max_climb_height)
+     .with_max_hits(1)
+     .with_ignore_self(true);
+    stair_shape_caster.enabled = false;
+
     let stair_child = commands.spawn((
         StairCaster,
         CasterOfCharacter(character), // Relationship: belongs to this character
-        ShapeCaster::new(
-            Collider::segment(Vec2::new(-half_width, 0.0), Vec2::new(half_width, 0.0)),
-            Vec2::ZERO,
-            0.0,
-            Dir2::NEG_Y,
-        ).with_max_distance(stair_config.max_climb_height)
-         .with_max_hits(1)
-         .with_ignore_self(true)
-         .disable(), // Start disabled
+        stair_shape_caster,
         Transform::default(),
         GlobalTransform::default(),
     )).id();
@@ -557,18 +560,20 @@ pub fn spawn_stair_casters(
     commands.entity(character).add_child(stair_child);
 
     // Current ground caster (for step height reference) - starts disabled
+    let mut ground_shape_caster = ShapeCaster::new(
+        Collider::segment(Vec2::new(-half_width, 0.0), Vec2::new(half_width, 0.0)),
+        Vec2::ZERO,
+        0.0,
+        Dir2::NEG_Y,
+    ).with_max_distance(20.0)
+     .with_max_hits(1)
+     .with_ignore_self(true);
+    ground_shape_caster.enabled = false;
+
     let ground_child = commands.spawn((
         CurrentGroundCaster,
         CasterOfCharacter(character), // Relationship: belongs to this character
-        ShapeCaster::new(
-            Collider::segment(Vec2::new(-half_width, 0.0), Vec2::new(half_width, 0.0)),
-            Vec2::ZERO,
-            0.0,
-            Dir2::NEG_Y,
-        ).with_max_distance(20.0)
-         .with_max_hits(1)
-         .with_ignore_self(true)
-         .disable(), // Start disabled
+        ground_shape_caster,
         Transform::default(),
         GlobalTransform::default(),
     )).id();
@@ -752,7 +757,6 @@ fn update_stair_casters(
 
             // Calculate forward offset based on walk direction
             let walk_direction = intent.walk;
-            let move_dir = right * walk_direction.signum();
 
             // Get collider radius
             let radius = collider.map_or(0.0, get_collider_radius);
@@ -765,9 +769,13 @@ fn update_stair_casters(
             let up = controller.ideal_up();
             let vertical_offset = up * (stair_config.max_climb_height - controller.collider_bottom_offset);
 
-            // Set origin: forward_offset + vertical_offset
-            let origin = move_dir * horizontal_offset + vertical_offset;
-            shape_caster.origin = origin;
+            // Only update the horizontal side when direction is unambiguous.
+            // shape_caster.origin retains its last value otherwise, providing implicit
+            // hysteresis against near-zero oscillation flipping the caster each frame.
+            if walk_direction.abs() > f32::EPSILON {
+                let move_dir = right * walk_direction.signum();
+                shape_caster.origin = move_dir * horizontal_offset + vertical_offset;
+            }
 
             // Direction in local space (down relative to actor)
             // The caster inherits the actor's transform, so local NEG_Y works correctly
@@ -788,6 +796,7 @@ fn update_stair_casters(
             shape_caster.query_filter.excluded_entities.insert(caster_parent.0);
         } else {
             shape_caster.enabled = false;
+            shape_caster.origin = Vec2::ZERO;
         }
     }
 
@@ -1028,10 +1037,12 @@ fn avian_stair_detection(
                 continue;
             }
 
-            if let Some(hits) = shape_hits {
-                stair_hit = hits.first();
-                stair_transform = Some(transform);
-                stair_origin = shape_caster.origin;
+            if shape_caster.enabled {
+                if let Some(hits) = shape_hits {
+                    stair_hit = hits.first();
+                    stair_transform = Some(transform);
+                    stair_origin = shape_caster.origin;
+                }
             }
             break;
         }
@@ -1045,10 +1056,12 @@ fn avian_stair_detection(
                 continue;
             }
 
-            if let Some(hits) = shape_hits {
-                ground_hit = hits.first();
-                ground_transform = Some(transform);
-                ground_origin = shape_caster.origin;
+            if shape_caster.enabled {
+                if let Some(hits) = shape_hits {
+                    ground_hit = hits.first();
+                    ground_transform = Some(transform);
+                    ground_origin = shape_caster.origin;
+                }
             }
             break;
         }

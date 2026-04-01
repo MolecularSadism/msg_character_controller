@@ -92,7 +92,6 @@ pub fn spawn_static_box(
         Mesh2d(mesh),
         MeshMaterial2d(material),
     )).id();
-    eprintln!("spawn_static_box: Created platform entity {entity:?} at position {position:?} with half_size {half_size:?}");
 }
 
 /// Spawns a static rectangular collider with rotation.

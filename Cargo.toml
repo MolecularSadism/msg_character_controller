@@ -65,3 +65,7 @@ path = "examples/hilly_planet.rs"
 [[example]]
 name = "ballpit"
 path = "examples/ballpit.rs"
+
+[[example]]
+name = "stairs"
+path = "examples/stairs.rs"

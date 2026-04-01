@@ -158,38 +158,43 @@ fn spawn_character_with_config(app: &mut App, position: Vec2, config: Controller
         let stair_config = controller.stair_config.as_ref().unwrap();
         let half_width = stair_config.stair_cast_width / 2.0;
 
-        // Stair caster (forward-down detection) - starts disabled
+        // Stair caster (forward-down detection) - starts disabled.
+        // Note: ShapeCaster::disable() is &mut self (not a builder), so set enabled=false separately.
+        let mut stair_shape = ShapeCaster::new(
+            Collider::segment(Vec2::new(-half_width, 0.0), Vec2::new(half_width, 0.0)),
+            Vec2::ZERO,
+            0.0,
+            Dir2::NEG_Y,
+        ).with_max_distance(stair_config.max_climb_height)
+         .with_max_hits(1)
+         .with_ignore_self(true);
+        stair_shape.enabled = false;
+
         let stair_child = world.spawn((
             StairCaster,
             CasterOfCharacter(entity),
-            ShapeCaster::new(
-                Collider::segment(Vec2::new(-half_width, 0.0), Vec2::new(half_width, 0.0)),
-                Vec2::ZERO,
-                0.0,
-                Dir2::NEG_Y,
-            ).with_max_distance(stair_config.max_climb_height)
-             .with_max_hits(1)
-             .with_ignore_self(true)
-             .disable(),
+            stair_shape,
             Transform::default(),
             GlobalTransform::default(),
         )).id();
 
         world.entity_mut(entity).add_child(stair_child);
 
-        // Current ground caster (for step height reference) - starts disabled
+        // Current ground caster (for step height reference) - starts disabled.
+        let mut ground_stair_shape = ShapeCaster::new(
+            Collider::segment(Vec2::new(-half_width, 0.0), Vec2::new(half_width, 0.0)),
+            Vec2::ZERO,
+            0.0,
+            Dir2::NEG_Y,
+        ).with_max_distance(20.0)
+         .with_max_hits(1)
+         .with_ignore_self(true);
+        ground_stair_shape.enabled = false;
+
         let ground_child = world.spawn((
             CurrentGroundCaster,
             CasterOfCharacter(entity),
-            ShapeCaster::new(
-                Collider::segment(Vec2::new(-half_width, 0.0), Vec2::new(half_width, 0.0)),
-                Vec2::ZERO,
-                0.0,
-                Dir2::NEG_Y,
-            ).with_max_distance(20.0)
-             .with_max_hits(1)
-             .with_ignore_self(true)
-             .disable(),
+            ground_stair_shape,
             Transform::default(),
             GlobalTransform::default(),
         )).id();
@@ -200,149 +205,24 @@ fn spawn_character_with_config(app: &mut App, position: Vec2, config: Controller
     entity
 }
 
-/// Spawn a character with custom gravity (which determines the up direction).
-#[allow(dead_code)]
-fn spawn_character_with_gravity(app: &mut App, position: Vec2, gravity: Vec2) -> Entity {
+/// Spawn a character without the `CastersSpawned` marker so `spawn_detection_casters`
+/// auto-spawns all casters. Used by auto-spawn tests only.
+fn spawn_character_for_auto_spawn_test(app: &mut App, position: Vec2) -> Entity {
     let transform = Transform::from_translation(position.extend(0.0));
-    let config = ControllerConfig::default();
-    let world = app.world_mut();
-
-    let controller = CharacterController::with_gravity(gravity);
-
-    let entity = world
+    app.world_mut()
         .spawn((
             transform,
             GlobalTransform::from(transform),
-            RigidBody::Dynamic, // Required for Avian physics
-            controller.clone(),
-            config,
-            MovementIntent::new(), // Required for jump and movement systems
+            RigidBody::Dynamic,
+            CharacterController::new(),
+            ControllerConfig::default(),
+            MovementIntent::new(),
             Collider::capsule(4.0, 8.0),
             LockedAxes::ROTATION_LOCKED,
             GravityScale(0.0),
+            // NOTE: no CastersSpawned — auto-spawn system handles caster creation
         ))
-        .id();
-
-    // Spawn ground caster as direct child of character
-    let half_width = config.sensors.ground_cast_width / 2.0;
-    let ground_child = world.spawn((
-        GroundCaster,
-        CasterOfCharacter(entity),
-        ShapeCaster::new(
-            Collider::segment(Vec2::new(-half_width, 0.0), Vec2::new(half_width, 0.0)),
-            Vec2::ZERO,
-            0.0,
-            Dir2::NEG_Y,
-        ).with_max_distance(20.0)
-         .with_max_hits(1)
-         .with_ignore_self(true),
-        Transform::default(),
-        GlobalTransform::default(),
-    )).id();
-
-    world.entity_mut(entity).add_child(ground_child);
-
-    // Spawn left wall caster as direct child of character
-    let wall_half_height = config.sensors.wall_cast_height / 2.0;
-    let left_wall_child = world.spawn((
-        LeftWallCaster,
-        CasterOfCharacter(entity),
-        ShapeCaster::new(
-            Collider::segment(Vec2::new(0.0, -wall_half_height), Vec2::new(0.0, wall_half_height)),
-            Vec2::ZERO,
-            0.0,
-            Dir2::NEG_X,
-        ).with_max_distance(10.0)
-         .with_max_hits(1)
-         .with_ignore_self(true),
-        Transform::default(),
-        GlobalTransform::default(),
-    )).id();
-
-    world.entity_mut(entity).add_child(left_wall_child);
-
-    // Spawn right wall caster as direct child of character
-    let right_wall_child = world.spawn((
-        RightWallCaster,
-        CasterOfCharacter(entity),
-        ShapeCaster::new(
-            Collider::segment(Vec2::new(0.0, -wall_half_height), Vec2::new(0.0, wall_half_height)),
-            Vec2::ZERO,
-            0.0,
-            Dir2::X,
-        ).with_max_distance(10.0)
-         .with_max_hits(1)
-         .with_ignore_self(true),
-        Transform::default(),
-        GlobalTransform::default(),
-    )).id();
-
-    world.entity_mut(entity).add_child(right_wall_child);
-
-    // Spawn ceiling caster as direct child of character
-    let ceiling_half_width = config.sensors.ceiling_cast_width / 2.0;
-    let ceiling_child = world.spawn((
-        CeilingCaster,
-        CasterOfCharacter(entity),
-        ShapeCaster::new(
-            Collider::segment(Vec2::new(-ceiling_half_width, 0.0), Vec2::new(ceiling_half_width, 0.0)),
-            Vec2::ZERO,
-            0.0,
-            Dir2::Y,
-        ).with_max_distance(10.0)
-         .with_max_hits(1)
-         .with_ignore_self(true),
-        Transform::default(),
-        GlobalTransform::default(),
-    )).id();
-
-    world.entity_mut(entity).add_child(ceiling_child);
-
-    // Spawn stair casters if stair stepping is enabled
-    if controller.stair_config.as_ref().is_some_and(|c| c.enabled) {
-        let stair_config = controller.stair_config.as_ref().unwrap();
-        let half_width = stair_config.stair_cast_width / 2.0;
-
-        // Stair caster (forward-down detection) - starts disabled
-        let stair_child = world.spawn((
-            StairCaster,
-            CasterOfCharacter(entity),
-            ShapeCaster::new(
-                Collider::segment(Vec2::new(-half_width, 0.0), Vec2::new(half_width, 0.0)),
-                Vec2::ZERO,
-                0.0,
-                Dir2::NEG_Y,
-            ).with_max_distance(stair_config.max_climb_height)
-             .with_max_hits(1)
-             .with_ignore_self(true)
-             .disable(),
-            Transform::default(),
-            GlobalTransform::default(),
-        )).id();
-
-        world.entity_mut(entity).add_child(stair_child);
-
-        // Current ground caster (for step height reference) - starts disabled
-        let ground_child = world.spawn((
-            CurrentGroundCaster,
-            CasterOfCharacter(entity),
-            ShapeCaster::new(
-                Collider::segment(Vec2::new(-half_width, 0.0), Vec2::new(half_width, 0.0)),
-                Vec2::ZERO,
-                0.0,
-                Dir2::NEG_Y,
-            ).with_max_distance(20.0)
-             .with_max_hits(1)
-             .with_ignore_self(true)
-             .disable(),
-            Transform::default(),
-            GlobalTransform::default(),
-        )).id();
-
-        world.entity_mut(entity).add_child(ground_child);
-    }
-
-    entity
+        .id()
 }
 
 /// Advance time by one fixed timestep and run one update.
@@ -628,53 +508,6 @@ mod float_height {
 mod wall_detection {
     use super::*;
 
-    /// Diagnostic test to find the actual wall detection range.
-    /// Tests walls at different distances to understand why original positions failed.
-    #[test]
-    fn diagnose_wall_detection_range() {
-        eprintln!("\n=== DIAGNOSTIC: Wall Detection Range Analysis ===");
-
-        // Test left wall at various distances
-        let distances = vec![4.0, 6.0, 8.0, 10.0, 12.0];
-
-        for distance in distances {
-            let mut app = create_test_app();
-            spawn_ground(&mut app, Vec2::new(0.0, 0.0), Vec2::new(100.0, 5.0));
-
-            // Place wall at -distance from character (character is at x=0)
-            // Wall has half_width=2, so right edge is at -(distance-2)
-            spawn_ground(&mut app, Vec2::new(-distance, 20.0), Vec2::new(2.0, 20.0));
-
-            let character = spawn_character(&mut app, Vec2::new(0.0, 20.0));
-
-            // Get character capsule info
-            let collider = app.world().get::<Collider>(character).unwrap();
-            eprintln!("\nCharacter collider: {collider:?}");
-
-            run_for_duration(&mut app, 2.0);
-
-            let controller = app.world().get::<CharacterController>(character).unwrap();
-            let detected = controller.touching_left_wall();
-            let wall_data = &controller.left_wall;
-
-            eprintln!("Distance {}: wall center at x={:.1}, right edge at x={:.1}",
-                distance, -distance, -(distance - 2.0));
-            eprintln!("  Character center at x=0.0, capsule radius=4.0");
-            eprintln!("  Expected hit distance: {:.1} units", distance - 2.0);
-            eprintln!("  Detected: {detected} {wall_data:?}");
-
-            if detected {
-                if let Some(data) = wall_data {
-                    eprintln!("  ✅ HIT - distance={:.2}, normal={:?}", data.distance, data.normal);
-                }
-            } else {
-                eprintln!("  ❌ MISS - wall not detected");
-            }
-        }
-
-        eprintln!("=== END DIAGNOSTIC ===\n");
-    }
-
     #[test]
     fn detects_wall_on_left() {
         let mut app = create_test_app();
@@ -878,120 +711,6 @@ mod ceiling_detection {
 
 mod movement {
     use super::*;
-
-    /// Test if `FixedUpdate` systems are actually running.
-    #[test]
-    fn verify_fixed_update_runs() {
-        #[derive(Resource, Default)]
-        struct FixedUpdateCounter(usize);
-
-        fn increment_counter(mut counter: ResMut<FixedUpdateCounter>) {
-            counter.0 += 1;
-        }
-
-        let mut app = create_test_app();
-        app.init_resource::<FixedUpdateCounter>();
-        app.add_systems(FixedUpdate, increment_counter);
-
-        eprintln!("\n=== Verifying FixedUpdate Execution ===");
-
-        for i in 0..5 {
-            tick(&mut app);
-            let count = app.world().resource::<FixedUpdateCounter>().0;
-            eprintln!("After tick {i}: counter = {count}");
-        }
-
-        let final_count = app.world().resource::<FixedUpdateCounter>().0;
-        eprintln!("Final count: {final_count}");
-        eprintln!("=== END VERIFICATION ===\n");
-
-        assert!(final_count > 0, "FixedUpdate should have run at least once");
-    }
-
-    /// Diagnostic test to understand why jump isn't working in tests.
-    /// This test examines the state at each step to identify where the flow breaks.
-    #[test]
-    fn diagnose_jump_flow() {
-        let mut app = create_test_app();
-
-        spawn_ground(&mut app, Vec2::new(0.0, 0.0), Vec2::new(100.0, 5.0));
-        let character = spawn_character(&mut app, Vec2::new(0.0, 20.0));
-
-        // Run simulation to settle
-        run_for_duration(&mut app, 2.0);
-
-        // Verify grounded
-        let controller = app.world().get::<CharacterController>(character).unwrap();
-        let config = app.world().get::<ControllerConfig>(character).unwrap();
-        eprintln!("\n=== DIAGNOSTIC: Jump Flow Analysis ===");
-        eprintln!("Step 0 - Initial state:");
-        eprintln!("  - grounded: {}", controller.is_grounded(config));
-        eprintln!("  - ground_dist: {:?}", controller.ground_distance());
-
-        // Check initial MovementIntent state
-        let intent = app.world().get::<MovementIntent>(character).unwrap();
-        eprintln!("  - jump_pressed: {}", intent.jump_pressed);
-        eprintln!("  - jump_request: {:?}", intent.jump_request);
-
-        // Check gravity and ideal_up
-        eprintln!("  - gravity: {:?}", controller.gravity);
-        eprintln!("  - ideal_up: {:?}", controller.ideal_up());
-        eprintln!("  - ideal_down: {:?}", controller.ideal_down());
-
-        // Step 1: Set jump_pressed to false explicitly
-        eprintln!("\nStep 1 - Explicitly set jump_pressed=false:");
-        if let Some(mut intent) = app.world_mut().get_mut::<MovementIntent>(character) {
-            intent.jump_pressed = false;
-        }
-
-        // Run one tick
-        tick(&mut app);
-
-        let intent = app.world().get::<MovementIntent>(character).unwrap();
-        eprintln!("  After tick:");
-        eprintln!("    - jump_pressed: {}", intent.jump_pressed);
-        eprintln!("    - jump_request: {:?}", intent.jump_request);
-
-        // Step 2: Set jump_pressed to true (create rising edge)
-        eprintln!("\nStep 2 - Set jump_pressed=true (rising edge):");
-        if let Some(mut intent) = app.world_mut().get_mut::<MovementIntent>(character) {
-            intent.jump_pressed = true;
-        }
-
-        let intent_before_tick = app.world().get::<MovementIntent>(character).unwrap();
-        eprintln!("  Before tick:");
-        eprintln!("    - jump_pressed: {}", intent_before_tick.jump_pressed);
-        eprintln!("    - jump_request: {:?}", intent_before_tick.jump_request);
-
-        // Run one tick - process_jump_state should detect rising edge
-        tick(&mut app);
-
-        let intent_after_tick = app.world().get::<MovementIntent>(character).unwrap();
-        eprintln!("  After tick (process_jump_state should have run):");
-        eprintln!("    - jump_pressed: {}", intent_after_tick.jump_pressed);
-        eprintln!("    - jump_request: {:?}", intent_after_tick.jump_request);
-
-        // Step 3: Run more ticks to let jump be evaluated and applied
-        eprintln!("\nStep 3 - Run 5 more ticks for jump evaluation and application:");
-        for i in 0..5 {
-            tick(&mut app);
-
-            let vel = app.world().get::<LinearVelocity>(character).unwrap().0;
-            let intent = app.world().get::<MovementIntent>(character).unwrap();
-            eprintln!("  Tick {}: vel.y={:.2}, jump_request={:?}", i, vel.y, intent.jump_request);
-
-            if vel.y > 40.0 {
-                eprintln!("  ✅ Jump applied successfully at tick {i}");
-                break;
-            }
-        }
-
-        let final_vel = app.world().get::<LinearVelocity>(character).unwrap().0;
-        eprintln!("\nFinal velocity.y: {:.2}", final_vel.y);
-        eprintln!("=== END DIAGNOSTIC ===\n");
-
-        // Don't assert - this is purely diagnostic
-    }
 
     #[test]
     fn walk_intent_changes_velocity() {
@@ -1540,6 +1259,440 @@ mod collision_layers {
         assert!(
             ctrl_no.ground_detected(),
             "Character with default layers should detect ground"
+        );
+    }
+}
+
+// ==================== Caster Auto-Spawn Tests ====================
+// Verify that spawn_detection_casters creates all ShapeCaster child entities
+// when a CharacterController is added without the CastersSpawned marker.
+
+mod caster_spawning {
+    use super::*;
+
+    /// Helper: count child entities of `parent` that have marker `M` and `ShapeCaster`.
+    fn count_casters_of_type<M: Component>(app: &mut App, parent: Entity) -> usize {
+        let mut q = app.world_mut().query::<(&CasterOfCharacter, &ShapeCaster, &M)>();
+        q.iter(app.world())
+            .filter(|(rel, _, _)| rel.0 == parent)
+            .count()
+    }
+
+    #[test]
+    fn auto_spawn_creates_ground_caster() {
+        let mut app = create_test_app();
+        let character = spawn_character_for_auto_spawn_test(&mut app, Vec2::new(0.0, 20.0));
+
+        // One FixedUpdate tick flushes spawn commands from spawn_detection_casters.
+        run_frames(&mut app, 2);
+
+        let count = count_casters_of_type::<GroundCaster>(&mut app, character);
+        assert_eq!(count, 1, "auto-spawn must create exactly 1 GroundCaster with ShapeCaster");
+    }
+
+    #[test]
+    fn auto_spawn_creates_wall_casters() {
+        let mut app = create_test_app();
+        let character = spawn_character_for_auto_spawn_test(&mut app, Vec2::new(0.0, 20.0));
+
+        run_frames(&mut app, 2);
+
+        let left  = count_casters_of_type::<LeftWallCaster>(&mut app, character);
+        let right = count_casters_of_type::<RightWallCaster>(&mut app, character);
+        assert_eq!(left,  1, "auto-spawn must create exactly 1 LeftWallCaster  with ShapeCaster");
+        assert_eq!(right, 1, "auto-spawn must create exactly 1 RightWallCaster with ShapeCaster");
+    }
+
+    #[test]
+    fn auto_spawn_creates_ceiling_caster() {
+        let mut app = create_test_app();
+        let character = spawn_character_for_auto_spawn_test(&mut app, Vec2::new(0.0, 20.0));
+
+        run_frames(&mut app, 2);
+
+        let count = count_casters_of_type::<CeilingCaster>(&mut app, character);
+        assert_eq!(count, 1, "auto-spawn must create exactly 1 CeilingCaster with ShapeCaster");
+    }
+
+    #[test]
+    fn auto_spawn_creates_stair_casters_when_enabled() {
+        let mut app = create_test_app();
+        // CharacterController::new() has stair_config enabled by default.
+        let character = spawn_character_for_auto_spawn_test(&mut app, Vec2::new(0.0, 20.0));
+
+        run_frames(&mut app, 2);
+
+        let stair   = count_casters_of_type::<StairCaster>(&mut app, character);
+        let current = count_casters_of_type::<CurrentGroundCaster>(&mut app, character);
+        assert_eq!(stair,   1, "auto-spawn must create exactly 1 StairCaster with ShapeCaster");
+        assert_eq!(current, 1, "auto-spawn must create exactly 1 CurrentGroundCaster with ShapeCaster");
+    }
+
+    #[test]
+    fn auto_spawn_skips_stair_casters_when_disabled() {
+        let mut app = create_test_app();
+
+        // Spawn with stair stepping disabled.
+        let transform = Transform::from_translation(Vec2::new(0.0, 20.0).extend(0.0));
+        let mut controller = CharacterController::new();
+        controller.stair_config = None;
+        let character = app.world_mut().spawn((
+            transform,
+            GlobalTransform::from(transform),
+            RigidBody::Dynamic,
+            controller,
+            ControllerConfig::default(),
+            MovementIntent::new(),
+            Collider::capsule(4.0, 8.0),
+            LockedAxes::ROTATION_LOCKED,
+            GravityScale(0.0),
+        )).id();
+
+        run_frames(&mut app, 2);
+
+        let stair   = count_casters_of_type::<StairCaster>(&mut app, character);
+        let current = count_casters_of_type::<CurrentGroundCaster>(&mut app, character);
+        assert_eq!(stair,   0, "no StairCaster should be spawned when stair_config is None");
+        assert_eq!(current, 0, "no CurrentGroundCaster should be spawned when stair_config is None");
+    }
+
+    #[test]
+    fn auto_spawn_marks_entity_with_casters_spawned() {
+        let mut app = create_test_app();
+        let character = spawn_character_for_auto_spawn_test(&mut app, Vec2::new(0.0, 20.0));
+
+        // Before: CastersSpawned must NOT be present yet (commands not flushed).
+        assert!(
+            app.world().get::<CastersSpawned>(character).is_none(),
+            "CastersSpawned should not be present before first tick"
+        );
+
+        run_frames(&mut app, 2);
+
+        assert!(
+            app.world().get::<CastersSpawned>(character).is_some(),
+            "CastersSpawned must be inserted after auto-spawn runs"
+        );
+    }
+
+    #[test]
+    fn auto_spawn_does_not_duplicate_casters_on_subsequent_frames() {
+        let mut app = create_test_app();
+        let character = spawn_character_for_auto_spawn_test(&mut app, Vec2::new(0.0, 20.0));
+
+        // Run many frames — spawn_detection_casters must NOT keep spawning.
+        run_frames(&mut app, 10);
+
+        let ground = count_casters_of_type::<GroundCaster>(&mut app, character);
+        assert_eq!(ground, 1, "GroundCaster must not be duplicated across frames");
+
+        let left  = count_casters_of_type::<LeftWallCaster>(&mut app, character);
+        let right = count_casters_of_type::<RightWallCaster>(&mut app, character);
+        assert_eq!(left,  1, "LeftWallCaster must not be duplicated");
+        assert_eq!(right, 1, "RightWallCaster must not be duplicated");
+
+        let ceiling = count_casters_of_type::<CeilingCaster>(&mut app, character);
+        assert_eq!(ceiling, 1, "CeilingCaster must not be duplicated");
+
+        let stair   = count_casters_of_type::<StairCaster>(&mut app, character);
+        let current = count_casters_of_type::<CurrentGroundCaster>(&mut app, character);
+        assert_eq!(stair,   1, "StairCaster must not be duplicated");
+        assert_eq!(current, 1, "CurrentGroundCaster must not be duplicated");
+    }
+
+    #[test]
+    fn stair_caster_starts_disabled() {
+        let mut app = create_test_app();
+        let character = spawn_character_for_auto_spawn_test(&mut app, Vec2::new(0.0, 20.0));
+
+        run_frames(&mut app, 2);
+
+        // Stair caster must start disabled — it is only enabled while walking.
+        let mut q = app.world_mut().query::<(&CasterOfCharacter, &ShapeCaster, &StairCaster)>();
+        let enabled = q
+            .iter(app.world())
+            .filter(|(rel, _, _)| rel.0 == character)
+            .map(|(_, caster, _)| caster.enabled)
+            .next()
+            .expect("StairCaster must exist after auto-spawn");
+        assert!(!enabled, "StairCaster must start disabled (enabled only while walking)");
+    }
+
+    #[test]
+    fn current_ground_caster_starts_disabled() {
+        let mut app = create_test_app();
+        let character = spawn_character_for_auto_spawn_test(&mut app, Vec2::new(0.0, 20.0));
+
+        run_frames(&mut app, 2);
+
+        let mut q = app.world_mut().query::<(&CasterOfCharacter, &ShapeCaster, &CurrentGroundCaster)>();
+        let enabled = q
+            .iter(app.world())
+            .filter(|(rel, _, _)| rel.0 == character)
+            .map(|(_, caster, _)| caster.enabled)
+            .next()
+            .expect("CurrentGroundCaster must exist after auto-spawn");
+        assert!(!enabled, "CurrentGroundCaster must start disabled (enabled only while walking)");
+    }
+
+    /// Casters that are always active (ground, walls, ceiling) must start enabled.
+    #[test]
+    fn persistent_casters_start_enabled() {
+        let mut app = create_test_app();
+        let character = spawn_character_for_auto_spawn_test(&mut app, Vec2::new(0.0, 20.0));
+
+        run_frames(&mut app, 2);
+
+        // Ground caster
+        let mut q = app.world_mut().query::<(&CasterOfCharacter, &ShapeCaster, &GroundCaster)>();
+        let ground_enabled = q
+            .iter(app.world())
+            .filter(|(rel, _, _)| rel.0 == character)
+            .map(|(_, caster, _)| caster.enabled)
+            .next()
+            .expect("GroundCaster must exist");
+        assert!(ground_enabled, "GroundCaster must start enabled");
+
+        // Left wall caster
+        let mut q = app.world_mut().query::<(&CasterOfCharacter, &ShapeCaster, &LeftWallCaster)>();
+        let left_enabled = q
+            .iter(app.world())
+            .filter(|(rel, _, _)| rel.0 == character)
+            .map(|(_, caster, _)| caster.enabled)
+            .next()
+            .expect("LeftWallCaster must exist");
+        assert!(left_enabled, "LeftWallCaster must start enabled");
+
+        // Ceiling caster
+        let mut q = app.world_mut().query::<(&CasterOfCharacter, &ShapeCaster, &CeilingCaster)>();
+        let ceiling_enabled = q
+            .iter(app.world())
+            .filter(|(rel, _, _)| rel.0 == character)
+            .map(|(_, caster, _)| caster.enabled)
+            .next()
+            .expect("CeilingCaster must exist");
+        assert!(ceiling_enabled, "CeilingCaster must start enabled");
+    }
+}
+
+// ==================== Stair Detection Tests ====================
+// These tests verify that the full component-based stair detection pipeline works:
+//   spawn_stair_casters → update_stair_casters → ShapeHits → avian_stair_detection
+
+mod stair_detection {
+    use super::*;
+
+    // Test geometry (all y-values are world-space, ground top at y=0):
+    //   Ground:  center=(0,-5), half=(200,5) → top at y=0
+    //   Stair:   center=(10,3.5), half=(4,4.5) → x=[6,14], top at y=8
+    //   Character: spawned at y=20, settles to y≈14 (float_height=6 + bottom_offset=8)
+    //
+    // Stair x=[6,14] starts just outside GroundCaster's ±5.5 horizontal range,
+    // so the GroundCaster detects flat ground (y=0) not the stair.
+    //
+    // When walking right (walk=+1.0), update_stair_casters places the StairCaster at:
+    //   origin = right*(radius+cast_offset) + up*(max_climb - bottom_offset)
+    //          = (7, 0) + (0, 11-8) = (7, 3)   → world (7, 17)
+    // Cast from (7, 17) downward 11 units → hits stair top (y=8) at distance=9.
+    //
+    // CurrentGroundCaster (origin=0) hits ground at (0, 0) distance=14.
+    // step_height = stair_top(8) - ground_top(0) = 8.
+    // Conditions: 8 > stair_tolerance(2), 8 ≤ max_climb_height(11), normal=(0,1) > 0.7 → DETECTED.
+
+    const GROUND_Y: f32 = 0.0;
+    const STAIR_HEIGHT: f32 = 8.0;
+    const CHARACTER_START_Y: f32 = 20.0;
+
+    fn setup_stair_scene(app: &mut App) -> Entity {
+        // Flat ground beneath character (wide, so CurrentGroundCaster always hits it)
+        spawn_ground(app, Vec2::new(0.0, GROUND_Y - 5.0), Vec2::new(200.0, 5.0));
+        // Stair platform to the right — x=[6,14] is outside GroundCaster ±5.5 range,
+        // so the ground caster sees flat ground while the stair caster hits the step.
+        spawn_ground(app, Vec2::new(10.0, STAIR_HEIGHT / 2.0 - 0.5), Vec2::new(4.0, STAIR_HEIGHT / 2.0 + 0.5));
+        spawn_character(&mut *app, Vec2::new(0.0, CHARACTER_START_Y))
+    }
+
+    #[test]
+    fn stair_caster_enabled_while_walking() {
+        let mut app = create_test_app();
+        let character = setup_stair_scene(&mut app);
+
+        // Settle character on ground first
+        run_for_duration(&mut app, 2.0);
+
+        // Start walking right
+        app.world_mut()
+            .get_mut::<MovementIntent>(character)
+            .unwrap()
+            .set_walk(1.0);
+
+        run_frames(&mut app, 3);
+
+        // StairCaster must be enabled while intent.walk != 0
+        let mut q = app.world_mut().query::<(&CasterOfCharacter, &ShapeCaster, &StairCaster)>();
+        let enabled = q
+            .iter(app.world())
+            .filter(|(rel, _, _)| rel.0 == character)
+            .map(|(_, caster, _)| caster.enabled)
+            .next()
+            .expect("StairCaster must exist");
+        assert!(enabled, "StairCaster must be enabled when walking");
+    }
+
+    #[test]
+    fn stair_caster_disabled_when_not_walking() {
+        let mut app = create_test_app();
+        let character = setup_stair_scene(&mut app);
+
+        run_for_duration(&mut app, 2.0);
+
+        // Explicitly no walk input
+        app.world_mut()
+            .get_mut::<MovementIntent>(character)
+            .unwrap()
+            .set_walk(0.0);
+
+        run_frames(&mut app, 3);
+
+        let mut q = app.world_mut().query::<(&CasterOfCharacter, &ShapeCaster, &StairCaster)>();
+        let enabled = q
+            .iter(app.world())
+            .filter(|(rel, _, _)| rel.0 == character)
+            .map(|(_, caster, _)| caster.enabled)
+            .next()
+            .expect("StairCaster must exist");
+        assert!(!enabled, "StairCaster must be disabled when not walking");
+    }
+
+    #[test]
+    fn stair_detected_when_walking_toward_step() {
+        let mut app = create_test_app();
+        let character = setup_stair_scene(&mut app);
+
+        // Settle
+        run_for_duration(&mut app, 2.0);
+
+        // Walk right toward stair — stair caster at (character_x+7) will hit the stair
+        app.world_mut()
+            .get_mut::<MovementIntent>(character)
+            .unwrap()
+            .set_walk(1.0);
+
+        // Need ≥2 walking frames: frame 1 enables+positions caster, physics runs, frame 2 reads ShapeHits
+        run_frames(&mut app, 5);
+
+        let controller = app.world().get::<CharacterController>(character).unwrap();
+        assert!(
+            controller.step_detected,
+            "step_detected must be true when stair caster hits a step (step_height={})",
+            controller.step_height
+        );
+        assert!(
+            controller.step_height > 2.0,
+            "step_height must be > stair_tolerance; got {}",
+            controller.step_height
+        );
+        assert!(
+            controller.step_height <= 11.0,
+            "step_height must be ≤ max_climb_height; got {}",
+            controller.step_height
+        );
+    }
+
+    #[test]
+    fn no_step_detected_when_not_walking() {
+        let mut app = create_test_app();
+        let character = setup_stair_scene(&mut app);
+
+        run_for_duration(&mut app, 2.0);
+
+        // No walk — stair casters stay disabled, no detection
+        let controller = app.world().get::<CharacterController>(character).unwrap();
+        assert!(
+            !controller.step_detected,
+            "step_detected must be false when not walking"
+        );
+    }
+
+    #[test]
+    fn no_step_detected_on_flat_ground() {
+        let mut app = create_test_app();
+
+        // Only flat ground, no stair
+        spawn_ground(&mut app, Vec2::new(0.0, -5.0), Vec2::new(200.0, 5.0));
+        let character = spawn_character(&mut app, Vec2::new(0.0, 20.0));
+
+        run_for_duration(&mut app, 2.0);
+
+        app.world_mut()
+            .get_mut::<MovementIntent>(character)
+            .unwrap()
+            .set_walk(1.0);
+
+        run_frames(&mut app, 5);
+
+        let controller = app.world().get::<CharacterController>(character).unwrap();
+        assert!(
+            !controller.step_detected,
+            "step_detected must be false on flat ground (step_height={})",
+            controller.step_height
+        );
+    }
+
+    #[test]
+    fn stair_shapehits_populated_by_avian_when_enabled() {
+        // Verify the ShapeHits component exists and has data when the caster is enabled
+        // and pointing at a surface — this proves the Avian component pipeline works.
+        let mut app = create_test_app();
+        let character = setup_stair_scene(&mut app);
+
+        run_for_duration(&mut app, 2.0);
+
+        app.world_mut()
+            .get_mut::<MovementIntent>(character)
+            .unwrap()
+            .set_walk(1.0);
+
+        // Frame 1: caster enabled+positioned → physics runs → ShapeHits populated
+        // Frame 2+: avian_stair_detection reads results
+        run_frames(&mut app, 5);
+
+        // Directly inspect the ShapeHits component on the StairCaster entity
+        let mut q = app.world_mut().query::<(&CasterOfCharacter, &ShapeHits, &StairCaster)>();
+        let has_hit = q
+            .iter(app.world())
+            .filter(|(rel, _, _)| rel.0 == character)
+            .any(|(_, hits, _)| hits.first().is_some());
+
+        assert!(
+            has_hit,
+            "Avian must populate ShapeHits on the StairCaster when it is enabled and pointing at a surface"
+        );
+    }
+
+    #[test]
+    fn current_ground_caster_shapehits_populated_by_avian_when_enabled() {
+        let mut app = create_test_app();
+        let character = setup_stair_scene(&mut app);
+
+        run_for_duration(&mut app, 2.0);
+
+        app.world_mut()
+            .get_mut::<MovementIntent>(character)
+            .unwrap()
+            .set_walk(1.0);
+
+        run_frames(&mut app, 3);
+
+        let mut q = app.world_mut().query::<(&CasterOfCharacter, &ShapeHits, &CurrentGroundCaster)>();
+        let has_hit = q
+            .iter(app.world())
+            .filter(|(rel, _, _)| rel.0 == character)
+            .any(|(_, hits, _)| hits.first().is_some());
+
+        assert!(
+            has_hit,
+            "Avian must populate ShapeHits on the CurrentGroundCaster when enabled and pointing at ground"
         );
     }
 }

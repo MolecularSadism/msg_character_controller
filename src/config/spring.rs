@@ -24,9 +24,9 @@ pub struct SpringConfig {
 impl Default for SpringConfig {
     fn default() -> Self {
         Self {
-            strength: 300.0,
+            strength: 180.0,
             damping: 13.0,
-            max_force: Some(3000.0),
+            max_force: Some(2000.0),
             max_velocity: None,
             jump_filter_duration: 0.15,
         }
