@@ -1108,7 +1108,7 @@ pub fn clear_controller_forces(
         &mut CharacterController,
         Option<&mut ConstantForce>,
         Option<&mut ConstantTorque>,
-    ), Without<RigidBodyDisabled>>,
+    )>,
 ) {
     for (mut controller, constant_force, constant_torque) in &mut q {
         // Get the forces we applied last frame and clear for the new frame

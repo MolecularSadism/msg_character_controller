@@ -58,19 +58,7 @@ impl Plugin for ExamplePhysicsPlugin {
         app.insert_resource(Time::<Fixed>::from_hz(FIXED_UPDATE_HZ));
 
         app.add_plugins(PhysicsPlugins::default().with_length_unit(self.pixels_per_meter));
-        app.add_plugins(PhysicsDebugPlugin)
-                .insert_gizmo_config(
-            PhysicsGizmos {
-                collider_color: Some(Color::WHITE),
-                raycast_color: Some(Color::WHITE),
-                raycast_normal_color: Some(Color::WHITE),
-                shapecast_color: Some(Color::WHITE),
-                shapecast_normal_color: Some(Color::WHITE),
-                ..default()
-            },
-            GizmoConfig::default(),
-        )
-        ;
+        app.add_plugins(PhysicsDebugPlugin);
     }
 }
 
