@@ -250,23 +250,22 @@ pub fn stair_climbing_ui(ui: &mut egui::Ui, controller: &CharacterController) {
         }
 
         // Active climbing state
-        let is_climbing = controller.active_stair_height > 0.01;
         ui.horizontal(|ui| {
             ui.label("Climbing Active:");
-            let color = if is_climbing {
+            let color = if controller.active_stair_height.is_some() {
                 egui::Color32::from_rgb(100, 200, 100)
             } else {
                 egui::Color32::from_rgb(150, 150, 150)
             };
-            ui.colored_label(color, if is_climbing { "Yes" } else { "No" });
+            ui.colored_label(color, if controller.active_stair_height.is_some() { "Yes" } else { "No" });
         });
 
-        if is_climbing {
+        if let Some(height) = controller.active_stair_height {
             ui.horizontal(|ui| {
                 ui.label("Active Height:");
                 ui.colored_label(
                     egui::Color32::from_rgb(100, 200, 100),
-                    format!("{:.2}", controller.active_stair_height),
+                    format!("{:.2}", height),
                 );
             });
         }
@@ -275,7 +274,7 @@ pub fn stair_climbing_ui(ui: &mut egui::Ui, controller: &CharacterController) {
         ui.separator();
         ui.horizontal(|ui| {
             ui.label("Status:");
-            let (status_text, status_color) = if is_climbing {
+            let (status_text, status_color) = if controller.active_stair_height.is_some() {
                 ("CLIMBING", egui::Color32::from_rgb(100, 200, 100))
             } else if controller.step_detected {
                 ("STEP AHEAD", egui::Color32::from_rgb(200, 150, 100))

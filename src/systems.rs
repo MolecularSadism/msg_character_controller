@@ -399,7 +399,7 @@ pub fn accumulate_spring_force<B: CharacterPhysicsBackend>(world: &mut World) {
 /// Using `max_spring_force` provides responsive climbing since it represents the
 /// maximum force the spring system can apply.
 ///
-/// When no step is detected, `active_stair_height` is reset to 0.
+/// When no step is detected, `active_stair_height` is reset to `None`.
 ///
 /// # Panics
 ///
@@ -417,15 +417,14 @@ pub fn accumulate_stair_climb_force<B: CharacterPhysicsBackend>(world: &mut Worl
         // Get stair config (we know it exists because of the filter)
         let stair_config = controller.stair_config.as_ref().unwrap();
 
-        // Check if a step is detected that requires climbing
-        let should_climb = controller.step_detected
-            && controller.step_height > config.floating.float_height + stair_config.stair_tolerance
-            && controller.step_height <= stair_config.max_climb_height;
+        // The sensor only reports steps within [min_step_depth, max_climb_height], so
+        // step_detected is the sole gate needed here.
+        let should_climb = controller.step_detected;
 
         if should_climb {
             // Set active_stair_height to the measured step height
             if let Some(mut ctrl) = world.get_mut::<CharacterController>(entity) {
-                ctrl.active_stair_height = controller.step_height;
+                ctrl.active_stair_height = Some(controller.step_height);
             }
 
             // Apply extra upward force to help climb the step
@@ -454,7 +453,7 @@ pub fn accumulate_stair_climb_force<B: CharacterPhysicsBackend>(world: &mut Worl
             if let Some(mut ctrl) = world.get_mut::<CharacterController>(entity) {
                 // Gradually decay active_stair_height for smooth transition
                 // Or reset immediately - for now, reset immediately
-                ctrl.active_stair_height = 0.0;
+                ctrl.active_stair_height = None;
             }
         }
     }
@@ -596,6 +595,7 @@ pub fn apply_fall_gravity<B: CharacterPhysicsBackend>(world: &mut World) {
 /// - The character has downward fly intent (allowing intentional descent)
 /// - The character is not moving toward the wall
 /// - `wall_clinging_dampening` is 0.0
+/// - The character is actively climbing a stair step (`active_stair_height > 0.0`)
 pub fn apply_wall_clinging_dampening<B: CharacterPhysicsBackend>(world: &mut World) {
     // Collect entities that might need wall dampening
     let entities: Vec<(
@@ -612,10 +612,15 @@ pub fn apply_wall_clinging_dampening<B: CharacterPhysicsBackend>(world: &mut Wor
         ), Without<RigidBodyDisabled>>()
         .iter(world)
         .filter(|(_, config, controller, _)| {
-            // Only process entities with wall clinging enabled and non-zero dampening
+            // Only process entities with wall clinging enabled and non-zero dampening.
+            // Skip when actively climbing a stair step — the stair riser registers as a
+            // wall and wall clinging would fight the climb force. active_stair_height is
+            // reset to 0.0 when not climbing, so the previous wall_clinging state is
+            // restored automatically.
             config.walking.wall_clinging
                 && config.walking.wall_clinging_dampening > 0.0
                 && controller.touching_wall()
+                && controller.active_stair_height.is_none()
         })
         .map(|(e, config, controller, intent)| (e, *config, controller.clone(), intent.clone()))
         .collect();

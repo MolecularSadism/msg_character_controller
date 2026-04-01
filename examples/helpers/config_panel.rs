@@ -604,14 +604,6 @@ pub fn stair_settings_ui(ui: &mut egui::Ui, stair_config: &mut StairConfig) {
             );
         });
         ui.horizontal(|ui| {
-            ui.label("Tolerance:");
-            ui.add(
-                egui::DragValue::new(&mut stair_config.stair_tolerance)
-                    .speed(0.1)
-                    .range(0.0..=10.0),
-            );
-        });
-        ui.horizontal(|ui| {
             ui.label("Climb Force Mult:");
             ui.add(
                 egui::DragValue::new(&mut stair_config.climb_force_multiplier)

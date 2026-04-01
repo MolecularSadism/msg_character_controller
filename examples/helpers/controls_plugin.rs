@@ -190,7 +190,4 @@ fn camera_follow(
         .translation
         .lerp(player_transform.translation, 0.05);
 
-    camera_transform.rotation = camera_transform
-        .rotation
-        .slerp(player_transform.rotation, 0.1);
 }

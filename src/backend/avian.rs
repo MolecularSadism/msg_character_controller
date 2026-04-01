@@ -723,6 +723,7 @@ fn update_stair_casters(
     mut q_ground_casters: Query<(&CasterOfCharacter, &mut ShapeCaster), (With<CurrentGroundCaster>, Without<StairCaster>)>,
     q_controllers: Query<(
         &CharacterController,
+        &ControllerConfig,
         Option<&MovementIntent>,
         Option<&CollisionLayers>,
         Option<&Collider>,
@@ -730,7 +731,7 @@ fn update_stair_casters(
 ) {
     // Update stair casters
     for (caster_parent, mut shape_caster) in &mut q_stair_casters {
-        let Ok((controller, movement_intent, collision_layers, collider)) = q_controllers.get(caster_parent.0) else {
+        let Ok((controller, config, movement_intent, collision_layers, collider)) = q_controllers.get(caster_parent.0) else {
             continue;
         };
 
@@ -782,8 +783,9 @@ fn update_stair_casters(
             shape_caster.direction = Dir2::NEG_Y;
             shape_caster.shape_rotation = 0.0;
 
-            // Update max_distance
-            shape_caster.max_distance = stair_config.max_climb_height;
+            // float_height extends reach to ground level; min_step_depth shortens it so
+            // steps shallower than that threshold are never detected in the first place
+            shape_caster.max_distance = stair_config.max_climb_height + config.floating.float_height - stair_config.min_step_depth;
 
             // Inherit collision layers from parent
             if let Some(layers) = collision_layers {
@@ -802,7 +804,7 @@ fn update_stair_casters(
 
     // Update current ground casters
     for (caster_parent, mut shape_caster) in &mut q_ground_casters {
-        let Ok((controller, movement_intent, collision_layers, _)) = q_controllers.get(caster_parent.0) else {
+        let Ok((controller, _config, movement_intent, collision_layers, _)) = q_controllers.get(caster_parent.0) else {
             continue;
         };
 
@@ -833,7 +835,7 @@ fn update_stair_casters(
             shape_caster.shape_rotation = 0.0;
 
             // Update max_distance to cover max_climb_height + float_height + tolerance + buffer
-            shape_caster.max_distance = stair_config.max_climb_height + controller.collider_bottom_offset + stair_config.stair_tolerance + 2.0;
+            shape_caster.max_distance = stair_config.max_climb_height + controller.collider_bottom_offset + 2.0;
 
             // Inherit collision layers from parent
             if let Some(layers) = collision_layers {
@@ -1083,15 +1085,14 @@ fn avian_stair_detection(
             // Use dot product with up direction to get the vertical component
             let step_height = (step_surface_point - current_ground_point).dot(up);
 
-            // Check if the step is valid:
-            // 1. Step height is above stair_tolerance (needs climbing, not just spring)
-            // 2. Step height is below max_climb_height (climbable)
-            // 3. Step surface is mostly horizontal (normal points up)
+            // Check if the step is geometrically valid:
+            // 1. Step height is below max_climb_height (climbable)
+            // 2. Step surface is mostly horizontal (normal points up)
+            // Min height threshold is enforced by the cast length (min_step_depth).
 
             let normal_up_component = stair.normal1.dot(up);
 
-            if step_height > stair_config.stair_tolerance
-                && step_height <= stair_config.max_climb_height
+            if step_height <= stair_config.max_climb_height
                 && normal_up_component > 0.7
             {
                 controller.step_detected = true;

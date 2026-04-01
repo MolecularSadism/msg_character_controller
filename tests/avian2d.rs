@@ -1497,7 +1497,7 @@ mod stair_detection {
     //
     // CurrentGroundCaster (origin=0) hits ground at (0, 0) distance=14.
     // step_height = stair_top(8) - ground_top(0) = 8.
-    // Conditions: 8 > stair_tolerance(2), 8 ≤ max_climb_height(11), normal=(0,1) > 0.7 → DETECTED.
+    // Conditions: 8 ≥ min_step_depth(8), 8 ≤ max_climb_height(11), normal=(0,1) > 0.7 → DETECTED.
 
     const GROUND_Y: f32 = 0.0;
     const STAIR_HEIGHT: f32 = 8.0;
@@ -1588,8 +1588,8 @@ mod stair_detection {
             controller.step_height
         );
         assert!(
-            controller.step_height > 2.0,
-            "step_height must be > stair_tolerance; got {}",
+            controller.step_height >= 8.0,
+            "step_height must be >= min_step_depth; got {}",
             controller.step_height
         );
         assert!(
