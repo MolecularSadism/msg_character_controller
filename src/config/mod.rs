@@ -1070,11 +1070,11 @@ pub struct StairConfig {
 impl Default for StairConfig {
     fn default() -> Self {
         Self {
-            max_climb_height: 10.0,
-            min_step_depth: 2.0,
+            max_climb_height: 11.0,
+            min_step_depth: 8.0,
             stair_cast_width: 2.0,
             stair_cast_offset: 5.0,
-            climb_force_multiplier: 0.0,
+            climb_force_multiplier: 2.0,
             enabled: true,
         }
     }
