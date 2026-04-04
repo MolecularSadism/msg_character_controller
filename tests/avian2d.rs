@@ -1696,3 +1696,146 @@ mod stair_detection {
         );
     }
 }
+
+// ==================== RigidBodyDisabled Tests ====================
+
+mod rigid_body_disabled {
+    use super::*;
+
+    /// Verify that spring force is not applied to a character with `RigidBodyDisabled`.
+    ///
+    /// A character close to the ground would normally receive a non-zero spring force
+    /// in `ConstantForce`. With `RigidBodyDisabled`, that component must stay at zero.
+    #[test]
+    fn disabled_character_receives_no_spring_force() {
+        let mut app = create_test_app();
+
+        // Ground surface at y=5, character at y=20 – within spring range
+        spawn_ground(&mut app, Vec2::new(0.0, 0.0), Vec2::new(100.0, 5.0));
+        let character = spawn_character(&mut app, Vec2::new(0.0, 20.0));
+
+        // Disable the rigidbody before any physics runs
+        app.world_mut()
+            .entity_mut(character)
+            .insert(RigidBodyDisabled);
+
+        run_for_duration(&mut app, 1.0);
+
+        let force = app.world().get::<ConstantForce>(character).unwrap();
+
+        // PROOF: ConstantForce must remain zero – no spring force applied
+        assert_eq!(
+            force.0,
+            Vec2::ZERO,
+            "Spring force must not be applied to a RigidBodyDisabled character, got {:?}",
+            force.0
+        );
+    }
+
+    /// Verify that gravity is not applied to a character with `RigidBodyDisabled`.
+    ///
+    /// An airborne character would normally accelerate downward each frame.
+    /// With `RigidBodyDisabled`, velocity must stay at zero.
+    #[test]
+    fn disabled_character_receives_no_gravity() {
+        let mut app = create_test_app();
+
+        // No ground – character stays airborne so gravity would normally act
+        let character = spawn_character(&mut app, Vec2::new(0.0, 500.0));
+
+        app.world_mut()
+            .entity_mut(character)
+            .insert(RigidBodyDisabled);
+
+        run_for_duration(&mut app, 1.0);
+
+        let vel = app.world().get::<LinearVelocity>(character).unwrap().0;
+
+        // PROOF: velocity must remain zero – gravity must not be applied
+        assert_eq!(
+            vel,
+            Vec2::ZERO,
+            "Gravity must not accelerate a RigidBodyDisabled character, got velocity {:?}",
+            vel
+        );
+
+        let force = app.world().get::<ConstantForce>(character).unwrap();
+        assert_eq!(
+            force.0,
+            Vec2::ZERO,
+            "ConstantForce must stay zero for a RigidBodyDisabled character, got {:?}",
+            force.0
+        );
+    }
+
+    /// Verify that walk impulses are not applied to a character with `RigidBodyDisabled`.
+    ///
+    /// Setting a walk intent on a grounded character would normally accelerate it
+    /// horizontally. With `RigidBodyDisabled`, velocity must not change.
+    #[test]
+    fn disabled_character_receives_no_walk_force() {
+        let mut app = create_test_app();
+
+        spawn_ground(&mut app, Vec2::new(0.0, 0.0), Vec2::new(100.0, 5.0));
+        let character = spawn_character(&mut app, Vec2::new(0.0, 20.0));
+
+        app.world_mut()
+            .entity_mut(character)
+            .insert(RigidBodyDisabled);
+
+        // Set walk intent before running
+        app.world_mut()
+            .get_mut::<MovementIntent>(character)
+            .unwrap()
+            .set_walk(1.0);
+
+        run_for_duration(&mut app, 1.0);
+
+        let vel = app.world().get::<LinearVelocity>(character).unwrap().0;
+
+        // PROOF: horizontal velocity must remain zero – walk must not be applied
+        assert_eq!(
+            vel.x,
+            0.0,
+            "Walk force must not accelerate a RigidBodyDisabled character, got vx={}",
+            vel.x
+        );
+    }
+
+    /// Verify that forces accumulated before disabling are properly cleaned up.
+    ///
+    /// If a character has forces in `ConstantForce` from normal operation,
+    /// disabling it should cause those forces to be subtracted by the next
+    /// `clear_controller_forces` pass, leaving only external (non-controller) forces.
+    #[test]
+    fn forces_are_cleared_when_character_is_disabled() {
+        let mut app = create_test_app();
+
+        // Ground surface – character will receive spring + gravity forces
+        spawn_ground(&mut app, Vec2::new(0.0, 0.0), Vec2::new(100.0, 5.0));
+        let character = spawn_character(&mut app, Vec2::new(0.0, 20.0));
+
+        // Run for a bit with physics active so forces accumulate
+        run_for_duration(&mut app, 0.5);
+
+        // Now disable the rigidbody
+        app.world_mut()
+            .entity_mut(character)
+            .insert(RigidBodyDisabled);
+
+        // Run another frame – clear_controller_forces must subtract the previously
+        // applied forces, and apply_controller_forces must not add new ones
+        run_frames(&mut app, 2);
+
+        let force = app.world().get::<ConstantForce>(character).unwrap();
+
+        // PROOF: after disabling, ConstantForce must be zero (all controller
+        // forces cleaned up, none re-added)
+        assert_eq!(
+            force.0,
+            Vec2::ZERO,
+            "ConstantForce must be zero after disabling – controller forces must be cleaned up, got {:?}",
+            force.0
+        );
+    }
+}
