@@ -108,6 +108,19 @@ impl CharacterPhysicsBackend for Avian2dBackend {
         }
     }
 
+    fn set_linear_damping(world: &mut World, entity: Entity, damping: f32) {
+        let Ok(mut entity_mut) = world.get_entity_mut(entity) else {
+            return;
+        };
+        if let Some(mut current) = entity_mut.get_mut::<LinearDamping>() {
+            if (current.0 - damping).abs() > f32::EPSILON {
+                current.0 = damping;
+            }
+        } else {
+            entity_mut.insert(LinearDamping(damping));
+        }
+    }
+
     fn apply_force(world: &mut World, entity: Entity, force: Vec2) {
         // Accumulate into CharacterController instead of directly modifying forces.
         // Forces will be applied at the end of the frame by finalize_controller_forces.

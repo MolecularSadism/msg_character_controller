@@ -154,6 +154,13 @@ fn handle_input(
         }
         movement.set_fly_horizontal(fly_horizontal);
 
+        // Mark flight active whenever any flying input is held. While active,
+        // `apply_fly` drives `FlyingConfig::damping` through the physics
+        // backend's linear damping component and `apply_walk` skips airborne
+        // friction so the two don't fight.
+        let fly_active = fly_vertical.abs() > f32::EPSILON || fly_horizontal.abs() > f32::EPSILON;
+        movement.set_fly_active(fly_active);
+
         // Jump on W only - pass the current button state as a bool
         // The controller handles edge detection, buffering, and all jump logic
         let wants_to_jump = keyboard.pressed(KeyCode::KeyW);

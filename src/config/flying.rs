@@ -19,6 +19,13 @@ pub struct FlyingConfig {
 
     /// Gravity compensation ratio when flying upward (0.0-1.0+).
     pub gravity_compensation: f32,
+
+    /// Linear damping applied via the physics backend while fly mode is active.
+    ///
+    /// Drives the backend's linear damping component (e.g. Avian's `LinearDamping`)
+    /// instead of manually decaying velocity, so it composes cleanly with impulses
+    /// and external forces.
+    pub damping: f32,
 }
 
 impl Default for FlyingConfig {
@@ -29,6 +36,7 @@ impl Default for FlyingConfig {
             acceleration: 500.0,
             vertical_acceleration_ratio: 0.6,
             gravity_compensation: 0.05,
+            damping: 0.0,
         }
     }
 }

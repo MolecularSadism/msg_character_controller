@@ -861,8 +861,13 @@ pub fn apply_walk<B: CharacterPhysicsBackend>(world: &mut World) {
                 // Apply impulse along right axis: I = m * dv
                 let walk_impulse = right * horizontal_delta * mass;
                 B::apply_impulse(world, entity, walk_impulse);
-            } else if config.walking.air_friction > 0.0 && current_horizontal.abs() > 0.001 {
-                // Not walking - apply air friction to slow down horizontal movement
+            } else if config.walking.air_friction > 0.0
+                && current_horizontal.abs() > 0.001
+                && !intent.is_fly_active()
+            {
+                // Not walking and not in flight - apply air friction to slow down
+                // horizontal movement. Skipped while flying so flight damping
+                // (driven through the physics backend) is the only velocity decay.
                 let friction_factor = 1.0 - config.walking.air_friction;
                 let new_horizontal = current_horizontal * friction_factor;
                 let horizontal_delta = new_horizontal - current_horizontal;
@@ -908,6 +913,18 @@ pub fn apply_fly<B: CharacterPhysicsBackend>(world: &mut World) {
     let dt = B::get_fixed_timestep(world);
 
     for (entity, config, intent, controller) in entities {
+        // Drive the physics backend's linear damping component based on flight
+        // state. While `fly_active`, the configured flight damping decays
+        // velocity through the physics integrator (no manual velocity math).
+        // Once flight is released, damping is zeroed so it doesn't bleed into
+        // walking / falling / projectile-like motion.
+        let target_damping = if intent.is_fly_active() {
+            config.flying.damping
+        } else {
+            0.0
+        };
+        B::set_linear_damping(world, entity, target_damping);
+
         let is_grounded = controller.is_grounded(&config);
         let current_velocity = B::get_velocity(world, entity);
         let mass = B::get_mass(world, entity);
