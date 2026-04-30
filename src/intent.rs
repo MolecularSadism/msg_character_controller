@@ -74,6 +74,19 @@ pub struct MovementIntent {
     /// Previous frame's `jump_pressed` state (for edge detection).
     /// This is managed internally by the controller.
     pub(crate) jump_pressed_prev: bool,
+    /// Whether the entity is currently in flight mode.
+    ///
+    /// Distinct from per-frame `fly`/`fly_horizontal` input axes: this latches
+    /// "the actor is flying right now" (e.g. jetpack engaged, fly FSM active).
+    /// Consumers should toggle it with [`Self::set_fly_active`] based on game
+    /// state (FSM, ability toggle, etc.).
+    ///
+    /// While `true`:
+    /// - `apply_fly` drives [`FlyingConfig::damping`] through the physics
+    ///   backend's linear damping component.
+    /// - `apply_walk` skips the airborne walking friction so the flight
+    ///   damping is the only velocity decay in effect.
+    pub fly_active: bool,
 }
 
 impl Default for MovementIntent {
@@ -87,6 +100,7 @@ impl Default for MovementIntent {
             jump_request: None,
             jump_pressed: false,
             jump_pressed_prev: false,
+            fly_active: false,
         }
     }
 }
@@ -268,9 +282,24 @@ impl MovementIntent {
     /// Check if jump is currently active.
     ///
     /// Returns the current boolean state set via `set_jump_pressed()`.
-    #[must_use] 
+    #[must_use]
     pub fn is_jump_pressed(&self) -> bool {
         self.jump_pressed
+    }
+
+    /// Mark the entity as actively flying (or not).
+    ///
+    /// Call this each frame from the consumer (e.g. mirroring a flight FSM)
+    /// so the controller can apply [`FlyingConfig::damping`] and suppress
+    /// airborne walking friction while in flight.
+    pub fn set_fly_active(&mut self, active: bool) {
+        self.fly_active = active;
+    }
+
+    /// Check whether the entity is currently in flight mode.
+    #[must_use]
+    pub fn is_fly_active(&self) -> bool {
+        self.fly_active
     }
 }
 

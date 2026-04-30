@@ -46,6 +46,17 @@ pub trait CharacterPhysicsBackend: 'static + Send + Sync {
     /// Impulse is an instantaneous change in momentum (velocity).
     fn apply_impulse(world: &mut World, entity: Entity, impulse: Vec2);
 
+    /// Set the linear damping coefficient on an entity.
+    ///
+    /// Implementations should drive the physics backend's linear damping
+    /// component directly (e.g. Avian's `LinearDamping`) rather than
+    /// manipulating velocity manually, so damping composes correctly with
+    /// impulses, forces, and integration.
+    ///
+    /// Default implementation is a no-op so backends without first-class
+    /// damping support compile cleanly.
+    fn set_linear_damping(_world: &mut World, _entity: Entity, _damping: f32) {}
+
     /// Apply a force to an entity.
     ///
     /// Force is applied over the physics timestep.
