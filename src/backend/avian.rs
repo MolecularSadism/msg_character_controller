@@ -595,6 +595,37 @@ pub fn spawn_stair_casters(
     commands.entity(character).add_child(ground_child);
 }
 
+/// Build the shape caster `SpatialQueryFilter` for a character.
+///
+/// Resolves the collision mask in this order:
+/// 1. `config.sensors.collision_mask_override` when set (raw bits, backend-agnostic)
+/// 2. The parent actor's `CollisionLayers::filters`
+/// 3. `LayerMask::ALL`
+///
+/// Always excludes the parent character and every entity carrying a `Sensor`
+/// component so detection casts match real physics collisions.
+fn build_detection_filter<'a>(
+    config: &ControllerConfig,
+    collision_layers: Option<&CollisionLayers>,
+    parent: Entity,
+    sensors: impl IntoIterator<Item = Entity>,
+) -> SpatialQueryFilter {
+    let mask = if let Some(bits) = config.sensors.collision_mask_override {
+        LayerMask(bits)
+    } else if let Some(layers) = collision_layers {
+        layers.filters
+    } else {
+        LayerMask::ALL
+    };
+
+    let mut filter = SpatialQueryFilter::from_mask(mask);
+    filter.excluded_entities.insert(parent);
+    for entity in sensors {
+        filter.excluded_entities.insert(entity);
+    }
+    filter
+}
+
 /// Update ground caster direction and configuration based on gravity.
 ///
 /// This system runs in the Preparation phase, before Avian updates `ShapeHits`.
@@ -602,7 +633,9 @@ pub fn spawn_stair_casters(
 fn update_ground_caster_direction(
     mut q_casters: Query<(&CasterOfCharacter, &mut ShapeCaster), With<GroundCaster>>,
     q_controllers: Query<(&CharacterController, &ControllerConfig, Option<&CollisionLayers>), Without<RigidBodyDisabled>>,
+    q_sensors: Query<Entity, With<Sensor>>,
 ) {
+    let sensor_entities: Vec<Entity> = q_sensors.iter().collect();
     for (caster_parent, mut shape_caster) in &mut q_casters {
         let Ok((controller, config, collision_layers)) = q_controllers.get(caster_parent.0) else {
             continue;
@@ -617,18 +650,12 @@ fn update_ground_caster_direction(
         let riding_height = controller.riding_height(config);
         shape_caster.max_distance = riding_height + config.floating.grounding_distance + 1.0;
 
-        // Inherit collision layers from parent
-        if let Some(layers) = collision_layers {
-            // Use the character's filters as the mask - this finds entities whose memberships
-            // overlap with what the character is allowed to collide with
-            shape_caster.query_filter = SpatialQueryFilter::from_mask(layers.filters);
-        } else {
-            // No collision layers specified - use default which includes all entities
-            shape_caster.query_filter = SpatialQueryFilter::default();
-        }
-
-        // Exclude the parent entity from the cast
-        shape_caster.query_filter.excluded_entities.insert(caster_parent.0);
+        shape_caster.query_filter = build_detection_filter(
+            config,
+            collision_layers,
+            caster_parent.0,
+            sensor_entities.iter().copied(),
+        );
     }
 }
 
@@ -640,7 +667,10 @@ fn update_wall_caster_directions(
     mut q_left_casters: Query<(&CasterOfCharacter, &mut ShapeCaster), With<LeftWallCaster>>,
     mut q_right_casters: Query<(&CasterOfCharacter, &mut ShapeCaster), (With<RightWallCaster>, Without<LeftWallCaster>)>,
     q_controllers: Query<(&CharacterController, &ControllerConfig, Option<&CollisionLayers>, Option<&Collider>), Without<RigidBodyDisabled>>,
+    q_sensors: Query<Entity, With<Sensor>>,
 ) {
+    let sensor_entities: Vec<Entity> = q_sensors.iter().collect();
+
     // Update left wall casters
     for (caster_parent, mut shape_caster) in &mut q_left_casters {
         let Ok((_controller, config, collision_layers, collider)) = q_controllers.get(caster_parent.0) else {
@@ -656,15 +686,12 @@ fn update_wall_caster_directions(
         let radius = collider.map_or(0.0, get_collider_radius);
         shape_caster.max_distance = config.floating.surface_detection_distance + radius + 1.0;
 
-        // Inherit collision layers from parent
-        if let Some(layers) = collision_layers {
-            shape_caster.query_filter = SpatialQueryFilter::from_mask(layers.filters);
-        } else {
-            shape_caster.query_filter = SpatialQueryFilter::default();
-        }
-
-        // Exclude the parent entity from the cast
-        shape_caster.query_filter.excluded_entities.insert(caster_parent.0);
+        shape_caster.query_filter = build_detection_filter(
+            config,
+            collision_layers,
+            caster_parent.0,
+            sensor_entities.iter().copied(),
+        );
     }
 
     // Update right wall casters
@@ -682,15 +709,12 @@ fn update_wall_caster_directions(
         let radius = collider.map_or(0.0, get_collider_radius);
         shape_caster.max_distance = config.floating.surface_detection_distance + radius + 1.0;
 
-        // Inherit collision layers from parent
-        if let Some(layers) = collision_layers {
-            shape_caster.query_filter = SpatialQueryFilter::from_mask(layers.filters);
-        } else {
-            shape_caster.query_filter = SpatialQueryFilter::default();
-        }
-
-        // Exclude the parent entity from the cast
-        shape_caster.query_filter.excluded_entities.insert(caster_parent.0);
+        shape_caster.query_filter = build_detection_filter(
+            config,
+            collision_layers,
+            caster_parent.0,
+            sensor_entities.iter().copied(),
+        );
     }
 }
 
@@ -701,7 +725,9 @@ fn update_wall_caster_directions(
 fn update_ceiling_caster_direction(
     mut q_casters: Query<(&CasterOfCharacter, &mut ShapeCaster), With<CeilingCaster>>,
     q_controllers: Query<(&CharacterController, &ControllerConfig, Option<&CollisionLayers>), Without<RigidBodyDisabled>>,
+    q_sensors: Query<Entity, With<Sensor>>,
 ) {
+    let sensor_entities: Vec<Entity> = q_sensors.iter().collect();
     for (caster_parent, mut shape_caster) in &mut q_casters {
         let Ok((controller, config, collision_layers)) = q_controllers.get(caster_parent.0) else {
             continue;
@@ -715,15 +741,12 @@ fn update_ceiling_caster_direction(
         // Update max_distance: surface_detection_distance + capsule_half_height + buffer
         shape_caster.max_distance = config.floating.surface_detection_distance + controller.capsule_half_height() + 1.0;
 
-        // Inherit collision layers from parent
-        if let Some(layers) = collision_layers {
-            shape_caster.query_filter = SpatialQueryFilter::from_mask(layers.filters);
-        } else {
-            shape_caster.query_filter = SpatialQueryFilter::default();
-        }
-
-        // Exclude the parent entity from the cast
-        shape_caster.query_filter.excluded_entities.insert(caster_parent.0);
+        shape_caster.query_filter = build_detection_filter(
+            config,
+            collision_layers,
+            caster_parent.0,
+            sensor_entities.iter().copied(),
+        );
     }
 }
 
@@ -741,7 +764,9 @@ fn update_stair_casters(
         Option<&CollisionLayers>,
         Option<&Collider>,
     ), Without<RigidBodyDisabled>>,
+    q_sensors: Query<Entity, With<Sensor>>,
 ) {
+    let sensor_entities: Vec<Entity> = q_sensors.iter().collect();
     // Update stair casters
     for (caster_parent, mut shape_caster) in &mut q_stair_casters {
         let Ok((controller, config, movement_intent, collision_layers, collider)) = q_controllers.get(caster_parent.0) else {
@@ -800,15 +825,12 @@ fn update_stair_casters(
             // steps shallower than that threshold are never detected in the first place
             shape_caster.max_distance = stair_config.max_climb_height + config.floating.float_height - stair_config.min_step_depth;
 
-            // Inherit collision layers from parent
-            if let Some(layers) = collision_layers {
-                shape_caster.query_filter = SpatialQueryFilter::from_mask(layers.filters);
-            } else {
-                shape_caster.query_filter = SpatialQueryFilter::default();
-            }
-
-            // Exclude the parent entity from the cast
-            shape_caster.query_filter.excluded_entities.insert(caster_parent.0);
+            shape_caster.query_filter = build_detection_filter(
+                config,
+                collision_layers,
+                caster_parent.0,
+                sensor_entities.iter().copied(),
+            );
         } else {
             shape_caster.enabled = false;
             shape_caster.origin = Vec2::ZERO;
@@ -817,7 +839,7 @@ fn update_stair_casters(
 
     // Update current ground casters
     for (caster_parent, mut shape_caster) in &mut q_ground_casters {
-        let Ok((controller, _config, movement_intent, collision_layers, _)) = q_controllers.get(caster_parent.0) else {
+        let Ok((controller, config, movement_intent, collision_layers, _)) = q_controllers.get(caster_parent.0) else {
             continue;
         };
 
@@ -850,15 +872,12 @@ fn update_stair_casters(
             // Update max_distance to cover max_climb_height + float_height + tolerance + buffer
             shape_caster.max_distance = stair_config.max_climb_height + controller.collider_bottom_offset + 2.0;
 
-            // Inherit collision layers from parent
-            if let Some(layers) = collision_layers {
-                shape_caster.query_filter = SpatialQueryFilter::from_mask(layers.filters);
-            } else {
-                shape_caster.query_filter = SpatialQueryFilter::default();
-            }
-
-            // Exclude the parent entity from the cast
-            shape_caster.query_filter.excluded_entities.insert(caster_parent.0);
+            shape_caster.query_filter = build_detection_filter(
+                config,
+                collision_layers,
+                caster_parent.0,
+                sensor_entities.iter().copied(),
+            );
         } else {
             shape_caster.enabled = false;
         }

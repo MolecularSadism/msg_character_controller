@@ -22,6 +22,16 @@ pub struct SensorConfig {
 
     /// Width of ceiling detection shapecast.
     pub ceiling_cast_width: f32,
+
+    /// Optional override for the collision mask used by detection shapecasts.
+    ///
+    /// When `Some(bits)`, the bits are used as the spatial query mask for all
+    /// ground, wall, ceiling, and stair casts on this controller. When `None`,
+    /// the casts inherit the parent actor's `CollisionLayers::filters`.
+    ///
+    /// The value is stored as raw bits so this config stays backend-agnostic;
+    /// the Avian backend converts it to a `LayerMask` internally.
+    pub collision_mask_override: Option<u32>,
 }
 
 impl Default for SensorConfig {
@@ -33,6 +43,7 @@ impl Default for SensorConfig {
             wall_cast_height: 12.0,
             ceiling_cast_multiplier: 1.0,
             ceiling_cast_width: 12.0,
+            collision_mask_override: None,
         }
     }
 }
