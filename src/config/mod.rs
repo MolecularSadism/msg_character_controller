@@ -790,6 +790,25 @@ impl ControllerConfig {
         self
     }
 
+    /// Builder: override the collision mask used by all detection casters.
+    ///
+    /// Pass the raw collision-layer bits the casters should probe (the same
+    /// representation as Avian's `LayerMask`). This overrides the actor's own
+    /// `CollisionLayers.filters` for detection purposes. For example, a game
+    /// using a `PhysicsLayer` enum could pass
+    /// `LayerMask::from([GroundPhysics, LooseGroundPhysics]).0`.
+    pub fn with_collision_mask(mut self, mask: u32) -> Self {
+        self.sensors.collision_mask = Some(mask);
+        self
+    }
+
+    /// Builder: clear any collision mask override, reverting casters to inherit
+    /// the actor's `CollisionLayers.filters`.
+    pub fn without_collision_mask(mut self) -> Self {
+        self.sensors.collision_mask = None;
+        self
+    }
+
     /// Builder: set spring parameters.
     pub fn with_spring(mut self, strength: f32, damping: f32) -> Self {
         self.spring.strength = strength;

@@ -353,6 +353,27 @@ pub fn get_collider_bottom_offset(collider: &Collider) -> f32 {
     }
 }
 
+/// Build the [`SpatialQueryFilter`] for a detection caster.
+///
+/// Uses the [`ControllerConfig`] collision-mask override
+/// (`config.sensors.collision_mask`) when set; otherwise inherits the actor's
+/// `CollisionLayers.filters`, falling back to [`LayerMask::ALL`] when the actor
+/// has no `CollisionLayers`. The character entity is always excluded so casters
+/// never hit their own body.
+fn caster_query_filter(
+    config: &ControllerConfig,
+    collision_layers: Option<&CollisionLayers>,
+    character: Entity,
+) -> SpatialQueryFilter {
+    let mask = match config.sensors.collision_mask {
+        Some(bits) => LayerMask(bits),
+        None => collision_layers.map_or(LayerMask::ALL, |layers| layers.filters),
+    };
+    let mut filter = SpatialQueryFilter::from_mask(mask);
+    filter.excluded_entities.insert(character);
+    filter
+}
+
 /// Spawn a ground detection `ShapeCaster` as a direct child of the character entity.
 ///
 /// This function creates a child entity with a `ShapeCaster` component configured
@@ -617,18 +638,9 @@ fn update_ground_caster_direction(
         let riding_height = controller.riding_height(config);
         shape_caster.max_distance = riding_height + config.floating.grounding_distance + 1.0;
 
-        // Inherit collision layers from parent
-        if let Some(layers) = collision_layers {
-            // Use the character's filters as the mask - this finds entities whose memberships
-            // overlap with what the character is allowed to collide with
-            shape_caster.query_filter = SpatialQueryFilter::from_mask(layers.filters);
-        } else {
-            // No collision layers specified - use default which includes all entities
-            shape_caster.query_filter = SpatialQueryFilter::default();
-        }
-
-        // Exclude the parent entity from the cast
-        shape_caster.query_filter.excluded_entities.insert(caster_parent.0);
+        // Use the config mask override if set, otherwise inherit the actor's
+        // filters; the parent entity is always excluded.
+        shape_caster.query_filter = caster_query_filter(config, collision_layers, caster_parent.0);
     }
 }
 
@@ -656,15 +668,9 @@ fn update_wall_caster_directions(
         let radius = collider.map_or(0.0, get_collider_radius);
         shape_caster.max_distance = config.floating.surface_detection_distance + radius + 1.0;
 
-        // Inherit collision layers from parent
-        if let Some(layers) = collision_layers {
-            shape_caster.query_filter = SpatialQueryFilter::from_mask(layers.filters);
-        } else {
-            shape_caster.query_filter = SpatialQueryFilter::default();
-        }
-
-        // Exclude the parent entity from the cast
-        shape_caster.query_filter.excluded_entities.insert(caster_parent.0);
+        // Use the config mask override if set, otherwise inherit the actor's
+        // filters; the parent entity is always excluded.
+        shape_caster.query_filter = caster_query_filter(config, collision_layers, caster_parent.0);
     }
 
     // Update right wall casters
@@ -682,15 +688,9 @@ fn update_wall_caster_directions(
         let radius = collider.map_or(0.0, get_collider_radius);
         shape_caster.max_distance = config.floating.surface_detection_distance + radius + 1.0;
 
-        // Inherit collision layers from parent
-        if let Some(layers) = collision_layers {
-            shape_caster.query_filter = SpatialQueryFilter::from_mask(layers.filters);
-        } else {
-            shape_caster.query_filter = SpatialQueryFilter::default();
-        }
-
-        // Exclude the parent entity from the cast
-        shape_caster.query_filter.excluded_entities.insert(caster_parent.0);
+        // Use the config mask override if set, otherwise inherit the actor's
+        // filters; the parent entity is always excluded.
+        shape_caster.query_filter = caster_query_filter(config, collision_layers, caster_parent.0);
     }
 }
 
@@ -715,15 +715,9 @@ fn update_ceiling_caster_direction(
         // Update max_distance: surface_detection_distance + capsule_half_height + buffer
         shape_caster.max_distance = config.floating.surface_detection_distance + controller.capsule_half_height() + 1.0;
 
-        // Inherit collision layers from parent
-        if let Some(layers) = collision_layers {
-            shape_caster.query_filter = SpatialQueryFilter::from_mask(layers.filters);
-        } else {
-            shape_caster.query_filter = SpatialQueryFilter::default();
-        }
-
-        // Exclude the parent entity from the cast
-        shape_caster.query_filter.excluded_entities.insert(caster_parent.0);
+        // Use the config mask override if set, otherwise inherit the actor's
+        // filters; the parent entity is always excluded.
+        shape_caster.query_filter = caster_query_filter(config, collision_layers, caster_parent.0);
     }
 }
 
@@ -800,15 +794,9 @@ fn update_stair_casters(
             // steps shallower than that threshold are never detected in the first place
             shape_caster.max_distance = stair_config.max_climb_height + config.floating.float_height - stair_config.min_step_depth;
 
-            // Inherit collision layers from parent
-            if let Some(layers) = collision_layers {
-                shape_caster.query_filter = SpatialQueryFilter::from_mask(layers.filters);
-            } else {
-                shape_caster.query_filter = SpatialQueryFilter::default();
-            }
-
-            // Exclude the parent entity from the cast
-            shape_caster.query_filter.excluded_entities.insert(caster_parent.0);
+            // Use the config mask override if set, otherwise inherit the actor's
+            // filters; the parent entity is always excluded.
+            shape_caster.query_filter = caster_query_filter(config, collision_layers, caster_parent.0);
         } else {
             shape_caster.enabled = false;
             shape_caster.origin = Vec2::ZERO;
@@ -817,7 +805,7 @@ fn update_stair_casters(
 
     // Update current ground casters
     for (caster_parent, mut shape_caster) in &mut q_ground_casters {
-        let Ok((controller, _config, movement_intent, collision_layers, _)) = q_controllers.get(caster_parent.0) else {
+        let Ok((controller, config, movement_intent, collision_layers, _)) = q_controllers.get(caster_parent.0) else {
             continue;
         };
 
@@ -850,15 +838,9 @@ fn update_stair_casters(
             // Update max_distance to cover max_climb_height + float_height + tolerance + buffer
             shape_caster.max_distance = stair_config.max_climb_height + controller.collider_bottom_offset + 2.0;
 
-            // Inherit collision layers from parent
-            if let Some(layers) = collision_layers {
-                shape_caster.query_filter = SpatialQueryFilter::from_mask(layers.filters);
-            } else {
-                shape_caster.query_filter = SpatialQueryFilter::default();
-            }
-
-            // Exclude the parent entity from the cast
-            shape_caster.query_filter.excluded_entities.insert(caster_parent.0);
+            // Use the config mask override if set, otherwise inherit the actor's
+            // filters; the parent entity is always excluded.
+            shape_caster.query_filter = caster_query_filter(config, collision_layers, caster_parent.0);
         } else {
             shape_caster.enabled = false;
         }
