@@ -1838,4 +1838,51 @@ mod rigid_body_disabled {
             force.0
         );
     }
+
+    /// Verify that forces added externally to `ConstantForce` are preserved
+    /// across frames and not zeroed by `clear_controller_forces`.
+    ///
+    /// This is the contract of "Force Isolation": the controller subtracts only
+    /// the forces it applied itself last frame, leaving any externally added
+    /// force untouched so external systems (e.g. wind, conveyors, knockback)
+    /// can influence the character.
+    #[test]
+    fn external_forces_in_constant_force_are_preserved() {
+        let mut app = create_test_app();
+
+        spawn_ground(&mut app, Vec2::new(0.0, 0.0), Vec2::new(100.0, 5.0));
+        let character = spawn_character(&mut app, Vec2::new(0.0, 20.0));
+
+        // Let the controller settle so it starts accumulating its own forces
+        // (spring, gravity, etc.). After this, `applied_force` is non-zero.
+        run_for_duration(&mut app, 0.3);
+
+        // Externally inject a force into `ConstantForce` (additive — as a
+        // gameplay system would do for e.g. a knockback or wind impulse).
+        const EXTERNAL: Vec2 = Vec2::new(123.0, 45.0);
+        {
+            let mut force = app
+                .world_mut()
+                .get_mut::<ConstantForce>(character)
+                .expect("character has ConstantForce");
+            force.0 += EXTERNAL;
+        }
+
+        // Run several frames. Across each frame the controller should
+        // subtract ONLY its own previously-applied force and re-add its new
+        // accumulation, leaving the EXTERNAL component untouched.
+        //
+        // We check the X axis specifically: the controller applies no
+        // horizontal force at rest (no walk intent), so any horizontal
+        // component in `ConstantForce` is purely the external contribution.
+        // The Y axis is dynamic (spring + gravity) and varies with position,
+        // so it isn't a clean signal for isolation correctness.
+        run_frames(&mut app, 5);
+
+        let after = app.world().get::<ConstantForce>(character).unwrap().0;
+
+        println!("PROOF: after={after:?}, external={EXTERNAL:?}");
+
+        assert_relative_eq!(after.x, EXTERNAL.x, epsilon = 1e-4);
+    }
 }
