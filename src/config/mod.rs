@@ -175,7 +175,21 @@ pub struct CharacterController {
     // === Gravity ===
     /// Gravity vector affecting this character.
     /// Used for floating spring, fall gravity, and jump countering.
+    ///
+    /// This is the force only. The orientation basis lives in [`Self::up`], so a
+    /// character in a zero-gravity pocket genuinely floats without losing track of
+    /// which way is up.
     pub gravity: Vec2,
+
+    /// The orientation basis every `ideal_*` direction is measured from.
+    ///
+    /// Sensor cast directions, slope angles, spring direction and walk direction all
+    /// derive from this, so it must stay continuous even where [`Self::gravity`] does
+    /// not. [`Self::set_gravity`] keeps it aligned with gravity wherever gravity has a
+    /// direction to give, and leaves it alone where it does not; a caller that computes
+    /// its own reference (a blend of gravity and surface contact, say) drives it through
+    /// [`Self::set_up`] and feeds the force through [`Self::set_gravity_force`].
+    pub up: Dir2,
 
     // === Force Accumulation (internal) ===
     /// Forces accumulated during the current frame (not yet applied to ExternalForce).
@@ -257,6 +271,7 @@ impl Default for CharacterController {
             falling: false,
             // Gravity
             gravity: Vec2::new(0.0, -980.0),
+            up: Dir2::Y,
             // Force accumulation (internal)
             accumulated_force: Vec2::ZERO,
             accumulated_torque: 0.0,
@@ -281,32 +296,45 @@ impl CharacterController {
 
     /// Create a new controller with custom gravity.
     pub fn with_gravity(gravity: Vec2) -> Self {
-        Self {
-            gravity,
-            ..default()
+        let mut controller = Self::default();
+        controller.set_gravity(gravity);
+        controller
+    }
+
+    /// Set the gravity vector, realigning [`Self::up`] with it.
+    ///
+    /// Where `gravity` has no direction to give — a zero vector, or a magnitude so
+    /// small its direction is numerical noise — `up` keeps the value it had. Snapping
+    /// to a world axis there would reorient every sensor cast against a direction the
+    /// field never justified.
+    pub fn set_gravity(&mut self, gravity: Vec2) {
+        self.gravity = gravity;
+        if let Ok(down) = Dir2::new(gravity) {
+            self.up = -down;
         }
     }
 
-    /// Set the gravity vector.
-    pub fn set_gravity(&mut self, gravity: Vec2) {
+    /// Set the gravity force without touching [`Self::up`].
+    ///
+    /// For callers that derive the orientation basis themselves and drive it through
+    /// [`Self::set_up`] — the force and the basis then move independently, which is the
+    /// point near a gravity null.
+    pub fn set_gravity_force(&mut self, gravity: Vec2) {
         self.gravity = gravity;
     }
 
-    /// Get the ideal "up" direction for raycasts, derived from gravity.
+    /// Set the orientation basis directly.
+    pub fn set_up(&mut self, up: Dir2) {
+        self.up = up;
+    }
+
+    /// Get the ideal "up" direction for raycasts.
     ///
-    /// This returns the opposite of the normalized gravity vector.
-    /// Raycasts use this to ensure they work correctly regardless of
-    /// the actor's physical rotation.
-    ///
-    /// If gravity is zero, defaults to `Vec2::Y`.
+    /// Raycasts use this to ensure they work correctly regardless of the actor's
+    /// physical rotation. See [`Self::up`] for where the direction comes from.
     #[inline]
     pub fn ideal_up(&self) -> Vec2 {
-        let normalized = self.gravity.normalize_or_zero();
-        if normalized == Vec2::ZERO {
-            Vec2::Y
-        } else {
-            -normalized
-        }
+        self.up.as_vec2()
     }
 
     /// Get the ideal "down" direction for raycasts (same as gravity direction).
@@ -1324,13 +1352,36 @@ mod tests {
     }
 
     #[test]
-    fn controller_ideal_up_with_zero_gravity() {
-        let mut controller = CharacterController::new();
+    fn controller_zero_gravity_holds_the_previous_up() {
+        // Sideways gravity, so a snap to world +Y would be unmistakable.
+        let mut controller = CharacterController::with_gravity(Vec2::new(-100.0, 0.0));
+        assert!((controller.ideal_up() - Vec2::X).length() < 0.001);
+
         controller.set_gravity(Vec2::ZERO);
 
-        // With zero gravity, should default to Vec2::Y
-        let up = controller.ideal_up();
-        assert!((up - Vec2::Y).length() < 0.001);
+        // The field lost its direction; the orientation basis must not.
+        assert!((controller.ideal_up() - Vec2::X).length() < 0.001);
+    }
+
+    #[test]
+    fn controller_set_up_overrides_the_gravity_derived_basis() {
+        let mut controller = CharacterController::new();
+        controller.set_up(Dir2::X);
+
+        assert!((controller.ideal_up() - Vec2::X).length() < 0.001);
+        assert!((controller.ideal_right() - Vec2::NEG_Y).length() < 0.001);
+    }
+
+    #[test]
+    fn controller_set_gravity_force_leaves_up_alone() {
+        let mut controller = CharacterController::new();
+        controller.set_up(Dir2::X);
+
+        // A force with a perfectly good direction, which must still not move the basis.
+        controller.set_gravity_force(Vec2::new(0.0, -980.0));
+
+        assert_eq!(controller.gravity, Vec2::new(0.0, -980.0));
+        assert!((controller.ideal_up() - Vec2::X).length() < 0.001);
     }
 
     #[test]
