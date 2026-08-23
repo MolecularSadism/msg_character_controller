@@ -4,6 +4,8 @@ use bevy::prelude::*;
 
 /// Configuration for ShapeCaster sensor dimensions.
 #[derive(Reflect, Debug, Clone, Copy)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "serde", serde(default))]
 pub struct SensorConfig {
     /// Ground cast length multiplier (multiplied by float_height).
     pub ground_cast_multiplier: f32,

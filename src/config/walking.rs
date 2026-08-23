@@ -4,6 +4,8 @@ use bevy::prelude::*;
 
 /// Configuration for ground movement.
 #[derive(Reflect, Debug, Clone, Copy)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "serde", serde(default))]
 pub struct WalkingConfig {
     /// Maximum horizontal movement speed (units/second).
     pub max_speed: f32,

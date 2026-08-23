@@ -4,6 +4,8 @@ use bevy::prelude::*;
 
 /// Configuration for floating mechanics (hovering behavior).
 #[derive(Reflect, Debug, Clone, Copy)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "serde", serde(default))]
 pub struct FloatingConfig {
     /// Target height to float above ground (in world units/pixels).
     /// This is the distance from the BOTTOM of the collider to the ground.

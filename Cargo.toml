@@ -15,9 +15,12 @@ exclude = [".github/", "CLAUDE.md"]
 
 [dependencies]
 bevy = { version = "0.18", default-features = false }
+serde = { version = "1", features = ["derive"], optional = true }
 
 [dev-dependencies]
 avian2d = { version = "0.6.1", features = ["2d"] }
+# Round-trip and partial-deserialize tests for the `serde` feature.
+ron = "0.10"
 bevy_egui = "0.39"
 approx = "0.5"
 # Full Bevy features for examples (rendering, UI)
@@ -35,6 +38,11 @@ bevy = { version = "0.18", features = [
 
 [features]
 default = ["avian2d"]
+# Derive `Serialize`/`Deserialize` on the public config tree, so a game can
+# author controller tuning straight from its own config files. The structs use
+# struct-level `#[serde(default)]` backed by their `Default` impls, so partial
+# files deserialize.
+serde = ["dep:serde"]
 # Physics backend: avian2d (Avian physics engine, formerly XPBD)
 # Usage: CharacterControllerPlugin::<Avian2dBackend>::default()
 avian2d = ["dep:avian2d"]

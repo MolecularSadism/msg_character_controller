@@ -769,6 +769,8 @@ impl CharacterController {
 /// No hardcoded magic numbers.
 #[derive(Component, Reflect, Debug, Clone, Copy)]
 #[reflect(Component)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "serde", serde(default))]
 pub struct ControllerConfig {
     /// Core hovering mechanics.
     pub floating: FloatingConfig,
@@ -1091,6 +1093,8 @@ impl ControllerConfig {
 /// Then the system applies extra upward force and temporarily raises the riding height.
 #[derive(Component, Reflect, Debug, Clone, Copy)]
 #[reflect(Component)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "serde", serde(default))]
 pub struct StairConfig {
     /// Maximum step height the character can automatically climb.
     /// Steps higher than this will not be climbed.

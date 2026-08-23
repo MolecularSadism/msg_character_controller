@@ -6,6 +6,8 @@ use crate::flight::FlightFrame;
 
 /// Configuration for flying propulsion.
 #[derive(Reflect, Debug, Clone, Copy)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "serde", serde(default))]
 pub struct FlyingConfig {
     /// Maximum flying speed (units/second).
     pub max_speed: f32,
