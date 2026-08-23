@@ -965,43 +965,21 @@ pub fn apply_fly<B: CharacterPhysicsBackend>(world: &mut World) {
                 continue;
             }
 
-            let (
-                mut vertical_acceleration,
-                horizontal_acceleration,
-                vertical_max_speed,
-                horizontal_max_speed,
-            ) = config.flying.converged_axes(orientation.confidence);
-            // Gravity compensation boosts upward propulsion, scaled by how
-            // much gravity there is to compensate.
-            if framed_intent.y > 0.0 {
-                vertical_acceleration += controller.gravity.length()
-                    * config.flying.gravity_compensation
-                    * orientation.confidence.clamp(0.0, 1.0);
-            }
-
             let frame = orientation.frame;
-            let speed = frame.project(current_velocity);
-            let thrust = frame.to_world(Vec2::new(
-                crate::config::axis_thrust(
-                    framed_intent.x,
-                    speed.x,
-                    horizontal_acceleration,
-                    horizontal_max_speed,
-                ),
-                crate::config::axis_thrust(
-                    framed_intent.y,
-                    speed.y,
-                    vertical_acceleration,
-                    vertical_max_speed,
-                ),
-            ));
+            let thrust = config.flying.thrust(
+                framed_intent,
+                frame,
+                current_velocity,
+                orientation.confidence,
+                controller.gravity.length(),
+            );
 
             // Apply impulse: I = m * a * dt
             B::apply_impulse(world, entity, thrust * dt * mass);
 
             // Record upward propulsion when actively thrusting up, so the
             // spring filter treats flight like the fixed-up path does.
-            if framed_intent.y > 0.0 && thrust.dot(frame.up) > 0.0 {
+            if framed_intent.y > 0.0 && thrust.dot(frame.up()) > 0.0 {
                 if let Some(mut controller) = world.get_mut::<CharacterController>(entity) {
                     controller.record_upward_propulsion(config.spring.jump_filter_duration);
                 }

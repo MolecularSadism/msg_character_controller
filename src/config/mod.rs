@@ -27,8 +27,7 @@ mod wall_jumping;
 // === Re-exports ===
 
 pub use floating::FloatingConfig;
-pub use flying::FlyingConfig;
-pub(crate) use flying::axis_thrust;
+pub use flying::{ConvergedAxes, FlyingConfig};
 pub use jumping::JumpingConfig;
 pub use sensors::SensorConfig;
 pub use spring::SpringConfig;

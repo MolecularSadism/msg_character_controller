@@ -45,18 +45,34 @@ impl Default for FlyingConfig {
     }
 }
 
+/// The per-axis accelerations and speed caps of a [`FlyingConfig`], converged
+/// toward their means as gravity confidence falls.
+///
+/// Produced by [`FlyingConfig::converged_axes`]; "vertical" is along the
+/// flight frame's up axis, "horizontal" across it.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct ConvergedAxes {
+    /// Acceleration along the frame's up axis (units/second^2).
+    pub vertical_acceleration: f32,
+    /// Acceleration across the frame's up axis (units/second^2).
+    pub horizontal_acceleration: f32,
+    /// Speed cap along the frame's up axis (units/second).
+    pub vertical_max_speed: f32,
+    /// Speed cap across the frame's up axis (units/second).
+    pub horizontal_max_speed: f32,
+}
+
 impl FlyingConfig {
     /// The per-axis accelerations and speed caps, converged toward their means
     /// as `gravity_confidence` falls.
     ///
-    /// Returns `(vertical_acceleration, horizontal_acceleration,
-    /// vertical_max_speed, horizontal_max_speed)`. Under gravity the split is
-    /// real — holding altitude is not the same job as crossing ground, and an
-    /// actor may be authored to do one far harder than the other. In a null
-    /// neither is a job at all, and keeping the split would only rotate the
-    /// actor's acceleration away from the direction its intent asked for.
+    /// Under gravity the split is real — holding altitude is not the same job
+    /// as crossing ground, and an actor may be authored to do one far harder
+    /// than the other. In a null neither is a job at all, and keeping the
+    /// split would only rotate the actor's acceleration away from the
+    /// direction its intent asked for.
     #[must_use]
-    pub fn converged_axes(&self, gravity_confidence: f32) -> (f32, f32, f32, f32) {
+    pub fn converged_axes(&self, gravity_confidence: f32) -> ConvergedAxes {
         let isotropy = 1.0 - gravity_confidence.clamp(0.0, 1.0);
         let converge = |vertical: f32, horizontal: f32| {
             let mean = vertical.midpoint(horizontal);
@@ -71,22 +87,30 @@ impl FlyingConfig {
         );
         let (vertical_max_speed, horizontal_max_speed) =
             converge(self.max_speed * self.vertical_speed_ratio, self.max_speed);
-        (
+        ConvergedAxes {
             vertical_acceleration,
             horizontal_acceleration,
             vertical_max_speed,
             horizontal_max_speed,
-        )
+        }
     }
 
-    /// The world-space acceleration `intent` asks for, in `frame`.
+    /// The world-space acceleration `intent` asks for, in `frame`, under a
+    /// gravity of the given magnitude.
     ///
-    /// `intent.y` thrusts along the frame's up, `intent.x` across it. Each
-    /// axis pushes at its (confidence-converged, see
-    /// [`Self::converged_axes`]) acceleration while the speed already along it
-    /// is under that axis' cap, and stops pushing at the cap rather than
-    /// clamping — the actor coasts at the limit, and opposite intent still
-    /// brakes past it.
+    /// This is exactly the thrust the controller applies to actors carrying a
+    /// [`FlightOrientation`](crate::flight::FlightOrientation). `intent.y`
+    /// thrusts along the frame's up, `intent.x` across it; components within
+    /// the intent deadzone (`0.001`) are ignored. Each axis pushes at its
+    /// (confidence-converged, see [`Self::converged_axes`]) acceleration
+    /// while the speed already along it is under that axis' cap, and stops
+    /// pushing at the cap rather than clamping — the actor coasts at the
+    /// limit, and opposite intent still brakes past it.
+    ///
+    /// Upward intent additionally boosts the vertical acceleration by
+    /// `gravity_length * `[`Self::gravity_compensation`], scaled by the
+    /// clamped confidence — there is only as much gravity to compensate as
+    /// there is trust in it. Pass `0.0` where no field applies.
     ///
     /// At zero `gravity_confidence` thrust is isotropic, so the arbitrary
     /// basis of [`FlightFrame::UNORIENTED`] cancels out of the round trip and
@@ -98,13 +122,18 @@ impl FlyingConfig {
         frame: FlightFrame,
         velocity: Vec2,
         gravity_confidence: f32,
+        gravity_length: f32,
     ) -> Vec2 {
-        let (
-            vertical_acceleration,
+        let ConvergedAxes {
+            mut vertical_acceleration,
             horizontal_acceleration,
             vertical_max_speed,
             horizontal_max_speed,
-        ) = self.converged_axes(gravity_confidence);
+        } = self.converged_axes(gravity_confidence);
+        if intent.y > 0.0 {
+            vertical_acceleration +=
+                gravity_length * self.gravity_compensation * gravity_confidence.clamp(0.0, 1.0);
+        }
 
         let speed = frame.project(velocity);
         frame.to_world(Vec2::new(
@@ -119,15 +148,15 @@ impl FlyingConfig {
     }
 }
 
+/// The intent magnitude below which an axis is treated as at rest, matching
+/// the thresholds of [`MovementIntent::is_flying`](crate::intent::MovementIntent::is_flying)
+/// and [`MovementIntent::is_flying_horizontal`](crate::intent::MovementIntent::is_flying_horizontal).
+const INTENT_DEADZONE: f32 = 0.001;
+
 /// Acceleration along one frame axis: the authored value while there is
 /// headroom under the cap, nothing once the actor is already at it.
-pub(crate) fn axis_thrust(
-    intent: f32,
-    current_speed: f32,
-    acceleration: f32,
-    max_speed: f32,
-) -> f32 {
-    if intent.abs() <= f32::EPSILON {
+fn axis_thrust(intent: f32, current_speed: f32, acceleration: f32, max_speed: f32) -> f32 {
+    if intent.abs() <= INTENT_DEADZONE {
         return 0.0;
     }
     let has_headroom = if intent > 0.0 {
@@ -163,7 +192,7 @@ mod tests {
     fn thrust_follows_the_frame_not_the_world_axes() {
         // Up is +X here, so "vertical" intent must push along +X, not along world +Y.
         let frame = FlightFrame::new(Dir2::X);
-        let thrust = anisotropic_config().thrust(Vec2::Y, frame, Vec2::ZERO, 1.0);
+        let thrust = anisotropic_config().thrust(Vec2::Y, frame, Vec2::ZERO, 1.0, 0.0);
 
         assert!(
             thrust.abs_diff_eq(Vec2::X * 400.0, 1.0e-3),
@@ -177,7 +206,7 @@ mod tests {
         // is skewed toward the strong axis on purpose.
         let frame = FlightFrame::new(Dir2::Y);
         let intent = Vec2::new(1.0, 1.0).normalize();
-        let thrust = anisotropic_config().thrust(intent, frame, Vec2::ZERO, 1.0);
+        let thrust = anisotropic_config().thrust(intent, frame, Vec2::ZERO, 1.0, 0.0);
 
         assert!(
             thrust.y > thrust.x * 2.0,
@@ -191,7 +220,7 @@ mod tests {
         // the direction it asked for rather than one the frame skewed.
         let frame = FlightFrame::new(Dir2::Y);
         let intent = Vec2::new(1.0, 1.0).normalize();
-        let thrust = anisotropic_config().thrust(intent, frame, Vec2::ZERO, 0.0);
+        let thrust = anisotropic_config().thrust(intent, frame, Vec2::ZERO, 0.0, 0.0);
 
         let skew = thrust.normalize_or_zero().angle_to(frame.to_world(intent));
         assert!(
@@ -212,7 +241,7 @@ mod tests {
         let mut previous = f32::INFINITY;
         for step in 0..=10 {
             let confidence = 1.0 - step as f32 / 10.0;
-            let thrust = anisotropic_config().thrust(intent, frame, Vec2::ZERO, confidence);
+            let thrust = anisotropic_config().thrust(intent, frame, Vec2::ZERO, confidence, 0.0);
             let skew = thrust.normalize_or_zero().angle_to(world_intent).abs();
             assert!(
                 skew <= previous + 1.0e-3,
@@ -233,8 +262,69 @@ mod tests {
         let vertical_cap = config.max_speed * config.vertical_speed_ratio;
         let at_cap = frame.to_world(Vec2::new(0.0, vertical_cap));
 
-        assert_eq!(config.thrust(Vec2::Y, frame, at_cap, 1.0), Vec2::ZERO);
+        assert_eq!(config.thrust(Vec2::Y, frame, at_cap, 1.0, 0.0), Vec2::ZERO);
         // ...but the opposite intent still brakes it.
-        assert!(config.thrust(-Vec2::Y, frame, at_cap, 1.0).length() > 0.0);
+        assert!(config.thrust(-Vec2::Y, frame, at_cap, 1.0, 0.0).length() > 0.0);
+    }
+
+    #[test]
+    fn thrust_ignores_intent_within_the_deadzone() {
+        // Sub-deadzone analog noise must not thrust at all — with no damping
+        // it would otherwise accelerate the actor indefinitely in a null.
+        let frame = FlightFrame::new(Dir2::Y);
+        let noise = Vec2::splat(0.0005);
+
+        assert_eq!(
+            anisotropic_config().thrust(noise, frame, Vec2::ZERO, 1.0, 0.0),
+            Vec2::ZERO
+        );
+        assert_eq!(
+            anisotropic_config().thrust(-noise, frame, Vec2::ZERO, 0.0, 0.0),
+            Vec2::ZERO
+        );
+    }
+
+    #[test]
+    fn thrust_compensates_gravity_only_when_climbing() {
+        let frame = FlightFrame::new(Dir2::Y);
+        let config = FlyingConfig {
+            gravity_compensation: 0.5,
+            ..anisotropic_config()
+        };
+        let gravity_length = 980.0;
+        let base = config.acceleration * config.vertical_acceleration_ratio;
+        let boost = gravity_length * config.gravity_compensation;
+
+        let up = config.thrust(Vec2::Y, frame, Vec2::ZERO, 1.0, gravity_length);
+        assert!(
+            up.abs_diff_eq(Vec2::Y * (base + boost), 1.0e-3),
+            "upward thrust must carry the compensation boost, got {up:?}"
+        );
+
+        // Downward and lateral intent get no boost — there is no climb to help.
+        let down = config.thrust(-Vec2::Y, frame, Vec2::ZERO, 1.0, gravity_length);
+        assert!(
+            down.abs_diff_eq(-Vec2::Y * base, 1.0e-3),
+            "downward thrust must not be boosted, got {down:?}"
+        );
+    }
+
+    #[test]
+    fn gravity_compensation_fades_with_confidence() {
+        // Half trust in the field means half as much gravity to compensate.
+        let frame = FlightFrame::new(Dir2::Y);
+        let config = FlyingConfig {
+            gravity_compensation: 0.5,
+            ..anisotropic_config()
+        };
+        let gravity_length = 980.0;
+
+        let half = config.thrust(Vec2::Y, frame, Vec2::ZERO, 0.5, gravity_length);
+        let dry = config.thrust(Vec2::Y, frame, Vec2::ZERO, 0.5, 0.0);
+        let boost = frame.project(half - dry).y;
+        assert!(
+            (boost - gravity_length * config.gravity_compensation * 0.5).abs() < 1.0e-3,
+            "the boost must scale with confidence, got {boost}"
+        );
     }
 }

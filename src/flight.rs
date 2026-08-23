@@ -13,6 +13,12 @@ use bevy::prelude::*;
 /// The basis flying intent is expressed in: intent `x` along [`Self::right`],
 /// intent `y` along [`Self::up`].
 ///
+/// The basis is orthonormal by construction — `right` is always `up` turned a
+/// quarter-turn clockwise, which is what lets [`project`](Self::project) and
+/// [`to_world`](Self::to_world) round-trip without skew or scale. The only
+/// ways to obtain a frame are [`Self::new`] (or the equivalent `From<Dir2>`)
+/// and [`Self::UNORIENTED`], all of which uphold that invariant.
+///
 /// # In a null
 ///
 /// The *meaning* of the vertical/horizontal split does not survive a gravity
@@ -29,9 +35,9 @@ use bevy::prelude::*;
 #[derive(Debug, Clone, Copy, PartialEq, Reflect)]
 pub struct FlightFrame {
     /// The direction `intent.y` thrusts along.
-    pub up: Vec2,
+    up: Vec2,
     /// The direction `intent.x` thrusts along: `up` turned a quarter-turn clockwise.
-    pub right: Vec2,
+    right: Vec2,
 }
 
 impl FlightFrame {
@@ -55,6 +61,19 @@ impl FlightFrame {
         right: Vec2::X,
     };
 
+    /// The direction `intent.y` thrusts along.
+    #[must_use]
+    pub fn up(&self) -> Vec2 {
+        self.up
+    }
+
+    /// The direction `intent.x` thrusts along: [`Self::up`] turned a
+    /// quarter-turn clockwise.
+    #[must_use]
+    pub fn right(&self) -> Vec2 {
+        self.right
+    }
+
     /// Projects a world-space direction onto this frame.
     #[must_use]
     pub fn project(&self, world_direction: Vec2) -> Vec2 {
@@ -71,6 +90,13 @@ impl FlightFrame {
     }
 }
 
+impl From<Dir2> for FlightFrame {
+    /// The frame whose up axis is `up` — see [`FlightFrame::new`].
+    fn from(up: Dir2) -> Self {
+        Self::new(up)
+    }
+}
+
 /// Host-written per-actor flight orientation: the frame flight intent is
 /// expressed in, and how far it is to be trusted.
 ///
@@ -78,7 +104,10 @@ impl FlightFrame {
 ///
 /// Insert this on actors whose up axis comes from a sampled source (a
 /// spherical or multi-body gravity field, say) and **write it each physics
-/// tick** from that sample, before the controller's `FixedUpdate` systems run.
+/// tick** from that sample, before the controller consumes it: schedule the
+/// sampling system in `FixedUpdate`
+/// `.before(`[`CharacterControllerSet::IntentApplication`](crate::CharacterControllerSet::IntentApplication)`)`,
+/// the set [`apply_fly`](crate::systems::apply_fly) reads the component in.
 /// The two fields are only sound together: a sampled up with its sampled
 /// confidence, or — where the field has never resolved an up at all —
 /// [`FlightFrame::UNORIENTED`] with the confidence forced to zero (which is
@@ -86,9 +115,13 @@ impl FlightFrame {
 /// instead would strand every actor in true zero g, where the wait for
 /// orientation is forever, not a moment.
 ///
-/// Actors **without** this component keep the existing fixed-up behavior: the
-/// controller flies them by its own orientation basis at full confidence, so
-/// adding this type changes nothing for existing consumers.
+/// Actors **without** this component keep the existing fixed-up behavior
+/// untouched, so merely having this type in the crate changes nothing for
+/// existing consumers. Adding the component, however, moves the actor onto a
+/// different thrust law, not just a different basis: the fixed-up path is a
+/// velocity servo toward intent-scaled target speeds, while oriented actors
+/// are driven by [`FlyingConfig::thrust`](crate::config::FlyingConfig::thrust)
+/// — per-axis acceleration up to each axis' speed cap, coasting at the limit.
 #[derive(Component, Debug, Clone, Copy, PartialEq, Reflect)]
 #[reflect(Component)]
 pub struct FlightOrientation {
@@ -120,8 +153,14 @@ impl FlightOrientation {
         Self { frame, confidence }
     }
 
-    /// A fully-trusted fixed up axis — equivalent to the controller's own
-    /// fixed-up behavior, expressed as an explicit orientation.
+    /// A fully-trusted fixed up axis: the authored vertical/horizontal split
+    /// applies in full, in a frame that never moves.
+    ///
+    /// This fixes the *basis* only. The actor still flies by the frame path's
+    /// thrust law
+    /// ([`FlyingConfig::thrust`](crate::config::FlyingConfig::thrust)), which
+    /// is not the same law as the component-less fixed-up path — see the
+    /// [host contract](Self#host-contract).
     #[must_use]
     pub fn fixed(up: Dir2) -> Self {
         Self {
@@ -138,6 +177,23 @@ mod tests {
     #[test]
     fn the_unoriented_frame_is_an_ordinary_frame() {
         assert_eq!(FlightFrame::UNORIENTED, FlightFrame::new(Dir2::Y));
+    }
+
+    #[test]
+    fn a_frame_from_a_direction_matches_new() {
+        assert_eq!(FlightFrame::from(Dir2::X), FlightFrame::new(Dir2::X));
+    }
+
+    #[test]
+    fn every_frame_keeps_its_basis_orthonormal() {
+        let frame = FlightFrame::new(Dir2::from_xy(3.0, 4.0).unwrap());
+        let quarter_turn = Vec2::new(frame.up().y, -frame.up().x);
+        assert!(
+            frame.right().abs_diff_eq(quarter_turn, 1.0e-6),
+            "right must be up turned a quarter-turn clockwise, got {:?}",
+            frame.right()
+        );
+        assert!(frame.up().dot(frame.right()).abs() < 1.0e-6);
     }
 
     #[test]

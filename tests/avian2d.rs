@@ -2039,4 +2039,39 @@ mod flight_orientation {
             "no thrust should leak onto world +Y, got {velocity:?}"
         );
     }
+
+    /// Analog noise below the crate's 0.001 intent deadzone must not thrust
+    /// at all: in zero g with the default damping of 0.0 any sustained thrust
+    /// would drift the actor indefinitely.
+    #[test]
+    fn sub_deadzone_noise_does_not_drift_the_actor() {
+        let mut app = create_test_app();
+
+        let character = spawn_character_with_config(
+            &mut app,
+            Vec2::new(0.0, 500.0),
+            ControllerConfig::default(),
+        );
+        app.world_mut()
+            .get_mut::<CharacterController>(character)
+            .unwrap()
+            .set_gravity_force(Vec2::ZERO);
+        app.world_mut()
+            .entity_mut(character)
+            .insert(FlightOrientation::default());
+
+        if let Some(mut intent) = app.world_mut().get_mut::<MovementIntent>(character) {
+            intent.set_fly_active(true);
+            intent.set_fly(0.0005);
+            intent.set_fly_horizontal(-0.0005);
+        }
+
+        run_frames(&mut app, 30);
+
+        let velocity = app.world().get::<LinearVelocity>(character).unwrap().0;
+        assert!(
+            velocity.length() < 1.0e-4,
+            "sub-deadzone noise must not move the actor, got {velocity:?}"
+        );
+    }
 }
