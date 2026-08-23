@@ -2074,4 +2074,44 @@ mod flight_orientation {
             "sub-deadzone noise must not move the actor, got {velocity:?}"
         );
     }
+
+    /// Gravity compensation reaches the frame path through the ECS: two
+    /// otherwise identical climbers under the same gravity, one with the
+    /// boost and one without, must separate — the compensated actor loses
+    /// less speed to the field.
+    #[test]
+    fn gravity_compensation_boosts_the_frame_path_climb() {
+        let mut app = create_test_app();
+
+        let gravity = Vec2::NEG_Y * 980.0;
+        let mut spawn = |compensation: f32| {
+            let mut config = ControllerConfig::default();
+            config.flying.gravity_compensation = compensation;
+            config.flying.damping = 0.0;
+            let character = spawn_character_with_config(&mut app, Vec2::new(0.0, 500.0), config);
+            app.world_mut()
+                .get_mut::<CharacterController>(character)
+                .unwrap()
+                .set_gravity_force(gravity);
+            app.world_mut()
+                .entity_mut(character)
+                .insert(FlightOrientation::fixed(Dir2::Y));
+            if let Some(mut intent) = app.world_mut().get_mut::<MovementIntent>(character) {
+                intent.set_fly_active(true);
+                intent.set_fly(1.0);
+            }
+            character
+        };
+        let plain = spawn(0.0);
+        let compensated = spawn(0.5);
+
+        run_frames(&mut app, 30);
+
+        let plain_v = app.world().get::<LinearVelocity>(plain).unwrap().0.y;
+        let compensated_v = app.world().get::<LinearVelocity>(compensated).unwrap().0.y;
+        assert!(
+            compensated_v > plain_v + 1.0,
+            "compensation must boost the climb: compensated {compensated_v}, plain {plain_v}"
+        );
+    }
 }
