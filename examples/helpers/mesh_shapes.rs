@@ -3,10 +3,10 @@
 //! These functions create visual meshes that accurately represent the shape
 //! of physics colliders (capsules, circles, triangles, rectangles).
 
-use bevy::prelude::*;
-use bevy::mesh::Indices;
-use bevy::render::render_resource::PrimitiveTopology;
 use bevy::asset::RenderAssetUsages;
+use bevy::mesh::Indices;
+use bevy::prelude::*;
+use bevy::render::render_resource::PrimitiveTopology;
 use std::f32::consts::PI;
 
 /// Maximum safe value for u32 to f32 conversion without precision loss.

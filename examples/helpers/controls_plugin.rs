@@ -196,5 +196,4 @@ fn camera_follow(
     camera_transform.translation = camera_transform
         .translation
         .lerp(player_transform.translation, 0.05);
-
 }

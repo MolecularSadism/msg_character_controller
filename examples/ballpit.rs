@@ -29,8 +29,8 @@ use bevy::prelude::*;
 use bevy_egui::EguiPlugin;
 use helpers::{
     ActiveBackend, CharacterControllerUiPlugin, ControlsPlugin, DefaultControllerSettings,
-    ExamplePhysicsPlugin, Player, PlayerSpawnConfig, SpawnConfig, backend_name,
-    spawn_dynamic_ball, spawn_player, spawn_static_box,
+    ExamplePhysicsPlugin, Player, PlayerSpawnConfig, SpawnConfig, backend_name, spawn_dynamic_ball,
+    spawn_player, spawn_static_box,
 };
 use msg_character_controller::prelude::*;
 
@@ -69,7 +69,10 @@ fn main() {
     App::new()
         .add_plugins(DefaultPlugins.set(WindowPlugin {
             primary_window: Some(Window {
-                title: format!("Ballpit ({}) - Dynamic Ground Reaction Example", backend_name()),
+                title: format!(
+                    "Ballpit ({}) - Dynamic Ground Reaction Example",
+                    backend_name()
+                ),
                 resolution: (1920, 1080).into(),
                 ..default()
             }),

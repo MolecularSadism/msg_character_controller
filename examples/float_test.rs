@@ -25,8 +25,8 @@ use bevy::prelude::*;
 use bevy_egui::EguiPlugin;
 use helpers::{
     ActiveBackend, CharacterControllerUiPlugin, ControlsPlugin, DefaultControllerSettings,
-    ExamplePhysicsPlugin, Player, PlayerSpawnConfig, SpawnConfig, backend_name,
-    spawn_player, spawn_static_box,
+    ExamplePhysicsPlugin, Player, PlayerSpawnConfig, SpawnConfig, backend_name, spawn_player,
+    spawn_static_box,
 };
 use msg_character_controller::prelude::*;
 
@@ -132,9 +132,7 @@ fn setup(
     println!("=== FLOAT TEST SETUP ===");
     println!("Spawning player at Y: {}", spawn_pos.y);
     println!("Platform top at Y: {platform_top}");
-    println!(
-        "Float height (gap from capsule bottom to ground): {float_height}"
-    );
+    println!("Float height (gap from capsule bottom to ground): {float_height}");
     println!("Collider bottom offset: {collider_bottom_offset}");
     println!("Expected center Y: {expected_hover_y}");
 

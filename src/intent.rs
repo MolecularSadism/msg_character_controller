@@ -107,7 +107,7 @@ impl Default for MovementIntent {
 
 impl MovementIntent {
     /// Create a new empty movement intent.
-    #[must_use] 
+    #[must_use]
     pub fn new() -> Self {
         Self::default()
     }
@@ -160,61 +160,61 @@ impl MovementIntent {
     }
 
     /// Check if there is active walking input.
-    #[must_use] 
+    #[must_use]
     pub fn is_walking(&self) -> bool {
         self.walk.abs() > 0.001
     }
 
     /// Check if there is active flying input.
-    #[must_use] 
+    #[must_use]
     pub fn is_flying(&self) -> bool {
         self.fly.abs() > 0.001
     }
 
     /// Check if flying upward.
-    #[must_use] 
+    #[must_use]
     pub fn is_flying_up(&self) -> bool {
         self.fly > 0.001
     }
 
     /// Check if flying downward.
-    #[must_use] 
+    #[must_use]
     pub fn is_flying_down(&self) -> bool {
         self.fly < -0.001
     }
 
     /// Check if there is active horizontal flying input.
-    #[must_use] 
+    #[must_use]
     pub fn is_flying_horizontal(&self) -> bool {
         self.fly_horizontal.abs() > 0.001
     }
 
     /// Check if flying left horizontally.
-    #[must_use] 
+    #[must_use]
     pub fn is_flying_left(&self) -> bool {
         self.fly_horizontal < -0.001
     }
 
     /// Check if flying right horizontally.
-    #[must_use] 
+    #[must_use]
     pub fn is_flying_right(&self) -> bool {
         self.fly_horizontal > 0.001
     }
 
     /// Get the effective walking direction with speed multiplier applied.
-    #[must_use] 
+    #[must_use]
     pub fn effective_walk(&self) -> f32 {
         self.walk * self.walk_speed
     }
 
     /// Get the effective flying direction with speed multiplier applied.
-    #[must_use] 
+    #[must_use]
     pub fn effective_fly(&self) -> f32 {
         self.fly * self.fly_speed
     }
 
     /// Get the effective horizontal flying direction with speed multiplier applied.
-    #[must_use] 
+    #[must_use]
     pub fn effective_fly_horizontal(&self) -> f32 {
         self.fly_horizontal * self.fly_speed
     }
@@ -238,7 +238,7 @@ impl MovementIntent {
     }
 
     /// Check if there's a pending jump request.
-    #[must_use] 
+    #[must_use]
     pub fn has_jump_request(&self) -> bool {
         self.jump_request.is_some()
     }
@@ -318,7 +318,7 @@ pub struct JumpRequest {
 
 impl JumpRequest {
     /// Create a new jump request with the given buffer duration.
-    #[must_use] 
+    #[must_use]
     pub fn new(buffer_time: f32) -> Self {
         Self {
             buffer_timer: Timer::from_seconds(buffer_time, TimerMode::Once),
@@ -331,7 +331,7 @@ impl JumpRequest {
     }
 
     /// Check if the request is still valid (timer hasn't finished).
-    #[must_use] 
+    #[must_use]
     pub fn is_valid(&self) -> bool {
         !self.buffer_timer.is_finished()
     }

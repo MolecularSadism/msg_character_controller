@@ -28,7 +28,8 @@ use bevy_egui::{EguiContexts, EguiPlugin, EguiPrimaryContextPass, egui};
 use helpers::{
     ActiveBackend, CharacterControllerUiPlugin, CharacterControllerUiState, ControlsPlugin,
     DefaultControllerSettings, ExamplePhysicsPlugin, Player, PlayerSpawnConfig, SpawnConfig,
-    backend_name, spawn_player, spawn_static_ball, spawn_static_box_rotated, spawn_static_slope_rotated,
+    backend_name, spawn_player, spawn_static_ball, spawn_static_box_rotated,
+    spawn_static_slope_rotated,
 };
 use msg_character_controller::prelude::*;
 
@@ -84,7 +85,10 @@ fn main() {
     App::new()
         .add_plugins(DefaultPlugins.set(WindowPlugin {
             primary_window: Some(Window {
-                title: format!("Spherical Planet ({}) - Character Controller Example", backend_name()),
+                title: format!(
+                    "Spherical Planet ({}) - Character Controller Example",
+                    backend_name()
+                ),
                 resolution: (1280, 720).into(),
                 ..default()
             }),

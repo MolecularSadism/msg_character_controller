@@ -167,28 +167,36 @@ fn spawn_enclosure(
 
     // Floor
     spawn_static_box(
-        commands, meshes, materials,
+        commands,
+        meshes,
+        materials,
         Vec2::new(0.0, -hh - hwt),
         Vec2::new(hw, hwt),
         wall_color,
     );
     // Ceiling
     spawn_static_box(
-        commands, meshes, materials,
+        commands,
+        meshes,
+        materials,
         Vec2::new(0.0, hh + hwt),
         Vec2::new(hw, hwt),
         wall_color,
     );
     // Left wall
     spawn_static_box(
-        commands, meshes, materials,
+        commands,
+        meshes,
+        materials,
         Vec2::new(-hw + hwt, 0.0),
         Vec2::new(hwt, hh),
         wall_color,
     );
     // Right wall
     spawn_static_box(
-        commands, meshes, materials,
+        commands,
+        meshes,
+        materials,
         Vec2::new(hw - hwt, 0.0),
         Vec2::new(hwt, hh),
         wall_color,
@@ -210,29 +218,103 @@ fn spawn_levels(
     // Lowest step faces right so the character approaches from the open ground floor.
     let sc1_steps: Vec<f32> = vec![4.0; 24];
     let sc1_end_x = INTERIOR_LEFT + sc1_steps.len() as f32 * STEP_DEPTH;
-    spawn_staircase(commands, meshes, materials, sc1_end_x, LEVEL_0_Y, &sc1_steps, STEP_DEPTH, false, stair_color_1);
-    spawn_platform(commands, meshes, materials, sc1_end_x, INTERIOR_RIGHT, LEVEL_1_Y, platform_color);
+    spawn_staircase(
+        commands,
+        meshes,
+        materials,
+        sc1_end_x,
+        LEVEL_0_Y,
+        &sc1_steps,
+        STEP_DEPTH,
+        false,
+        stair_color_1,
+    );
+    spawn_platform(
+        commands,
+        meshes,
+        materials,
+        sc1_end_x,
+        INTERIOR_RIGHT,
+        LEVEL_1_Y,
+        platform_color,
+    );
 
     // SC2: Level 1 → Level 2, right side, step height 8 (12 steps).
     // Lowest step faces left so the character approaches from Platform 1.
     let sc2_steps: Vec<f32> = vec![8.0; 12];
     let sc2_end_x = INTERIOR_RIGHT - sc2_steps.len() as f32 * STEP_DEPTH;
-    spawn_staircase(commands, meshes, materials, sc2_end_x, LEVEL_1_Y, &sc2_steps, STEP_DEPTH, true, stair_color_2);
-    spawn_platform(commands, meshes, materials, INTERIOR_LEFT, sc2_end_x, LEVEL_2_Y, platform_color);
+    spawn_staircase(
+        commands,
+        meshes,
+        materials,
+        sc2_end_x,
+        LEVEL_1_Y,
+        &sc2_steps,
+        STEP_DEPTH,
+        true,
+        stair_color_2,
+    );
+    spawn_platform(
+        commands,
+        meshes,
+        materials,
+        INTERIOR_LEFT,
+        sc2_end_x,
+        LEVEL_2_Y,
+        platform_color,
+    );
 
     // SC3: Level 2 → Level 3, left side, step height 12 (8 steps).
     // Lowest step faces right so the character approaches from Platform 2.
     let sc3_steps: Vec<f32> = vec![12.0; 8];
     let sc3_end_x = INTERIOR_LEFT + sc3_steps.len() as f32 * STEP_DEPTH;
-    spawn_staircase(commands, meshes, materials, sc3_end_x, LEVEL_2_Y, &sc3_steps, STEP_DEPTH, false, stair_color_3);
-    spawn_platform(commands, meshes, materials, sc3_end_x, INTERIOR_RIGHT, LEVEL_3_Y, platform_color);
+    spawn_staircase(
+        commands,
+        meshes,
+        materials,
+        sc3_end_x,
+        LEVEL_2_Y,
+        &sc3_steps,
+        STEP_DEPTH,
+        false,
+        stair_color_3,
+    );
+    spawn_platform(
+        commands,
+        meshes,
+        materials,
+        sc3_end_x,
+        INTERIOR_RIGHT,
+        LEVEL_3_Y,
+        platform_color,
+    );
 
     // SC4: Level 3 → Level 4, right side, alternating step heights 4 and 12 (12 steps).
     // Lowest step faces left so the character approaches from Platform 3.
-    let sc4_steps: Vec<f32> = (0..12).map(|i| if i % 2 == 0 { 4.0 } else { 12.0 }).collect();
+    let sc4_steps: Vec<f32> = (0..12)
+        .map(|i| if i % 2 == 0 { 4.0 } else { 12.0 })
+        .collect();
     let sc4_end_x = INTERIOR_RIGHT - sc4_steps.len() as f32 * STEP_DEPTH;
-    spawn_staircase(commands, meshes, materials, sc4_end_x, LEVEL_3_Y, &sc4_steps, STEP_DEPTH, true, stair_color_4);
-    spawn_platform(commands, meshes, materials, INTERIOR_LEFT, sc4_end_x, LEVEL_4_Y, platform_color);
+    spawn_staircase(
+        commands,
+        meshes,
+        materials,
+        sc4_end_x,
+        LEVEL_3_Y,
+        &sc4_steps,
+        STEP_DEPTH,
+        true,
+        stair_color_4,
+    );
+    spawn_platform(
+        commands,
+        meshes,
+        materials,
+        INTERIOR_LEFT,
+        sc4_end_x,
+        LEVEL_4_Y,
+        platform_color,
+    );
 }
 
 // ==================== Helpers ====================
@@ -251,7 +333,14 @@ fn spawn_platform(
     let half_h = PLATFORM_THICKNESS / 2.0;
     let center_x = (x_left + x_right) / 2.0;
     let center_y = top_y - half_h;
-    spawn_static_box(commands, meshes, materials, Vec2::new(center_x, center_y), Vec2::new(half_w, half_h), color);
+    spawn_static_box(
+        commands,
+        meshes,
+        materials,
+        Vec2::new(center_x, center_y),
+        Vec2::new(half_w, half_h),
+        color,
+    );
 }
 
 fn spawn_staircase(
@@ -275,7 +364,9 @@ fn spawn_staircase(
         let center_x = start_x + dir * (i as f32 * step_depth + half_depth);
         let center_y = base_y + half_h;
         spawn_static_box(
-            commands, meshes, materials,
+            commands,
+            meshes,
+            materials,
             Vec2::new(center_x, center_y),
             Vec2::new(half_depth, half_h),
             color,

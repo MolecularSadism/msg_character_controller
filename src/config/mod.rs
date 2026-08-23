@@ -16,24 +16,25 @@ use crate::{collision::CollisionData, intent::MovementIntent};
 // === Submodules ===
 
 mod floating;
-mod spring;
-mod walking;
 mod flying;
 mod jumping;
-mod wall_jumping;
-mod upright;
 mod sensors;
+mod spring;
+mod upright;
+mod walking;
+mod wall_jumping;
 
 // === Re-exports ===
 
 pub use floating::FloatingConfig;
-pub use spring::SpringConfig;
-pub use walking::WalkingConfig;
 pub use flying::FlyingConfig;
+pub(crate) use flying::axis_thrust;
 pub use jumping::JumpingConfig;
-pub use wall_jumping::WallJumpingConfig;
-pub use upright::UprightTorqueConfig;
 pub use sensors::SensorConfig;
+pub use spring::SpringConfig;
+pub use upright::UprightTorqueConfig;
+pub use walking::WalkingConfig;
+pub use wall_jumping::WallJumpingConfig;
 
 // === Core Types ===
 
@@ -77,7 +78,10 @@ pub enum JumpType {
 #[derive(Component, Reflect, Debug, Clone)]
 #[reflect(Component)]
 #[require(MovementIntent, Transform)]
-#[cfg_attr(feature = "avian2d", require(AvianRigidBody, ConstantForce, ConstantTorque, AvianLockedAxes))]
+#[cfg_attr(
+    feature = "avian2d",
+    require(AvianRigidBody, ConstantForce, ConstantTorque, AvianLockedAxes)
+)]
 pub struct CharacterController {
     // === Collision Data (Option<CollisionData> for each direction) ===
     /// Floor collision data. Contains distance, normal, point, and entity.

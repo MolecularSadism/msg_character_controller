@@ -12,7 +12,9 @@ use std::marker::PhantomData;
 use super::{DiagnosticsData, backend_name, config_panel_ui, diagnostics_panel_ui, respawn_player};
 
 // Backend-specific velocity types
-use avian2d::prelude::{ConstantForce as AvianConstantForce, LinearVelocity as AvianLinearVelocity};
+use avian2d::prelude::{
+    ConstantForce as AvianConstantForce, LinearVelocity as AvianLinearVelocity,
+};
 
 /// Resource containing the UI panel state.
 #[derive(Resource)]
@@ -390,11 +392,10 @@ fn show_help_text(mut contexts: EguiContexts, ui_state: Res<CharacterControllerU
                         let backend_color = egui::Color32::from_rgb(100, 200, 255);
 
                         // Draw a small colored circle
-                        let (rect, _) = ui.allocate_exact_size(
-                            egui::vec2(8.0, 8.0),
-                            egui::Sense::hover(),
-                        );
-                        ui.painter().circle_filled(rect.center(), 4.0, backend_color);
+                        let (rect, _) =
+                            ui.allocate_exact_size(egui::vec2(8.0, 8.0), egui::Sense::hover());
+                        ui.painter()
+                            .circle_filled(rect.center(), 4.0, backend_color);
 
                         ui.label(
                             egui::RichText::new(format!("Physics: {}", backend_name()))
