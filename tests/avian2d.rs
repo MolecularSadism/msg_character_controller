@@ -6,14 +6,14 @@
 #![cfg(feature = "avian2d")]
 
 use approx::assert_relative_eq;
+use avian2d::prelude::*;
 use bevy::app::FixedMain;
 use bevy::prelude::*;
-use avian2d::prelude::*;
-use msg_character_controller::prelude::*;
 use msg_character_controller::backend::avian::{
-    Avian2dBackend, GroundCaster, LeftWallCaster, RightWallCaster, CeilingCaster,
-    StairCaster, CurrentGroundCaster, CasterOfCharacter, CastersSpawned,
+    Avian2dBackend, CasterOfCharacter, CastersSpawned, CeilingCaster, CurrentGroundCaster,
+    GroundCaster, LeftWallCaster, RightWallCaster, StairCaster,
 };
+use msg_character_controller::prelude::*;
 
 // Shared physics constants - must match examples/helpers/physics.rs for consistent behavior
 const FIXED_UPDATE_HZ: f64 = 60.0;
@@ -46,7 +46,7 @@ fn spawn_ground(app: &mut App, position: Vec2, half_size: Vec2) -> Entity {
             transform,
             GlobalTransform::from(transform),
             RigidBody::Static,
-            Collider::rectangle(half_size.x * 2.0, half_size.y * 2.0)
+            Collider::rectangle(half_size.x * 2.0, half_size.y * 2.0),
         ))
         .id()
 }
@@ -74,82 +74,103 @@ fn spawn_character_with_config(app: &mut App, position: Vec2, config: Controller
             Collider::capsule(4.0, 8.0),
             LockedAxes::ROTATION_LOCKED,
             GravityScale(0.0), // Disable Avian gravity - use controller's gravity
-            CastersSpawned, // Mark that we're manually spawning casters
+            CastersSpawned,    // Mark that we're manually spawning casters
         ))
         .id();
 
     // Spawn ground caster as direct child of character
     let half_width = config.sensors.ground_cast_width / 2.0;
-    let ground_child = world.spawn((
-        GroundCaster,
-        CasterOfCharacter(entity),
-        ShapeCaster::new(
-            Collider::segment(Vec2::new(-half_width, 0.0), Vec2::new(half_width, 0.0)),
-            Vec2::ZERO,
-            0.0,
-            Dir2::NEG_Y,
-        ).with_max_distance(20.0)
-         .with_max_hits(1)
-         .with_ignore_self(true),
-        Transform::default(),
-        GlobalTransform::default(),
-    )).id();
+    let ground_child = world
+        .spawn((
+            GroundCaster,
+            CasterOfCharacter(entity),
+            ShapeCaster::new(
+                Collider::segment(Vec2::new(-half_width, 0.0), Vec2::new(half_width, 0.0)),
+                Vec2::ZERO,
+                0.0,
+                Dir2::NEG_Y,
+            )
+            .with_max_distance(20.0)
+            .with_max_hits(1)
+            .with_ignore_self(true),
+            Transform::default(),
+            GlobalTransform::default(),
+        ))
+        .id();
 
     world.entity_mut(entity).add_child(ground_child);
 
     // Spawn left wall caster as direct child of character
     let wall_half_height = config.sensors.wall_cast_height / 2.0;
-    let left_wall_child = world.spawn((
-        LeftWallCaster,
-        CasterOfCharacter(entity),
-        ShapeCaster::new(
-            Collider::segment(Vec2::new(0.0, -wall_half_height), Vec2::new(0.0, wall_half_height)),
-            Vec2::ZERO,
-            0.0,
-            Dir2::NEG_X,
-        ).with_max_distance(10.0)
-         .with_max_hits(1)
-         .with_ignore_self(true),
-        Transform::default(),
-        GlobalTransform::default(),
-    )).id();
+    let left_wall_child = world
+        .spawn((
+            LeftWallCaster,
+            CasterOfCharacter(entity),
+            ShapeCaster::new(
+                Collider::segment(
+                    Vec2::new(0.0, -wall_half_height),
+                    Vec2::new(0.0, wall_half_height),
+                ),
+                Vec2::ZERO,
+                0.0,
+                Dir2::NEG_X,
+            )
+            .with_max_distance(10.0)
+            .with_max_hits(1)
+            .with_ignore_self(true),
+            Transform::default(),
+            GlobalTransform::default(),
+        ))
+        .id();
 
     world.entity_mut(entity).add_child(left_wall_child);
 
     // Spawn right wall caster as direct child of character
-    let right_wall_child = world.spawn((
-        RightWallCaster,
-        CasterOfCharacter(entity),
-        ShapeCaster::new(
-            Collider::segment(Vec2::new(0.0, -wall_half_height), Vec2::new(0.0, wall_half_height)),
-            Vec2::ZERO,
-            0.0,
-            Dir2::X,
-        ).with_max_distance(10.0)
-         .with_max_hits(1)
-         .with_ignore_self(true),
-        Transform::default(),
-        GlobalTransform::default(),
-    )).id();
+    let right_wall_child = world
+        .spawn((
+            RightWallCaster,
+            CasterOfCharacter(entity),
+            ShapeCaster::new(
+                Collider::segment(
+                    Vec2::new(0.0, -wall_half_height),
+                    Vec2::new(0.0, wall_half_height),
+                ),
+                Vec2::ZERO,
+                0.0,
+                Dir2::X,
+            )
+            .with_max_distance(10.0)
+            .with_max_hits(1)
+            .with_ignore_self(true),
+            Transform::default(),
+            GlobalTransform::default(),
+        ))
+        .id();
 
     world.entity_mut(entity).add_child(right_wall_child);
 
     // Spawn ceiling caster as direct child of character
     let ceiling_half_width = config.sensors.ceiling_cast_width / 2.0;
-    let ceiling_child = world.spawn((
-        CeilingCaster,
-        CasterOfCharacter(entity),
-        ShapeCaster::new(
-            Collider::segment(Vec2::new(-ceiling_half_width, 0.0), Vec2::new(ceiling_half_width, 0.0)),
-            Vec2::ZERO,
-            0.0,
-            Dir2::Y,
-        ).with_max_distance(10.0)
-         .with_max_hits(1)
-         .with_ignore_self(true),
-        Transform::default(),
-        GlobalTransform::default(),
-    )).id();
+    let ceiling_child = world
+        .spawn((
+            CeilingCaster,
+            CasterOfCharacter(entity),
+            ShapeCaster::new(
+                Collider::segment(
+                    Vec2::new(-ceiling_half_width, 0.0),
+                    Vec2::new(ceiling_half_width, 0.0),
+                ),
+                Vec2::ZERO,
+                0.0,
+                Dir2::Y,
+            )
+            .with_max_distance(10.0)
+            .with_max_hits(1)
+            .with_ignore_self(true),
+            Transform::default(),
+            GlobalTransform::default(),
+        ))
+        .id();
 
     world.entity_mut(entity).add_child(ceiling_child);
 
@@ -165,18 +186,21 @@ fn spawn_character_with_config(app: &mut App, position: Vec2, config: Controller
             Vec2::ZERO,
             0.0,
             Dir2::NEG_Y,
-        ).with_max_distance(stair_config.max_climb_height)
-         .with_max_hits(1)
-         .with_ignore_self(true);
+        )
+        .with_max_distance(stair_config.max_climb_height)
+        .with_max_hits(1)
+        .with_ignore_self(true);
         stair_shape.enabled = false;
 
-        let stair_child = world.spawn((
-            StairCaster,
-            CasterOfCharacter(entity),
-            stair_shape,
-            Transform::default(),
-            GlobalTransform::default(),
-        )).id();
+        let stair_child = world
+            .spawn((
+                StairCaster,
+                CasterOfCharacter(entity),
+                stair_shape,
+                Transform::default(),
+                GlobalTransform::default(),
+            ))
+            .id();
 
         world.entity_mut(entity).add_child(stair_child);
 
@@ -186,18 +210,21 @@ fn spawn_character_with_config(app: &mut App, position: Vec2, config: Controller
             Vec2::ZERO,
             0.0,
             Dir2::NEG_Y,
-        ).with_max_distance(20.0)
-         .with_max_hits(1)
-         .with_ignore_self(true);
+        )
+        .with_max_distance(20.0)
+        .with_max_hits(1)
+        .with_ignore_self(true);
         ground_stair_shape.enabled = false;
 
-        let ground_child = world.spawn((
-            CurrentGroundCaster,
-            CasterOfCharacter(entity),
-            ground_stair_shape,
-            Transform::default(),
-            GlobalTransform::default(),
-        )).id();
+        let ground_child = world
+            .spawn((
+                CurrentGroundCaster,
+                CasterOfCharacter(entity),
+                ground_stair_shape,
+                Transform::default(),
+                GlobalTransform::default(),
+            ))
+            .id();
 
         world.entity_mut(entity).add_child(ground_child);
     }
@@ -257,7 +284,6 @@ fn run_for_duration(app: &mut App, duration_secs: f32) {
     let frames = (f64::from(duration_secs) * FIXED_UPDATE_HZ).ceil().max(0.0) as usize;
     run_frames(app, frames);
 }
-
 
 // ==================== Ground Detection Tests ====================
 
@@ -437,10 +463,7 @@ mod float_height {
 
         println!(
             "PROOF: Character position.y={}, ground_distance={}, capsule_bottom={}, ground_surface={}",
-            transform.translation.y,
-            ground_dist,
-            capsule_bottom,
-            ground_surface
+            transform.translation.y, ground_dist, capsule_bottom, ground_surface
         );
 
         // Character should be floating above the ground surface
@@ -487,9 +510,7 @@ mod float_height {
         run_for_duration(&mut app, 2.0);
         let vel_after = app.world().get::<LinearVelocity>(character).unwrap().0;
 
-        println!(
-            "PROOF: vel_before={vel_before:?}, vel_after={vel_after:?}"
-        );
+        println!("PROOF: vel_before={vel_before:?}, vel_after={vel_after:?}");
 
         // PROOF: Spring force should have affected velocity
         let ext_force = app.world().get::<ConstantForce>(character);
@@ -640,7 +661,9 @@ mod ceiling_detection {
         run_for_duration(&mut app, 0.1);
 
         // Count casters
-        let mut query = app.world_mut().query::<(&CeilingCaster, &CasterOfCharacter)>();
+        let mut query = app
+            .world_mut()
+            .query::<(&CeilingCaster, &CasterOfCharacter)>();
         let ceiling_caster_count = query
             .iter(app.world())
             .filter(|(_, parent)| parent.0 == character)
@@ -694,10 +717,7 @@ mod ceiling_detection {
 
         let controller = app.world().get::<CharacterController>(character).unwrap();
 
-        println!(
-            "PROOF: touching_ceiling={}",
-            controller.touching_ceiling()
-        );
+        println!("PROOF: touching_ceiling={}", controller.touching_ceiling());
 
         // PROOF: No ceiling should be detected when far
         assert!(
@@ -732,9 +752,7 @@ mod movement {
 
         let vel_after = app.world().get::<LinearVelocity>(character).unwrap().0;
 
-        println!(
-            "PROOF: vel_before={vel_before:?}, vel_after={vel_after:?}"
-        );
+        println!("PROOF: vel_before={vel_before:?}, vel_after={vel_after:?}");
 
         // PROOF: Velocity should increase in the X direction
         assert!(
@@ -765,7 +783,9 @@ mod movement {
 
         if !is_grounded {
             // If still not grounded after 4 seconds, the test environment has issues
-            eprintln!("WARNING: Character not grounded after 4 seconds - test environment may not support full jump flow");
+            eprintln!(
+                "WARNING: Character not grounded after 4 seconds - test environment may not support full jump flow"
+            );
             return;
         }
 
@@ -791,7 +811,10 @@ mod movement {
         eprintln!("After setting jump_pressed=false:");
         {
             let intent = app.world().get::<MovementIntent>(character).unwrap();
-            eprintln!("  jump_pressed={}, jump_request={:?}", intent.jump_pressed, intent.jump_request);
+            eprintln!(
+                "  jump_pressed={}, jump_request={:?}",
+                intent.jump_pressed, intent.jump_request
+            );
         }
 
         // Now set jump_pressed=true to create rising edge
@@ -802,7 +825,10 @@ mod movement {
         eprintln!("After setting jump_pressed=true (before tick):");
         {
             let intent = app.world().get::<MovementIntent>(character).unwrap();
-            eprintln!("  jump_pressed={}, jump_request={:?}", intent.jump_pressed, intent.jump_request);
+            eprintln!(
+                "  jump_pressed={}, jump_request={:?}",
+                intent.jump_pressed, intent.jump_request
+            );
         }
 
         // Run several ticks to allow edge detection and jump application
@@ -811,7 +837,10 @@ mod movement {
 
             let intent = app.world().get::<MovementIntent>(character).unwrap();
             let vel = app.world().get::<LinearVelocity>(character).unwrap().0.y;
-            eprintln!("  Tick {}: vel.y={:.2}, jump_request={:?}", i, vel, intent.jump_request);
+            eprintln!(
+                "  Tick {}: vel.y={:.2}, jump_request={:?}",
+                i, vel, intent.jump_request
+            );
 
             if vel > 40.0 {
                 // Jump was applied!
@@ -826,7 +855,9 @@ mod movement {
 
         eprintln!("Jump did not apply in test environment");
         eprintln!("vel_before={vel_before}, vel_after={vel_after}");
-        eprintln!("This is a known limitation of the test environment - jump works correctly in-game");
+        eprintln!(
+            "This is a known limitation of the test environment - jump works correctly in-game"
+        );
 
         // Don't fail the test - just document the limitation
         // The system works in-game which is what matters
@@ -1055,20 +1086,23 @@ mod collision_layers {
 
             // Spawn ground caster child
             let half_width = config.sensors.ground_cast_width / 2.0;
-            let child = world.spawn((
-                GroundCaster,
-                CasterOfCharacter(entity),
-                ShapeCaster::new(
-                    Collider::segment(Vec2::new(-half_width, 0.0), Vec2::new(half_width, 0.0)),
-                    Vec2::ZERO,
-                    0.0,
-                    Dir2::NEG_Y,
-                ).with_max_distance(20.0)
-                 .with_max_hits(1)
-                 .with_ignore_self(true),
-                Transform::default(),
-                GlobalTransform::default(),
-            )).id();
+            let child = world
+                .spawn((
+                    GroundCaster,
+                    CasterOfCharacter(entity),
+                    ShapeCaster::new(
+                        Collider::segment(Vec2::new(-half_width, 0.0), Vec2::new(half_width, 0.0)),
+                        Vec2::ZERO,
+                        0.0,
+                        Dir2::NEG_Y,
+                    )
+                    .with_max_distance(20.0)
+                    .with_max_hits(1)
+                    .with_ignore_self(true),
+                    Transform::default(),
+                    GlobalTransform::default(),
+                ))
+                .id();
             world.entity_mut(entity).add_child(child);
 
             entity
@@ -1094,20 +1128,23 @@ mod collision_layers {
 
             // Spawn ground caster child
             let half_width = config.sensors.ground_cast_width / 2.0;
-            let child = world.spawn((
-                GroundCaster,
-                CasterOfCharacter(entity),
-                ShapeCaster::new(
-                    Collider::segment(Vec2::new(-half_width, 0.0), Vec2::new(half_width, 0.0)),
-                    Vec2::ZERO,
-                    0.0,
-                    Dir2::NEG_Y,
-                ).with_max_distance(20.0)
-                 .with_max_hits(1)
-                 .with_ignore_self(true),
-                Transform::default(),
-                GlobalTransform::default(),
-            )).id();
+            let child = world
+                .spawn((
+                    GroundCaster,
+                    CasterOfCharacter(entity),
+                    ShapeCaster::new(
+                        Collider::segment(Vec2::new(-half_width, 0.0), Vec2::new(half_width, 0.0)),
+                        Vec2::ZERO,
+                        0.0,
+                        Dir2::NEG_Y,
+                    )
+                    .with_max_distance(20.0)
+                    .with_max_hits(1)
+                    .with_ignore_self(true),
+                    Transform::default(),
+                    GlobalTransform::default(),
+                ))
+                .id();
             world.entity_mut(entity).add_child(child);
 
             entity
@@ -1177,20 +1214,23 @@ mod collision_layers {
 
             // Spawn ground caster child
             let half_width = config.sensors.ground_cast_width / 2.0;
-            let child = world.spawn((
-                GroundCaster,
-                CasterOfCharacter(entity),
-                ShapeCaster::new(
-                    Collider::segment(Vec2::new(-half_width, 0.0), Vec2::new(half_width, 0.0)),
-                    Vec2::ZERO,
-                    0.0,
-                    Dir2::NEG_Y,
-                ).with_max_distance(20.0)
-                 .with_max_hits(1)
-                 .with_ignore_self(true),
-                Transform::default(),
-                GlobalTransform::default(),
-            )).id();
+            let child = world
+                .spawn((
+                    GroundCaster,
+                    CasterOfCharacter(entity),
+                    ShapeCaster::new(
+                        Collider::segment(Vec2::new(-half_width, 0.0), Vec2::new(half_width, 0.0)),
+                        Vec2::ZERO,
+                        0.0,
+                        Dir2::NEG_Y,
+                    )
+                    .with_max_distance(20.0)
+                    .with_max_hits(1)
+                    .with_ignore_self(true),
+                    Transform::default(),
+                    GlobalTransform::default(),
+                ))
+                .id();
             world.entity_mut(entity).add_child(child);
 
             entity
@@ -1215,20 +1255,23 @@ mod collision_layers {
 
             // Spawn ground caster child
             let half_width = config.sensors.ground_cast_width / 2.0;
-            let child = world.spawn((
-                GroundCaster,
-                CasterOfCharacter(entity),
-                ShapeCaster::new(
-                    Collider::segment(Vec2::new(-half_width, 0.0), Vec2::new(half_width, 0.0)),
-                    Vec2::ZERO,
-                    0.0,
-                    Dir2::NEG_Y,
-                ).with_max_distance(20.0)
-                 .with_max_hits(1)
-                 .with_ignore_self(true),
-                Transform::default(),
-                GlobalTransform::default(),
-            )).id();
+            let child = world
+                .spawn((
+                    GroundCaster,
+                    CasterOfCharacter(entity),
+                    ShapeCaster::new(
+                        Collider::segment(Vec2::new(-half_width, 0.0), Vec2::new(half_width, 0.0)),
+                        Vec2::ZERO,
+                        0.0,
+                        Dir2::NEG_Y,
+                    )
+                    .with_max_distance(20.0)
+                    .with_max_hits(1)
+                    .with_ignore_self(true),
+                    Transform::default(),
+                    GlobalTransform::default(),
+                ))
+                .id();
             world.entity_mut(entity).add_child(child);
 
             entity
@@ -1242,8 +1285,14 @@ mod collision_layers {
         println!("char_with_layers CollisionLayers: {char_with_layers_val:?}");
         println!("char_no_layers CollisionLayers: {char_no_layers_val:?}");
 
-        let ctrl_with = app.world().get::<CharacterController>(char_with_layers).unwrap();
-        let ctrl_no = app.world().get::<CharacterController>(char_no_layers).unwrap();
+        let ctrl_with = app
+            .world()
+            .get::<CharacterController>(char_with_layers)
+            .unwrap();
+        let ctrl_no = app
+            .world()
+            .get::<CharacterController>(char_no_layers)
+            .unwrap();
 
         println!(
             "PROOF: char_with_explicit_layer_0 ground_detected={}, char_with_default ground_detected={}",
@@ -1272,7 +1321,9 @@ mod caster_spawning {
 
     /// Helper: count child entities of `parent` that have marker `M` and `ShapeCaster`.
     fn count_casters_of_type<M: Component>(app: &mut App, parent: Entity) -> usize {
-        let mut q = app.world_mut().query::<(&CasterOfCharacter, &ShapeCaster, &M)>();
+        let mut q = app
+            .world_mut()
+            .query::<(&CasterOfCharacter, &ShapeCaster, &M)>();
         q.iter(app.world())
             .filter(|(rel, _, _)| rel.0 == parent)
             .count()
@@ -1287,7 +1338,10 @@ mod caster_spawning {
         run_frames(&mut app, 2);
 
         let count = count_casters_of_type::<GroundCaster>(&mut app, character);
-        assert_eq!(count, 1, "auto-spawn must create exactly 1 GroundCaster with ShapeCaster");
+        assert_eq!(
+            count, 1,
+            "auto-spawn must create exactly 1 GroundCaster with ShapeCaster"
+        );
     }
 
     #[test]
@@ -1297,10 +1351,16 @@ mod caster_spawning {
 
         run_frames(&mut app, 2);
 
-        let left  = count_casters_of_type::<LeftWallCaster>(&mut app, character);
+        let left = count_casters_of_type::<LeftWallCaster>(&mut app, character);
         let right = count_casters_of_type::<RightWallCaster>(&mut app, character);
-        assert_eq!(left,  1, "auto-spawn must create exactly 1 LeftWallCaster  with ShapeCaster");
-        assert_eq!(right, 1, "auto-spawn must create exactly 1 RightWallCaster with ShapeCaster");
+        assert_eq!(
+            left, 1,
+            "auto-spawn must create exactly 1 LeftWallCaster  with ShapeCaster"
+        );
+        assert_eq!(
+            right, 1,
+            "auto-spawn must create exactly 1 RightWallCaster with ShapeCaster"
+        );
     }
 
     #[test]
@@ -1311,7 +1371,10 @@ mod caster_spawning {
         run_frames(&mut app, 2);
 
         let count = count_casters_of_type::<CeilingCaster>(&mut app, character);
-        assert_eq!(count, 1, "auto-spawn must create exactly 1 CeilingCaster with ShapeCaster");
+        assert_eq!(
+            count, 1,
+            "auto-spawn must create exactly 1 CeilingCaster with ShapeCaster"
+        );
     }
 
     #[test]
@@ -1322,10 +1385,16 @@ mod caster_spawning {
 
         run_frames(&mut app, 2);
 
-        let stair   = count_casters_of_type::<StairCaster>(&mut app, character);
+        let stair = count_casters_of_type::<StairCaster>(&mut app, character);
         let current = count_casters_of_type::<CurrentGroundCaster>(&mut app, character);
-        assert_eq!(stair,   1, "auto-spawn must create exactly 1 StairCaster with ShapeCaster");
-        assert_eq!(current, 1, "auto-spawn must create exactly 1 CurrentGroundCaster with ShapeCaster");
+        assert_eq!(
+            stair, 1,
+            "auto-spawn must create exactly 1 StairCaster with ShapeCaster"
+        );
+        assert_eq!(
+            current, 1,
+            "auto-spawn must create exactly 1 CurrentGroundCaster with ShapeCaster"
+        );
     }
 
     #[test]
@@ -1336,24 +1405,33 @@ mod caster_spawning {
         let transform = Transform::from_translation(Vec2::new(0.0, 20.0).extend(0.0));
         let mut controller = CharacterController::new();
         controller.stair_config = None;
-        let character = app.world_mut().spawn((
-            transform,
-            GlobalTransform::from(transform),
-            RigidBody::Dynamic,
-            controller,
-            ControllerConfig::default(),
-            MovementIntent::new(),
-            Collider::capsule(4.0, 8.0),
-            LockedAxes::ROTATION_LOCKED,
-            GravityScale(0.0),
-        )).id();
+        let character = app
+            .world_mut()
+            .spawn((
+                transform,
+                GlobalTransform::from(transform),
+                RigidBody::Dynamic,
+                controller,
+                ControllerConfig::default(),
+                MovementIntent::new(),
+                Collider::capsule(4.0, 8.0),
+                LockedAxes::ROTATION_LOCKED,
+                GravityScale(0.0),
+            ))
+            .id();
 
         run_frames(&mut app, 2);
 
-        let stair   = count_casters_of_type::<StairCaster>(&mut app, character);
+        let stair = count_casters_of_type::<StairCaster>(&mut app, character);
         let current = count_casters_of_type::<CurrentGroundCaster>(&mut app, character);
-        assert_eq!(stair,   0, "no StairCaster should be spawned when stair_config is None");
-        assert_eq!(current, 0, "no CurrentGroundCaster should be spawned when stair_config is None");
+        assert_eq!(
+            stair, 0,
+            "no StairCaster should be spawned when stair_config is None"
+        );
+        assert_eq!(
+            current, 0,
+            "no CurrentGroundCaster should be spawned when stair_config is None"
+        );
     }
 
     #[test]
@@ -1384,19 +1462,22 @@ mod caster_spawning {
         run_frames(&mut app, 10);
 
         let ground = count_casters_of_type::<GroundCaster>(&mut app, character);
-        assert_eq!(ground, 1, "GroundCaster must not be duplicated across frames");
+        assert_eq!(
+            ground, 1,
+            "GroundCaster must not be duplicated across frames"
+        );
 
-        let left  = count_casters_of_type::<LeftWallCaster>(&mut app, character);
+        let left = count_casters_of_type::<LeftWallCaster>(&mut app, character);
         let right = count_casters_of_type::<RightWallCaster>(&mut app, character);
-        assert_eq!(left,  1, "LeftWallCaster must not be duplicated");
+        assert_eq!(left, 1, "LeftWallCaster must not be duplicated");
         assert_eq!(right, 1, "RightWallCaster must not be duplicated");
 
         let ceiling = count_casters_of_type::<CeilingCaster>(&mut app, character);
         assert_eq!(ceiling, 1, "CeilingCaster must not be duplicated");
 
-        let stair   = count_casters_of_type::<StairCaster>(&mut app, character);
+        let stair = count_casters_of_type::<StairCaster>(&mut app, character);
         let current = count_casters_of_type::<CurrentGroundCaster>(&mut app, character);
-        assert_eq!(stair,   1, "StairCaster must not be duplicated");
+        assert_eq!(stair, 1, "StairCaster must not be duplicated");
         assert_eq!(current, 1, "CurrentGroundCaster must not be duplicated");
     }
 
@@ -1408,14 +1489,19 @@ mod caster_spawning {
         run_frames(&mut app, 2);
 
         // Stair caster must start disabled — it is only enabled while walking.
-        let mut q = app.world_mut().query::<(&CasterOfCharacter, &ShapeCaster, &StairCaster)>();
+        let mut q = app
+            .world_mut()
+            .query::<(&CasterOfCharacter, &ShapeCaster, &StairCaster)>();
         let enabled = q
             .iter(app.world())
             .filter(|(rel, _, _)| rel.0 == character)
             .map(|(_, caster, _)| caster.enabled)
             .next()
             .expect("StairCaster must exist after auto-spawn");
-        assert!(!enabled, "StairCaster must start disabled (enabled only while walking)");
+        assert!(
+            !enabled,
+            "StairCaster must start disabled (enabled only while walking)"
+        );
     }
 
     #[test]
@@ -1425,14 +1511,19 @@ mod caster_spawning {
 
         run_frames(&mut app, 2);
 
-        let mut q = app.world_mut().query::<(&CasterOfCharacter, &ShapeCaster, &CurrentGroundCaster)>();
+        let mut q = app
+            .world_mut()
+            .query::<(&CasterOfCharacter, &ShapeCaster, &CurrentGroundCaster)>();
         let enabled = q
             .iter(app.world())
             .filter(|(rel, _, _)| rel.0 == character)
             .map(|(_, caster, _)| caster.enabled)
             .next()
             .expect("CurrentGroundCaster must exist after auto-spawn");
-        assert!(!enabled, "CurrentGroundCaster must start disabled (enabled only while walking)");
+        assert!(
+            !enabled,
+            "CurrentGroundCaster must start disabled (enabled only while walking)"
+        );
     }
 
     /// Casters that are always active (ground, walls, ceiling) must start enabled.
@@ -1444,7 +1535,9 @@ mod caster_spawning {
         run_frames(&mut app, 2);
 
         // Ground caster
-        let mut q = app.world_mut().query::<(&CasterOfCharacter, &ShapeCaster, &GroundCaster)>();
+        let mut q = app
+            .world_mut()
+            .query::<(&CasterOfCharacter, &ShapeCaster, &GroundCaster)>();
         let ground_enabled = q
             .iter(app.world())
             .filter(|(rel, _, _)| rel.0 == character)
@@ -1454,7 +1547,9 @@ mod caster_spawning {
         assert!(ground_enabled, "GroundCaster must start enabled");
 
         // Left wall caster
-        let mut q = app.world_mut().query::<(&CasterOfCharacter, &ShapeCaster, &LeftWallCaster)>();
+        let mut q = app
+            .world_mut()
+            .query::<(&CasterOfCharacter, &ShapeCaster, &LeftWallCaster)>();
         let left_enabled = q
             .iter(app.world())
             .filter(|(rel, _, _)| rel.0 == character)
@@ -1464,7 +1559,9 @@ mod caster_spawning {
         assert!(left_enabled, "LeftWallCaster must start enabled");
 
         // Ceiling caster
-        let mut q = app.world_mut().query::<(&CasterOfCharacter, &ShapeCaster, &CeilingCaster)>();
+        let mut q = app
+            .world_mut()
+            .query::<(&CasterOfCharacter, &ShapeCaster, &CeilingCaster)>();
         let ceiling_enabled = q
             .iter(app.world())
             .filter(|(rel, _, _)| rel.0 == character)
@@ -1508,7 +1605,11 @@ mod stair_detection {
         spawn_ground(app, Vec2::new(0.0, GROUND_Y - 5.0), Vec2::new(200.0, 5.0));
         // Stair platform to the right — x=[6,14] is outside GroundCaster ±5.5 range,
         // so the ground caster sees flat ground while the stair caster hits the step.
-        spawn_ground(app, Vec2::new(10.0, STAIR_HEIGHT / 2.0 - 0.5), Vec2::new(4.0, STAIR_HEIGHT / 2.0 + 0.5));
+        spawn_ground(
+            app,
+            Vec2::new(10.0, STAIR_HEIGHT / 2.0 - 0.5),
+            Vec2::new(4.0, STAIR_HEIGHT / 2.0 + 0.5),
+        );
         spawn_character(&mut *app, Vec2::new(0.0, CHARACTER_START_Y))
     }
 
@@ -1529,7 +1630,9 @@ mod stair_detection {
         run_frames(&mut app, 3);
 
         // StairCaster must be enabled while intent.walk != 0
-        let mut q = app.world_mut().query::<(&CasterOfCharacter, &ShapeCaster, &StairCaster)>();
+        let mut q = app
+            .world_mut()
+            .query::<(&CasterOfCharacter, &ShapeCaster, &StairCaster)>();
         let enabled = q
             .iter(app.world())
             .filter(|(rel, _, _)| rel.0 == character)
@@ -1554,7 +1657,9 @@ mod stair_detection {
 
         run_frames(&mut app, 3);
 
-        let mut q = app.world_mut().query::<(&CasterOfCharacter, &ShapeCaster, &StairCaster)>();
+        let mut q = app
+            .world_mut()
+            .query::<(&CasterOfCharacter, &ShapeCaster, &StairCaster)>();
         let enabled = q
             .iter(app.world())
             .filter(|(rel, _, _)| rel.0 == character)
@@ -1658,7 +1763,9 @@ mod stair_detection {
         run_frames(&mut app, 5);
 
         // Directly inspect the ShapeHits component on the StairCaster entity
-        let mut q = app.world_mut().query::<(&CasterOfCharacter, &ShapeHits, &StairCaster)>();
+        let mut q = app
+            .world_mut()
+            .query::<(&CasterOfCharacter, &ShapeHits, &StairCaster)>();
         let has_hit = q
             .iter(app.world())
             .filter(|(rel, _, _)| rel.0 == character)
@@ -1684,7 +1791,9 @@ mod stair_detection {
 
         run_frames(&mut app, 3);
 
-        let mut q = app.world_mut().query::<(&CasterOfCharacter, &ShapeHits, &CurrentGroundCaster)>();
+        let mut q = app
+            .world_mut()
+            .query::<(&CasterOfCharacter, &ShapeHits, &CurrentGroundCaster)>();
         let has_hit = q
             .iter(app.world())
             .filter(|(rel, _, _)| rel.0 == character)
@@ -1795,8 +1904,7 @@ mod rigid_body_disabled {
 
         // PROOF: horizontal velocity must remain zero – walk must not be applied
         assert_eq!(
-            vel.x,
-            0.0,
+            vel.x, 0.0,
             "Walk force must not accelerate a RigidBodyDisabled character, got vx={}",
             vel.x
         );
@@ -1836,6 +1944,174 @@ mod rigid_body_disabled {
             Vec2::ZERO,
             "ConstantForce must be zero after disabling – controller forces must be cleaned up, got {:?}",
             force.0
+        );
+    }
+}
+
+/// Frame-aware flying via a host-supplied [`FlightOrientation`].
+mod flight_orientation {
+    use super::*;
+
+    /// An actor adrift with no gravity reference at all: unoriented frame at
+    /// zero confidence. Thrust must be isotropic, so despite a strongly
+    /// anisotropic flying config the actor accelerates exactly along its
+    /// intent instead of being skewed toward the strong axis — and it is
+    /// never stranded waiting for orientation.
+    #[test]
+    fn zero_confidence_flyer_tracks_its_intent() {
+        let mut app = create_test_app();
+
+        let mut config = ControllerConfig::default();
+        // Strong "vertical" thruster, weak lateral one — the split that would
+        // skew a diagonal intent if the frame still applied.
+        config.flying.acceleration = 50.0;
+        config.flying.vertical_acceleration_ratio = 8.0;
+        config.flying.max_speed = 100.0;
+        config.flying.vertical_speed_ratio = 1.0;
+        config.flying.gravity_compensation = 0.0;
+        config.flying.damping = 0.0;
+
+        let character = spawn_character_with_config(&mut app, Vec2::new(0.0, 500.0), config);
+        // True zero g: no gravity force, and the flight frame has never seen
+        // an up to resolve.
+        app.world_mut()
+            .get_mut::<CharacterController>(character)
+            .unwrap()
+            .set_gravity_force(Vec2::ZERO);
+        app.world_mut()
+            .entity_mut(character)
+            .insert(FlightOrientation::default());
+
+        if let Some(mut intent) = app.world_mut().get_mut::<MovementIntent>(character) {
+            intent.set_fly_active(true);
+            intent.set_fly(1.0);
+            intent.set_fly_horizontal(1.0);
+        }
+
+        run_frames(&mut app, 30);
+
+        let velocity = app.world().get::<LinearVelocity>(character).unwrap().0;
+        assert!(
+            velocity.length() > 1.0,
+            "the actor must not be stranded, got {velocity:?}"
+        );
+        let world_intent = FlightFrame::UNORIENTED.to_world(Vec2::new(1.0, 1.0).normalize());
+        let skew = velocity.normalize().angle_to(world_intent);
+        assert!(
+            skew.abs() < 1.0e-3,
+            "drifted {skew} rad off its intent, velocity {velocity:?}"
+        );
+    }
+
+    /// At full confidence the authored split applies in the supplied frame:
+    /// a frame whose up is world +X routes "vertical" intent along +X.
+    #[test]
+    fn full_confidence_flyer_follows_the_supplied_frame() {
+        let mut app = create_test_app();
+
+        let mut config = ControllerConfig::default();
+        config.flying.gravity_compensation = 0.0;
+        config.flying.damping = 0.0;
+
+        let character = spawn_character_with_config(&mut app, Vec2::new(0.0, 500.0), config);
+        app.world_mut()
+            .get_mut::<CharacterController>(character)
+            .unwrap()
+            .set_gravity_force(Vec2::ZERO);
+        app.world_mut()
+            .entity_mut(character)
+            .insert(FlightOrientation::fixed(Dir2::X));
+
+        if let Some(mut intent) = app.world_mut().get_mut::<MovementIntent>(character) {
+            intent.set_fly_active(true);
+            intent.set_fly(1.0);
+        }
+
+        run_frames(&mut app, 30);
+
+        let velocity = app.world().get::<LinearVelocity>(character).unwrap().0;
+        assert!(
+            velocity.x > 1.0,
+            "vertical intent must thrust along the frame's up (+X), got {velocity:?}"
+        );
+        assert!(
+            velocity.y.abs() < 1.0e-3,
+            "no thrust should leak onto world +Y, got {velocity:?}"
+        );
+    }
+
+    /// Analog noise below the crate's 0.001 intent deadzone must not thrust
+    /// at all: in zero g with the default damping of 0.0 any sustained thrust
+    /// would drift the actor indefinitely.
+    #[test]
+    fn sub_deadzone_noise_does_not_drift_the_actor() {
+        let mut app = create_test_app();
+
+        let character = spawn_character_with_config(
+            &mut app,
+            Vec2::new(0.0, 500.0),
+            ControllerConfig::default(),
+        );
+        app.world_mut()
+            .get_mut::<CharacterController>(character)
+            .unwrap()
+            .set_gravity_force(Vec2::ZERO);
+        app.world_mut()
+            .entity_mut(character)
+            .insert(FlightOrientation::default());
+
+        if let Some(mut intent) = app.world_mut().get_mut::<MovementIntent>(character) {
+            intent.set_fly_active(true);
+            intent.set_fly(0.0005);
+            intent.set_fly_horizontal(-0.0005);
+        }
+
+        run_frames(&mut app, 30);
+
+        let velocity = app.world().get::<LinearVelocity>(character).unwrap().0;
+        assert!(
+            velocity.length() < 1.0e-4,
+            "sub-deadzone noise must not move the actor, got {velocity:?}"
+        );
+    }
+
+    /// Gravity compensation reaches the frame path through the ECS: two
+    /// otherwise identical climbers under the same gravity, one with the
+    /// boost and one without, must separate — the compensated actor loses
+    /// less speed to the field.
+    #[test]
+    fn gravity_compensation_boosts_the_frame_path_climb() {
+        let mut app = create_test_app();
+
+        let gravity = Vec2::NEG_Y * 980.0;
+        let mut spawn = |compensation: f32| {
+            let mut config = ControllerConfig::default();
+            config.flying.gravity_compensation = compensation;
+            config.flying.damping = 0.0;
+            let character = spawn_character_with_config(&mut app, Vec2::new(0.0, 500.0), config);
+            app.world_mut()
+                .get_mut::<CharacterController>(character)
+                .unwrap()
+                .set_gravity_force(gravity);
+            app.world_mut()
+                .entity_mut(character)
+                .insert(FlightOrientation::fixed(Dir2::Y));
+            if let Some(mut intent) = app.world_mut().get_mut::<MovementIntent>(character) {
+                intent.set_fly_active(true);
+                intent.set_fly(1.0);
+            }
+            character
+        };
+        let plain = spawn(0.0);
+        let compensated = spawn(0.5);
+
+        run_frames(&mut app, 30);
+
+        let plain_v = app.world().get::<LinearVelocity>(plain).unwrap().0.y;
+        let compensated_v = app.world().get::<LinearVelocity>(compensated).unwrap().0.y;
+        assert!(
+            compensated_v > plain_v + 1.0,
+            "compensation must boost the climb: compensated {compensated_v}, plain {plain_v}"
         );
     }
 }

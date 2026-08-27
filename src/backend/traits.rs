@@ -137,7 +137,7 @@ pub trait CharacterPhysicsBackend: 'static + Send + Sync {
     /// Forces component) instead of the generic impulse-based gravity.
     ///
     /// Default implementation returns false (use generic gravity systems).
-    #[must_use] 
+    #[must_use]
     fn provides_custom_gravity() -> bool {
         false
     }

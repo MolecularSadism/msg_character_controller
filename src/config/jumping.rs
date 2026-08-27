@@ -4,6 +4,8 @@ use bevy::prelude::*;
 
 /// Configuration for core jump mechanics.
 #[derive(Reflect, Debug, Clone, Copy)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "serde", serde(default))]
 pub struct JumpingConfig {
     /// Jump impulse strength (applied as velocity).
     pub speed: f32,

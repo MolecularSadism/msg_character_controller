@@ -4,6 +4,8 @@ use bevy::prelude::*;
 
 /// Configuration for spring-damper system.
 #[derive(Reflect, Debug, Clone, Copy)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "serde", serde(default))]
 pub struct SpringConfig {
     /// Spring strength for the floating system.
     pub strength: f32,

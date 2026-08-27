@@ -25,6 +25,7 @@ use bevy::prelude::*;
 use crate::RigidBodyDisabled;
 use crate::backend::CharacterPhysicsBackend;
 use crate::config::{CharacterController, ControllerConfig};
+use crate::flight::FlightOrientation;
 use crate::intent::MovementIntent;
 
 // ============================================================================
@@ -79,9 +80,7 @@ pub fn tick_jump_request_timers(
 /// This system runs after `tick_jump_request_timers` and before `evaluate_intent`.
 /// It removes jump requests whose buffer timer has finished, so that downstream
 /// systems don't need to check buffer validity.
-pub fn expire_jump_requests(
-    mut query: Query<&mut MovementIntent, Without<RigidBodyDisabled>>,
-) {
+pub fn expire_jump_requests(mut query: Query<&mut MovementIntent, Without<RigidBodyDisabled>>) {
     for mut intent in &mut query {
         if let Some(ref jump) = intent.jump_request {
             if !jump.is_valid() {
@@ -197,7 +196,10 @@ pub fn update_jump_type(
 /// Note: Expired jump requests are removed by `expire_jump_requests` before
 /// this system runs, so we just check if a request exists.
 pub fn evaluate_intent<B: CharacterPhysicsBackend>(
-    mut query: Query<(&mut CharacterController, &ControllerConfig, &MovementIntent), Without<RigidBodyDisabled>>,
+    mut query: Query<
+        (&mut CharacterController, &ControllerConfig, &MovementIntent),
+        Without<RigidBodyDisabled>,
+    >,
 ) {
     use crate::config::JumpType;
 
@@ -208,8 +210,8 @@ pub fn evaluate_intent<B: CharacterPhysicsBackend>(
         // Check if intending to jump (has valid jump request and can jump)
         // Expired requests are already removed by expire_jump_requests
         // Can jump if: grounded, touching wall (with wall jumping), or within coyote time
-        let has_contact =
-            controller.is_grounded(config) || (config.wall_jumping.enabled && controller.touching_wall());
+        let has_contact = controller.is_grounded(config)
+            || (config.wall_jumping.enabled && controller.touching_wall());
         let can_jump = has_contact || controller.in_coyote_time();
 
         // For wall jumps via coyote time, also check that last_jump_type is a wall type
@@ -351,14 +353,15 @@ pub fn accumulate_spring_force<B: CharacterPhysicsBackend>(world: &mut World) {
         // Clamp spring force to configured max, or use formula-based fallback.
         // The fallback prevents overflow when entering the spring zone at high velocity.
         let gravity_magnitude = controller.gravity.length();
-        let max_spring_force = config
-            .spring.max_force
-            .map_or_else(|| {
+        let max_spring_force = config.spring.max_force.map_or_else(
+            || {
                 // Fallback: maximum based on counteracting gravity force plus reasonable acceleration.
                 // F = m * g, so max force = m * g * 3 + spring contribution
                 gravity_magnitude * mass * 3.0
                     + config.spring.strength * config.floating.grounding_distance * mass
-            }, |f| f * mass);
+            },
+            |f| f * mass,
+        );
         let clamped_spring_force = spring_force.clamp(-max_spring_force, max_spring_force);
 
         // When upward propulsion is intended or within filter window, reject downward spring forces
@@ -438,12 +441,13 @@ pub fn accumulate_stair_climb_force<B: CharacterPhysicsBackend>(world: &mut Worl
             let up = controller.ideal_up();
 
             // Calculate max spring force (same formula as floating spring system)
-            let max_spring_force = config
-                .spring.max_force
-                .map_or_else(|| {
+            let max_spring_force = config.spring.max_force.map_or_else(
+                || {
                     gravity_magnitude * mass * 3.0
                         + config.spring.strength * config.floating.grounding_distance * mass
-                }, |f| f * mass);
+                },
+                |f| f * mass,
+            );
 
             let climb_force = up * max_spring_force * stair_config.climb_force_multiplier;
 
@@ -899,20 +903,30 @@ pub fn apply_fly<B: CharacterPhysicsBackend>(world: &mut World) {
         ControllerConfig,
         MovementIntent,
         CharacterController,
+        Option<FlightOrientation>,
     )> = world
         .query_filtered::<(
             Entity,
             &ControllerConfig,
             &MovementIntent,
             &CharacterController,
+            Option<&FlightOrientation>,
         ), Without<RigidBodyDisabled>>()
         .iter(world)
-        .map(|(e, config, intent, controller)| (e, *config, intent.clone(), controller.clone()))
+        .map(|(e, config, intent, controller, orientation)| {
+            (
+                e,
+                *config,
+                intent.clone(),
+                controller.clone(),
+                orientation.copied(),
+            )
+        })
         .collect();
 
     let dt = B::get_fixed_timestep(world);
 
-    for (entity, config, intent, controller) in entities {
+    for (entity, config, intent, controller, orientation) in entities {
         // Drive the physics backend's linear damping component based on flight
         // state. While `fly_active`, the configured flight damping decays
         // velocity through the physics integrator (no manual velocity math).
@@ -932,6 +946,47 @@ pub fn apply_fly<B: CharacterPhysicsBackend>(world: &mut World) {
             // Skip if mass is invalid (entity may be despawned or not yet initialized)
             continue;
         }
+
+        // === FRAME-AWARE FLYING (host-supplied orientation) ===
+        // Actors carrying FlightOrientation fly in the host's sampled frame
+        // with confidence-blended thrust (see FlyingConfig::thrust): each axis
+        // pushes at its converged acceleration until its converged cap, and at
+        // zero confidence thrust is isotropic so the actor tracks its intent
+        // exactly. Actors without the component keep the fixed-up path below.
+        if let Some(orientation) = orientation {
+            let mut framed_intent =
+                Vec2::new(intent.effective_fly_horizontal(), intent.effective_fly());
+            // Flying downwards is disabled while grounded, matching the
+            // fixed-up path.
+            if is_grounded && intent.is_flying_down() {
+                framed_intent.y = 0.0;
+            }
+            if framed_intent == Vec2::ZERO {
+                continue;
+            }
+
+            let frame = orientation.frame;
+            let thrust = config.flying.thrust(
+                framed_intent,
+                frame,
+                current_velocity,
+                orientation.confidence,
+                controller.gravity.length(),
+            );
+
+            // Apply impulse: I = m * a * dt
+            B::apply_impulse(world, entity, thrust * dt * mass);
+
+            // Record upward propulsion when actively thrusting up, so the
+            // spring filter treats flight like the fixed-up path does.
+            if framed_intent.y > 0.0 && thrust.dot(frame.up()) > 0.0 {
+                if let Some(mut controller) = world.get_mut::<CharacterController>(entity) {
+                    controller.record_upward_propulsion(config.spring.jump_filter_duration);
+                }
+            }
+            continue;
+        }
+
         let up = controller.ideal_up();
         let right = controller.ideal_right();
 
@@ -1129,7 +1184,9 @@ pub fn apply_jump<B: CharacterPhysicsBackend>(world: &mut World) {
             // Wall jumps: compensate based on config (0.0 = none, 1.0 = full)
             let compensation = match controller.last_jump_type {
                 JumpType::Ground => 1.0,
-                JumpType::LeftWall | JumpType::RightWall => config.wall_jumping.velocity_compensation,
+                JumpType::LeftWall | JumpType::RightWall => {
+                    config.wall_jumping.velocity_compensation
+                }
             };
 
             if compensation > 0.0 {
@@ -1213,7 +1270,8 @@ pub fn accumulate_upright_torque<B: CharacterPhysicsBackend>(world: &mut World) 
 
         // Target angle: if not specified, use ideal_up angle minus PI/2 to get the body rotation
         let target_angle = config
-            .upright.target_angle
+            .upright
+            .target_angle
             .unwrap_or_else(|| controller.ideal_up_angle() - consts::FRAC_PI_2);
 
         // Calculate angle error (shortest rotation to goal), normalized to [-PI, PI]
@@ -1258,13 +1316,14 @@ pub fn accumulate_upright_torque<B: CharacterPhysicsBackend>(world: &mut World) 
         let total_torque = spring_torque + damping_torque;
 
         // Clamp total torque to configured max, or use formula-based fallback.
-        let max_torque = config
-            .upright.max_torque
-            .map_or_else(|| {
+        let max_torque = config.upright.max_torque.map_or_else(
+            || {
                 // Fallback: maximum based on spring torque at full rotation error (PI).
                 let max_spring_torque = config.upright.strength * consts::PI * inertia;
                 max_spring_torque * 3.0
-            }, |t| t * inertia);
+            },
+            |t| t * inertia,
+        );
         let clamped_torque = total_torque.clamp(-max_torque, max_torque);
 
         B::apply_torque(world, entity, clamped_torque);

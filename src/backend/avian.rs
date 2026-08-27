@@ -3,8 +3,8 @@
 //! This module provides the physics backend for `Avian2D` (`bevy_avian2d`).
 //! Enable with the `avian2d` feature.
 
-use bevy::prelude::*;
 use avian2d::prelude::*;
+use bevy::prelude::*;
 
 use crate::backend::CharacterPhysicsBackend;
 use crate::collision::CollisionData;
@@ -53,7 +53,6 @@ pub struct CharacterCasters(Vec<Entity>); // Private field - managed by Bevy
 /// Marker component to track that casters have been spawned for this character.
 #[derive(Component, Debug, Clone, Copy)]
 pub struct CastersSpawned;
-
 
 /// Message fired when a reactive force (Newton's 3rd law) is applied to an entity.
 ///
@@ -138,9 +137,7 @@ impl CharacterPhysicsBackend for Avian2dBackend {
     }
 
     fn get_angular_velocity(world: &World, entity: Entity) -> f32 {
-        world
-            .get::<AngularVelocity>(entity)
-            .map_or(0.0, |v| v.0)
+        world.get::<AngularVelocity>(entity).map_or(0.0, |v| v.0)
     }
 
     fn get_rotation(world: &World, entity: Entity) -> f32 {
@@ -243,7 +240,7 @@ pub struct Avian2dBackendPlugin;
 impl Plugin for Avian2dBackendPlugin {
     fn build(&self, app: &mut App) {
         use crate::CharacterControllerSet;
-        
+
         // Register the reactive force message
         app.add_message::<ReactiveForceApplied>();
 
@@ -274,7 +271,12 @@ impl Plugin for Avian2dBackendPlugin {
             FixedUpdate,
             (
                 avian_ground_detection,
-                (avian_wall_detection, avian_ceiling_detection, avian_stair_detection, avian_detect_falling),
+                (
+                    avian_wall_detection,
+                    avian_ceiling_detection,
+                    avian_stair_detection,
+                    avian_detect_falling,
+                ),
             )
                 .chain()
                 .in_set(CharacterControllerSet::Sensors),
@@ -332,7 +334,7 @@ fn spawn_detection_casters(
 
 /// Get the distance from collider center to bottom for a given collider.
 /// For capsules, this is `half_height` + radius.
-#[must_use] 
+#[must_use]
 pub fn get_collider_bottom_offset(collider: &Collider) -> f32 {
     // Try to get capsule shape parameters
     if let Some(capsule) = collider.shape_scaled().as_capsule() {
@@ -387,28 +389,27 @@ fn caster_query_filter(
 /// - `config`: Configuration for the character controller
 ///
 /// Note: Collision layers are inherited from the character in the update system.
-pub fn spawn_ground_caster(
-    commands: &mut Commands,
-    character: Entity,
-    config: &ControllerConfig,
-) {
+pub fn spawn_ground_caster(commands: &mut Commands, character: Entity, config: &ControllerConfig) {
     let half_width = config.sensors.ground_cast_width / 2.0;
 
-    let child = commands.spawn((
-        Name::new("GroundCaster"),
-        GroundCaster,
-        CasterOfCharacter(character), // Relationship: belongs to this character
-        ShapeCaster::new(
-            Collider::segment(Vec2::new(-half_width, 0.0), Vec2::new(half_width, 0.0)),
-            Vec2::ZERO,
-            0.0,
-            Dir2::NEG_Y,
-        ).with_max_distance(20.0)
-         .with_max_hits(1)
-         .with_ignore_self(true),
-        Transform::default(),
-        GlobalTransform::default(),
-    )).id();
+    let child = commands
+        .spawn((
+            Name::new("GroundCaster"),
+            GroundCaster,
+            CasterOfCharacter(character), // Relationship: belongs to this character
+            ShapeCaster::new(
+                Collider::segment(Vec2::new(-half_width, 0.0), Vec2::new(half_width, 0.0)),
+                Vec2::ZERO,
+                0.0,
+                Dir2::NEG_Y,
+            )
+            .with_max_distance(20.0)
+            .with_max_hits(1)
+            .with_ignore_self(true),
+            Transform::default(),
+            GlobalTransform::default(),
+        ))
+        .id();
 
     // Set up parent-child relationship for Transform propagation
     commands.entity(character).add_child(child);
@@ -433,20 +434,23 @@ pub fn spawn_left_wall_caster(
     config: &ControllerConfig,
 ) {
     let half_height = config.sensors.wall_cast_height / 2.0;
-    let child = commands.spawn((
-        LeftWallCaster,
-        CasterOfCharacter(character), // Relationship: belongs to this character
-        ShapeCaster::new(
-            Collider::segment(Vec2::new(0.0, -half_height), Vec2::new(0.0, half_height)),
-            Vec2::ZERO,
-            0.0,
-            Dir2::NEG_X,
-        ).with_max_distance(10.0)
-         .with_max_hits(1)
-         .with_ignore_self(true),
-        Transform::default(),
-        GlobalTransform::default(),
-    )).id();
+    let child = commands
+        .spawn((
+            LeftWallCaster,
+            CasterOfCharacter(character), // Relationship: belongs to this character
+            ShapeCaster::new(
+                Collider::segment(Vec2::new(0.0, -half_height), Vec2::new(0.0, half_height)),
+                Vec2::ZERO,
+                0.0,
+                Dir2::NEG_X,
+            )
+            .with_max_distance(10.0)
+            .with_max_hits(1)
+            .with_ignore_self(true),
+            Transform::default(),
+            GlobalTransform::default(),
+        ))
+        .id();
 
     // Set up parent-child relationship for Transform propagation
     commands.entity(character).add_child(child);
@@ -471,20 +475,23 @@ pub fn spawn_right_wall_caster(
     config: &ControllerConfig,
 ) {
     let half_height = config.sensors.wall_cast_height / 2.0;
-    let child = commands.spawn((
-        RightWallCaster,
-        CasterOfCharacter(character), // Relationship: belongs to this character
-        ShapeCaster::new(
-            Collider::segment(Vec2::new(0.0, -half_height), Vec2::new(0.0, half_height)),
-            Vec2::ZERO,
-            0.0,
-            Dir2::X,
-        ).with_max_distance(10.0)
-         .with_max_hits(1)
-         .with_ignore_self(true),
-        Transform::default(),
-        GlobalTransform::default(),
-    )).id();
+    let child = commands
+        .spawn((
+            RightWallCaster,
+            CasterOfCharacter(character), // Relationship: belongs to this character
+            ShapeCaster::new(
+                Collider::segment(Vec2::new(0.0, -half_height), Vec2::new(0.0, half_height)),
+                Vec2::ZERO,
+                0.0,
+                Dir2::X,
+            )
+            .with_max_distance(10.0)
+            .with_max_hits(1)
+            .with_ignore_self(true),
+            Transform::default(),
+            GlobalTransform::default(),
+        ))
+        .id();
 
     // Set up parent-child relationship for Transform propagation
     commands.entity(character).add_child(child);
@@ -497,11 +504,7 @@ pub fn spawn_right_wall_caster(
 /// # Parameters
 /// - `character`: The character entity (parent in hierarchy and `CasterOfCharacter` linkage)
 /// - `config`: Configuration for the character controller
-pub fn spawn_wall_casters(
-    commands: &mut Commands,
-    character: Entity,
-    config: &ControllerConfig,
-) {
+pub fn spawn_wall_casters(commands: &mut Commands, character: Entity, config: &ControllerConfig) {
     spawn_left_wall_caster(commands, character, config);
     spawn_right_wall_caster(commands, character, config);
 }
@@ -519,26 +522,25 @@ pub fn spawn_wall_casters(
 /// - `config`: Configuration for the character controller
 ///
 /// Note: Collision layers are inherited from the character in the update system.
-pub fn spawn_ceiling_caster(
-    commands: &mut Commands,
-    character: Entity,
-    config: &ControllerConfig,
-) {
+pub fn spawn_ceiling_caster(commands: &mut Commands, character: Entity, config: &ControllerConfig) {
     let half_width = config.sensors.ceiling_cast_width / 2.0;
-    let child = commands.spawn((
-        CeilingCaster,
-        CasterOfCharacter(character), // Relationship: belongs to this character
-        ShapeCaster::new(
-            Collider::segment(Vec2::new(-half_width, 0.0), Vec2::new(half_width, 0.0)),
-            Vec2::ZERO,
-            0.0,
-            Dir2::Y,
-        ).with_max_distance(10.0)
-         .with_max_hits(1)
-         .with_ignore_self(true),
-        Transform::default(),
-        GlobalTransform::default(),
-    )).id();
+    let child = commands
+        .spawn((
+            CeilingCaster,
+            CasterOfCharacter(character), // Relationship: belongs to this character
+            ShapeCaster::new(
+                Collider::segment(Vec2::new(-half_width, 0.0), Vec2::new(half_width, 0.0)),
+                Vec2::ZERO,
+                0.0,
+                Dir2::Y,
+            )
+            .with_max_distance(10.0)
+            .with_max_hits(1)
+            .with_ignore_self(true),
+            Transform::default(),
+            GlobalTransform::default(),
+        ))
+        .id();
 
     // Set up parent-child relationship for Transform propagation
     commands.entity(character).add_child(child);
@@ -565,8 +567,7 @@ pub fn spawn_stair_casters(
     controller: &CharacterController,
 ) {
     // Get stair config, or use default if not set
-    let stair_config = controller.stair_config
-        .unwrap_or_default();
+    let stair_config = controller.stair_config.unwrap_or_default();
 
     let half_width = stair_config.stair_cast_width / 2.0;
 
@@ -577,18 +578,21 @@ pub fn spawn_stair_casters(
         Vec2::ZERO,
         0.0,
         Dir2::NEG_Y,
-    ).with_max_distance(stair_config.max_climb_height)
-     .with_max_hits(1)
-     .with_ignore_self(true);
+    )
+    .with_max_distance(stair_config.max_climb_height)
+    .with_max_hits(1)
+    .with_ignore_self(true);
     stair_shape_caster.enabled = false;
 
-    let stair_child = commands.spawn((
-        StairCaster,
-        CasterOfCharacter(character), // Relationship: belongs to this character
-        stair_shape_caster,
-        Transform::default(),
-        GlobalTransform::default(),
-    )).id();
+    let stair_child = commands
+        .spawn((
+            StairCaster,
+            CasterOfCharacter(character), // Relationship: belongs to this character
+            stair_shape_caster,
+            Transform::default(),
+            GlobalTransform::default(),
+        ))
+        .id();
 
     // Set up parent-child relationship for Transform propagation
     commands.entity(character).add_child(stair_child);
@@ -599,18 +603,21 @@ pub fn spawn_stair_casters(
         Vec2::ZERO,
         0.0,
         Dir2::NEG_Y,
-    ).with_max_distance(20.0)
-     .with_max_hits(1)
-     .with_ignore_self(true);
+    )
+    .with_max_distance(20.0)
+    .with_max_hits(1)
+    .with_ignore_self(true);
     ground_shape_caster.enabled = false;
 
-    let ground_child = commands.spawn((
-        CurrentGroundCaster,
-        CasterOfCharacter(character), // Relationship: belongs to this character
-        ground_shape_caster,
-        Transform::default(),
-        GlobalTransform::default(),
-    )).id();
+    let ground_child = commands
+        .spawn((
+            CurrentGroundCaster,
+            CasterOfCharacter(character), // Relationship: belongs to this character
+            ground_shape_caster,
+            Transform::default(),
+            GlobalTransform::default(),
+        ))
+        .id();
 
     // Set up parent-child relationship for Transform propagation
     commands.entity(character).add_child(ground_child);
@@ -622,7 +629,14 @@ pub fn spawn_stair_casters(
 /// The caster direction is set in local space since casters are children of the actor.
 fn update_ground_caster_direction(
     mut q_casters: Query<(&CasterOfCharacter, &mut ShapeCaster), With<GroundCaster>>,
-    q_controllers: Query<(&CharacterController, &ControllerConfig, Option<&CollisionLayers>), Without<RigidBodyDisabled>>,
+    q_controllers: Query<
+        (
+            &CharacterController,
+            &ControllerConfig,
+            Option<&CollisionLayers>,
+        ),
+        Without<RigidBodyDisabled>,
+    >,
 ) {
     for (caster_parent, mut shape_caster) in &mut q_casters {
         let Ok((controller, config, collision_layers)) = q_controllers.get(caster_parent.0) else {
@@ -650,12 +664,25 @@ fn update_ground_caster_direction(
 /// The caster direction is set in local space since casters are children of the actor.
 fn update_wall_caster_directions(
     mut q_left_casters: Query<(&CasterOfCharacter, &mut ShapeCaster), With<LeftWallCaster>>,
-    mut q_right_casters: Query<(&CasterOfCharacter, &mut ShapeCaster), (With<RightWallCaster>, Without<LeftWallCaster>)>,
-    q_controllers: Query<(&CharacterController, &ControllerConfig, Option<&CollisionLayers>, Option<&Collider>), Without<RigidBodyDisabled>>,
+    mut q_right_casters: Query<
+        (&CasterOfCharacter, &mut ShapeCaster),
+        (With<RightWallCaster>, Without<LeftWallCaster>),
+    >,
+    q_controllers: Query<
+        (
+            &CharacterController,
+            &ControllerConfig,
+            Option<&CollisionLayers>,
+            Option<&Collider>,
+        ),
+        Without<RigidBodyDisabled>,
+    >,
 ) {
     // Update left wall casters
     for (caster_parent, mut shape_caster) in &mut q_left_casters {
-        let Ok((_controller, config, collision_layers, collider)) = q_controllers.get(caster_parent.0) else {
+        let Ok((_controller, config, collision_layers, collider)) =
+            q_controllers.get(caster_parent.0)
+        else {
             continue;
         };
 
@@ -675,7 +702,9 @@ fn update_wall_caster_directions(
 
     // Update right wall casters
     for (caster_parent, mut shape_caster) in &mut q_right_casters {
-        let Ok((_controller, config, collision_layers, collider)) = q_controllers.get(caster_parent.0) else {
+        let Ok((_controller, config, collision_layers, collider)) =
+            q_controllers.get(caster_parent.0)
+        else {
             continue;
         };
 
@@ -700,7 +729,14 @@ fn update_wall_caster_directions(
 /// The caster direction is set in local space since casters are children of the actor.
 fn update_ceiling_caster_direction(
     mut q_casters: Query<(&CasterOfCharacter, &mut ShapeCaster), With<CeilingCaster>>,
-    q_controllers: Query<(&CharacterController, &ControllerConfig, Option<&CollisionLayers>), Without<RigidBodyDisabled>>,
+    q_controllers: Query<
+        (
+            &CharacterController,
+            &ControllerConfig,
+            Option<&CollisionLayers>,
+        ),
+        Without<RigidBodyDisabled>,
+    >,
 ) {
     for (caster_parent, mut shape_caster) in &mut q_casters {
         let Ok((controller, config, collision_layers)) = q_controllers.get(caster_parent.0) else {
@@ -713,7 +749,8 @@ fn update_ceiling_caster_direction(
         shape_caster.shape_rotation = 0.0;
 
         // Update max_distance: surface_detection_distance + capsule_half_height + buffer
-        shape_caster.max_distance = config.floating.surface_detection_distance + controller.capsule_half_height() + 1.0;
+        shape_caster.max_distance =
+            config.floating.surface_detection_distance + controller.capsule_half_height() + 1.0;
 
         // Use the config mask override if set, otherwise inherit the actor's
         // filters; the parent entity is always excluded.
@@ -727,18 +764,26 @@ fn update_ceiling_caster_direction(
 /// Stair casters are only enabled when the character is walking.
 fn update_stair_casters(
     mut q_stair_casters: Query<(&CasterOfCharacter, &mut ShapeCaster), With<StairCaster>>,
-    mut q_ground_casters: Query<(&CasterOfCharacter, &mut ShapeCaster), (With<CurrentGroundCaster>, Without<StairCaster>)>,
-    q_controllers: Query<(
-        &CharacterController,
-        &ControllerConfig,
-        Option<&MovementIntent>,
-        Option<&CollisionLayers>,
-        Option<&Collider>,
-    ), Without<RigidBodyDisabled>>,
+    mut q_ground_casters: Query<
+        (&CasterOfCharacter, &mut ShapeCaster),
+        (With<CurrentGroundCaster>, Without<StairCaster>),
+    >,
+    q_controllers: Query<
+        (
+            &CharacterController,
+            &ControllerConfig,
+            Option<&MovementIntent>,
+            Option<&CollisionLayers>,
+            Option<&Collider>,
+        ),
+        Without<RigidBodyDisabled>,
+    >,
 ) {
     // Update stair casters
     for (caster_parent, mut shape_caster) in &mut q_stair_casters {
-        let Ok((controller, config, movement_intent, collision_layers, collider)) = q_controllers.get(caster_parent.0) else {
+        let Ok((controller, config, movement_intent, collision_layers, collider)) =
+            q_controllers.get(caster_parent.0)
+        else {
             continue;
         };
 
@@ -775,7 +820,8 @@ fn update_stair_casters(
             // Calculate vertical offset: position at max_climb_height above feet
             // vertical_offset = up * (max_climb_height - collider_bottom_offset)
             let up = controller.ideal_up();
-            let vertical_offset = up * (stair_config.max_climb_height - controller.collider_bottom_offset);
+            let vertical_offset =
+                up * (stair_config.max_climb_height - controller.collider_bottom_offset);
 
             // Only update the horizontal side when direction is unambiguous.
             // shape_caster.origin retains its last value otherwise, providing implicit
@@ -792,11 +838,14 @@ fn update_stair_casters(
 
             // float_height extends reach to ground level; min_step_depth shortens it so
             // steps shallower than that threshold are never detected in the first place
-            shape_caster.max_distance = stair_config.max_climb_height + config.floating.float_height - stair_config.min_step_depth;
+            shape_caster.max_distance = stair_config.max_climb_height
+                + config.floating.float_height
+                - stair_config.min_step_depth;
 
             // Use the config mask override if set, otherwise inherit the actor's
             // filters; the parent entity is always excluded.
-            shape_caster.query_filter = caster_query_filter(config, collision_layers, caster_parent.0);
+            shape_caster.query_filter =
+                caster_query_filter(config, collision_layers, caster_parent.0);
         } else {
             shape_caster.enabled = false;
             shape_caster.origin = Vec2::ZERO;
@@ -805,7 +854,9 @@ fn update_stair_casters(
 
     // Update current ground casters
     for (caster_parent, mut shape_caster) in &mut q_ground_casters {
-        let Ok((controller, config, movement_intent, collision_layers, _)) = q_controllers.get(caster_parent.0) else {
+        let Ok((controller, config, movement_intent, collision_layers, _)) =
+            q_controllers.get(caster_parent.0)
+        else {
             continue;
         };
 
@@ -836,11 +887,13 @@ fn update_stair_casters(
             shape_caster.shape_rotation = 0.0;
 
             // Update max_distance to cover max_climb_height + float_height + tolerance + buffer
-            shape_caster.max_distance = stair_config.max_climb_height + controller.collider_bottom_offset + 2.0;
+            shape_caster.max_distance =
+                stair_config.max_climb_height + controller.collider_bottom_offset + 2.0;
 
             // Use the config mask override if set, otherwise inherit the actor's
             // filters; the parent entity is always excluded.
-            shape_caster.query_filter = caster_query_filter(config, collision_layers, caster_parent.0);
+            shape_caster.query_filter =
+                caster_query_filter(config, collision_layers, caster_parent.0);
         } else {
             shape_caster.enabled = false;
         }
@@ -855,12 +908,15 @@ use crate::intent::MovementIntent;
 /// The `GroundCaster` child entities must be spawned and updated by the update systems.
 fn avian_ground_detection(
     q_casters: Query<(&CasterOfCharacter, &ShapeHits, &GlobalTransform), With<GroundCaster>>,
-    mut q_controllers: Query<(
-        Entity,
-        &mut CharacterController,
-        &ControllerConfig,
-        Option<&Collider>,
-    ), Without<RigidBodyDisabled>>,
+    mut q_controllers: Query<
+        (
+            Entity,
+            &mut CharacterController,
+            &ControllerConfig,
+            Option<&Collider>,
+        ),
+        Without<RigidBodyDisabled>,
+    >,
 ) {
     // First, reset detection state for all controllers
     for (_, mut controller, _, _) in &mut q_controllers {
@@ -869,7 +925,8 @@ fn avian_ground_detection(
 
     // Now process ground hits
     for (caster_parent, shape_hits, caster_transform) in &q_casters {
-        let Ok((_, mut controller, _config, collider)) = q_controllers.get_mut(caster_parent.0) else {
+        let Ok((_, mut controller, _config, collider)) = q_controllers.get_mut(caster_parent.0)
+        else {
             continue;
         };
 
@@ -924,7 +981,10 @@ fn get_collider_radius(collider: &Collider) -> f32 {
 /// This system reads `ShapeHits` from left and right wall caster child entities.
 fn avian_wall_detection(
     q_left_casters: Query<(&CasterOfCharacter, &ShapeHits, &GlobalTransform), With<LeftWallCaster>>,
-    q_right_casters: Query<(&CasterOfCharacter, &ShapeHits, &GlobalTransform), With<RightWallCaster>>,
+    q_right_casters: Query<
+        (&CasterOfCharacter, &ShapeHits, &GlobalTransform),
+        With<RightWallCaster>,
+    >,
     mut q_controllers: Query<&mut CharacterController, Without<RigidBodyDisabled>>,
 ) {
     // Process left wall hits
@@ -1011,8 +1071,24 @@ fn avian_ceiling_detection(
 ///
 /// This system reads `ShapeHits` from stair caster child entities to calculate step height.
 fn avian_stair_detection(
-    q_stair_casters: Query<(&CasterOfCharacter, Option<&ShapeHits>, &ShapeCaster, &GlobalTransform), With<StairCaster>>,
-    q_ground_casters: Query<(&CasterOfCharacter, Option<&ShapeHits>, &ShapeCaster, &GlobalTransform), (With<CurrentGroundCaster>, Without<StairCaster>)>,
+    q_stair_casters: Query<
+        (
+            &CasterOfCharacter,
+            Option<&ShapeHits>,
+            &ShapeCaster,
+            &GlobalTransform,
+        ),
+        With<StairCaster>,
+    >,
+    q_ground_casters: Query<
+        (
+            &CasterOfCharacter,
+            Option<&ShapeHits>,
+            &ShapeCaster,
+            &GlobalTransform,
+        ),
+        (With<CurrentGroundCaster>, Without<StairCaster>),
+    >,
     mut q_controllers: Query<(Entity, &mut CharacterController), Without<RigidBodyDisabled>>,
 ) {
     for (entity, mut controller) in &mut q_controllers {
@@ -1065,7 +1141,8 @@ fn avian_stair_detection(
 
         // Calculate step height if both hits are present
         if let (Some(stair), Some(ground), Some(stair_tf), Some(ground_tf)) =
-            (stair_hit, ground_hit, stair_transform, ground_transform) {
+            (stair_hit, ground_hit, stair_transform, ground_transform)
+        {
             // Calculate the actual hit points in world space
             // Use the caster's GlobalTransform position as the base
 
@@ -1087,9 +1164,7 @@ fn avian_stair_detection(
 
             let normal_up_component = stair.normal1.dot(up);
 
-            if step_height <= stair_config.max_climb_height
-                && normal_up_component > 0.7
-            {
+            if step_height <= stair_config.max_climb_height && normal_up_component > 0.7 {
                 controller.step_detected = true;
                 controller.step_height = step_height;
             } else {
@@ -1217,12 +1292,15 @@ pub fn avian_accumulate_gravity(
 /// Note: This system applies additional gravity on top of the base gravity
 /// applied by `avian_accumulate_gravity`. Both use the Forces API.
 pub fn avian_apply_fall_gravity(
-    mut query: Query<(
-        Forces,
-        &mut CharacterController,
-        &ControllerConfig,
-        &MovementIntent,
-    ), Without<RigidBodyDisabled>>,
+    mut query: Query<
+        (
+            Forces,
+            &mut CharacterController,
+            &ControllerConfig,
+            &MovementIntent,
+        ),
+        Without<RigidBodyDisabled>,
+    >,
 ) {
     for (mut forces, mut controller, config, intent) in &mut query {
         // Only process airborne entities with fall_gravity > 1.0
@@ -1265,11 +1343,14 @@ pub fn avian_apply_fall_gravity(
 ///
 /// This ensures our forces are integrated by Avian's physics step.
 pub fn apply_controller_forces(
-    mut q: Query<(
-        &mut CharacterController,
-        Option<&mut ConstantForce>,
-        Option<&mut ConstantTorque>,
-    ), Without<RigidBodyDisabled>>,
+    mut q: Query<
+        (
+            &mut CharacterController,
+            Option<&mut ConstantForce>,
+            Option<&mut ConstantTorque>,
+        ),
+        Without<RigidBodyDisabled>,
+    >,
     mut ground_forces: Query<(&mut ConstantForce, &RigidBody), Without<CharacterController>>,
     mut reactive_messages: MessageWriter<ReactiveForceApplied>,
 ) {
@@ -1327,10 +1408,7 @@ mod tests {
 
         let entity = app
             .world_mut()
-            .spawn((
-                Transform::from_xyz(100.0, 200.0, 0.0),
-                RigidBody::Dynamic,
-            ))
+            .spawn((Transform::from_xyz(100.0, 200.0, 0.0), RigidBody::Dynamic))
             .id();
 
         app.update();

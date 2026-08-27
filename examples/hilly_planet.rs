@@ -31,7 +31,8 @@ use bevy_egui::{EguiContexts, EguiPlugin, EguiPrimaryContextPass, egui};
 use helpers::{
     ActiveBackend, CharacterControllerUiPlugin, CharacterControllerUiState, ControlsPlugin,
     DefaultControllerSettings, ExamplePhysicsPlugin, Player, PlayerSpawnConfig, SpawnConfig,
-    backend_name, spawn_player, spawn_polyline_collider, spawn_static_box_rotated, spawn_static_slope_rotated,
+    backend_name, spawn_player, spawn_polyline_collider, spawn_static_box_rotated,
+    spawn_static_slope_rotated,
 };
 use msg_character_controller::prelude::*;
 use std::f32::consts::{PI, TAU};

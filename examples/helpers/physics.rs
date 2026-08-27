@@ -6,7 +6,9 @@ use bevy::prelude::*;
 use bevy::time::Fixed;
 use msg_character_controller::prelude::*;
 
-use super::{Player, create_capsule_mesh, create_circle_mesh, create_rectangle_mesh, create_triangle_mesh};
+use super::{
+    Player, create_capsule_mesh, create_circle_mesh, create_rectangle_mesh, create_triangle_mesh,
+};
 
 // Re-export Avian2D types for convenience
 pub use avian2d::prelude::*;
@@ -84,14 +86,16 @@ pub fn spawn_static_box(
     let mesh = meshes.add(create_rectangle_mesh(half_size.x, half_size.y));
     let material = materials.add(ColorMaterial::from_color(color));
 
-    let entity = commands.spawn((
-        Transform::from_translation(position.extend(0.0)),
-        GlobalTransform::default(),
-        RigidBody::Static,
-        Collider::rectangle(half_size.x * 2.0, half_size.y * 2.0),
-        Mesh2d(mesh),
-        MeshMaterial2d(material),
-    )).id();
+    let entity = commands
+        .spawn((
+            Transform::from_translation(position.extend(0.0)),
+            GlobalTransform::default(),
+            RigidBody::Static,
+            Collider::rectangle(half_size.x * 2.0, half_size.y * 2.0),
+            Mesh2d(mesh),
+            MeshMaterial2d(material),
+        ))
+        .id();
 }
 
 /// Spawns a static rectangular collider with rotation.
@@ -151,8 +155,8 @@ pub fn spawn_static_slope(
     let mesh = meshes.add(create_triangle_mesh(vertices));
     let material = materials.add(ColorMaterial::from_color(color));
 
-    let collider = Collider::convex_hull(vertices.to_vec())
-        .expect("Failed to create slope collider");
+    let collider =
+        Collider::convex_hull(vertices.to_vec()).expect("Failed to create slope collider");
     commands.spawn((
         Transform::from_translation(position.extend(0.0)),
         GlobalTransform::default(),
@@ -176,8 +180,8 @@ pub fn spawn_static_slope_rotated(
     let mesh = meshes.add(create_triangle_mesh(vertices));
     let material = materials.add(ColorMaterial::from_color(color));
 
-    let collider = Collider::convex_hull(vertices.to_vec())
-        .expect("Failed to create slope collider");
+    let collider =
+        Collider::convex_hull(vertices.to_vec()).expect("Failed to create slope collider");
     commands.spawn((
         Transform::from_translation(position.extend(0.0)).with_rotation(rotation),
         GlobalTransform::default(),
@@ -304,8 +308,8 @@ pub fn spawn_polyline_collider(
     use super::create_polygon_mesh;
 
     // Create indices for closed polyline
-    let vertex_count = u32::try_from(vertices.len())
-        .expect("vertex count must fit in u32 for mesh indices");
+    let vertex_count =
+        u32::try_from(vertices.len()).expect("vertex count must fit in u32 for mesh indices");
     let mut indices: Vec<[u32; 2]> = Vec::with_capacity(vertices.len());
     for i in 0..vertex_count {
         let next = (i + 1) % vertex_count;

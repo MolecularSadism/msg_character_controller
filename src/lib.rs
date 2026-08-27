@@ -148,6 +148,7 @@ pub(crate) use avian2d::prelude::RigidBodyDisabled;
 pub mod backend;
 pub mod collision;
 pub mod config;
+pub mod flight;
 pub mod intent;
 
 /// Character controller systems.
@@ -308,6 +309,7 @@ pub mod prelude {
     pub use crate::backend::CharacterPhysicsBackend;
     pub use crate::collision::CollisionData;
     pub use crate::config::{CharacterController, ControllerConfig, JumpType, StairConfig};
+    pub use crate::flight::{FlightFrame, FlightOrientation};
     pub use crate::intent::{JumpRequest, MovementIntent};
 
     #[cfg(feature = "avian2d")]
@@ -398,7 +400,7 @@ impl<B: backend::CharacterPhysicsBackend> CharacterControllerPlugin<B> {
     /// Create a new character controller plugin with default settings.
     ///
     /// By default, systems run only when [`CharacterControllerActive`] exists.
-    #[must_use] 
+    #[must_use]
     pub fn new() -> Self {
         Self::default()
     }
@@ -422,7 +424,7 @@ impl<B: backend::CharacterPhysicsBackend> CharacterControllerPlugin<B> {
     ///     // For example: app.configure_sets(FixedUpdate, CharacterControllerSystems.run_if(custom_condition));
     /// }
     /// ```
-    #[must_use] 
+    #[must_use]
     pub fn without_default_run_condition() -> Self {
         Self {
             use_default_run_condition: false,
@@ -438,6 +440,7 @@ impl<B: backend::CharacterPhysicsBackend> Plugin for CharacterControllerPlugin<B
         app.register_type::<config::ControllerConfig>();
         app.register_type::<config::StairConfig>();
         app.register_type::<config::JumpType>();
+        app.register_type::<flight::FlightOrientation>();
         app.register_type::<intent::MovementIntent>();
         app.register_type::<intent::JumpRequest>();
 
@@ -522,8 +525,7 @@ impl<B: backend::CharacterPhysicsBackend> Plugin for CharacterControllerPlugin<B
         if !B::provides_custom_gravity() {
             app.add_systems(
                 FixedUpdate,
-                systems::accumulate_gravity::<B>
-                    .in_set(CharacterControllerSet::ForceAccumulation),
+                systems::accumulate_gravity::<B>.in_set(CharacterControllerSet::ForceAccumulation),
             );
         }
 
@@ -544,10 +546,7 @@ impl<B: backend::CharacterPhysicsBackend> Plugin for CharacterControllerPlugin<B
             // Backend provides custom gravity, so only add walk and jump
             app.add_systems(
                 FixedUpdate,
-                (
-                    systems::apply_walk::<B>,
-                    systems::apply_jump::<B>,
-                )
+                (systems::apply_walk::<B>, systems::apply_jump::<B>)
                     .chain()
                     .in_set(CharacterControllerSet::IntentApplication),
             );

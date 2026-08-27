@@ -4,6 +4,8 @@ use bevy::prelude::*;
 
 /// Configuration for wall jump mechanics.
 #[derive(Reflect, Debug, Clone, Copy)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "serde", serde(default))]
 pub struct WallJumpingConfig {
     /// Whether wall jumping is enabled.
     pub enabled: bool,

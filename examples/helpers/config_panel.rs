@@ -100,9 +100,9 @@ pub fn spring_settings_ui(ui: &mut egui::Ui, config: &mut ControllerConfig) {
                             .range(0.0..=1_000_000_000.0),
                     )
                     .changed()
-                {
-                    config.spring.max_force = Some(max_force);
-                }
+            {
+                config.spring.max_force = Some(max_force);
+            }
         });
 
         // spring.max_velocity is Option<f32>
@@ -120,9 +120,9 @@ pub fn spring_settings_ui(ui: &mut egui::Ui, config: &mut ControllerConfig) {
                             .range(0.0..=100_000.0),
                     )
                     .changed()
-                {
-                    config.spring.max_velocity = Some(max_vel);
-                }
+            {
+                config.spring.max_velocity = Some(max_vel);
+            }
         });
     });
 }
@@ -181,7 +181,10 @@ pub fn movement_settings_ui(ui: &mut egui::Ui, config: &mut ControllerConfig) {
                         .range(0.0..=1.0),
                 );
             });
-            ui.checkbox(&mut config.walking.wall_clinging_dampen_upward, "Dampen Upward");
+            ui.checkbox(
+                &mut config.walking.wall_clinging_dampen_upward,
+                "Dampen Upward",
+            );
         });
     });
 }
@@ -515,9 +518,9 @@ pub fn upright_torque_settings_ui(ui: &mut egui::Ui, config: &mut ControllerConf
                             .range(-180.0..=180.0),
                     )
                     .changed()
-                {
-                    config.upright.target_angle = Some(target_deg.to_radians());
-                }
+            {
+                config.upright.target_angle = Some(target_deg.to_radians());
+            }
         });
 
         // upright.max_torque is Option<f32>
@@ -539,9 +542,9 @@ pub fn upright_torque_settings_ui(ui: &mut egui::Ui, config: &mut ControllerConf
                             .range(0.0..=100_000_000.0),
                     )
                     .changed()
-                {
-                    config.upright.max_torque = Some(max_torque);
-                }
+            {
+                config.upright.max_torque = Some(max_torque);
+            }
         });
 
         // upright.max_angular_velocity is Option<f32>
@@ -560,9 +563,9 @@ pub fn upright_torque_settings_ui(ui: &mut egui::Ui, config: &mut ControllerConf
                             .range(0.0..=50.0),
                     )
                     .changed()
-                {
-                    config.upright.max_angular_velocity = Some(max_vel);
-                }
+            {
+                config.upright.max_angular_velocity = Some(max_vel);
+            }
         });
     });
 }

@@ -21,7 +21,12 @@ pub struct DiagnosticsData<'a> {
 }
 
 /// Renders the position and velocity section.
-pub fn position_velocity_ui(ui: &mut egui::Ui, transform: &Transform, velocity: Vec2, angular_velocity: f32) {
+pub fn position_velocity_ui(
+    ui: &mut egui::Ui,
+    transform: &Transform,
+    velocity: Vec2,
+    angular_velocity: f32,
+) {
     ui.collapsing("Position & Velocity", |ui| {
         ui.horizontal(|ui| {
             ui.label("Position:");
@@ -39,10 +44,7 @@ pub fn position_velocity_ui(ui: &mut egui::Ui, transform: &Transform, velocity: 
         });
         ui.horizontal(|ui| {
             ui.label("Velocity:");
-            ui.label(format!(
-                "({:.1}, {:.1})",
-                velocity.x, velocity.y
-            ));
+            ui.label(format!("({:.1}, {:.1})", velocity.x, velocity.y));
         });
         ui.horizontal(|ui| {
             ui.label("Speed:");
@@ -208,10 +210,7 @@ pub fn wall_ceiling_ui(ui: &mut egui::Ui, controller: &CharacterController) {
 pub fn stair_climbing_ui(ui: &mut egui::Ui, controller: &CharacterController) {
     ui.collapsing("Stair Climbing", |ui| {
         // Check if stair stepping is enabled
-        let stair_enabled = controller
-            .stair_config
-            .as_ref()
-            .is_some_and(|c| c.enabled);
+        let stair_enabled = controller.stair_config.as_ref().is_some_and(|c| c.enabled);
 
         ui.horizontal(|ui| {
             ui.label("Enabled:");
@@ -257,7 +256,14 @@ pub fn stair_climbing_ui(ui: &mut egui::Ui, controller: &CharacterController) {
             } else {
                 egui::Color32::from_rgb(150, 150, 150)
             };
-            ui.colored_label(color, if controller.active_stair_height.is_some() { "Yes" } else { "No" });
+            ui.colored_label(
+                color,
+                if controller.active_stair_height.is_some() {
+                    "Yes"
+                } else {
+                    "No"
+                },
+            );
         });
 
         if let Some(height) = controller.active_stair_height {
@@ -397,10 +403,7 @@ pub fn external_forces_ui(
                 } else {
                     egui::Color32::from_rgb(150, 150, 150)
                 };
-                ui.colored_label(
-                    color,
-                    format!("({:.1}, {:.1})", force.x, force.y),
-                );
+                ui.colored_label(color, format!("({:.1}, {:.1})", force.x, force.y));
             });
         } else {
             ui.label("  No ExternalForce component");
@@ -419,13 +422,7 @@ pub fn external_forces_ui(
                 } else {
                     egui::Color32::from_rgb(150, 150, 150)
                 };
-                ui.colored_label(
-                    color,
-                    format!(
-                        "({:.1}, {:.1})",
-                        impulse.x, impulse.y
-                    ),
-                );
+                ui.colored_label(color, format!("({:.1}, {:.1})", impulse.x, impulse.y));
             });
         } else {
             ui.label("  No ExternalImpulse component");

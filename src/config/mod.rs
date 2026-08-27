@@ -16,24 +16,24 @@ use crate::{collision::CollisionData, intent::MovementIntent};
 // === Submodules ===
 
 mod floating;
-mod spring;
-mod walking;
 mod flying;
 mod jumping;
-mod wall_jumping;
-mod upright;
 mod sensors;
+mod spring;
+mod upright;
+mod walking;
+mod wall_jumping;
 
 // === Re-exports ===
 
 pub use floating::FloatingConfig;
-pub use spring::SpringConfig;
-pub use walking::WalkingConfig;
-pub use flying::FlyingConfig;
+pub use flying::{ConvergedAxes, FlyingConfig};
 pub use jumping::JumpingConfig;
-pub use wall_jumping::WallJumpingConfig;
-pub use upright::UprightTorqueConfig;
 pub use sensors::SensorConfig;
+pub use spring::SpringConfig;
+pub use upright::UprightTorqueConfig;
+pub use walking::WalkingConfig;
+pub use wall_jumping::WallJumpingConfig;
 
 // === Core Types ===
 
@@ -77,7 +77,10 @@ pub enum JumpType {
 #[derive(Component, Reflect, Debug, Clone)]
 #[reflect(Component)]
 #[require(MovementIntent, Transform)]
-#[cfg_attr(feature = "avian2d", require(AvianRigidBody, ConstantForce, ConstantTorque, AvianLockedAxes))]
+#[cfg_attr(
+    feature = "avian2d",
+    require(AvianRigidBody, ConstantForce, ConstantTorque, AvianLockedAxes)
+)]
 pub struct CharacterController {
     // === Collision Data (Option<CollisionData> for each direction) ===
     /// Floor collision data. Contains distance, normal, point, and entity.
@@ -765,6 +768,8 @@ impl CharacterController {
 /// No hardcoded magic numbers.
 #[derive(Component, Reflect, Debug, Clone, Copy)]
 #[reflect(Component)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "serde", serde(default))]
 pub struct ControllerConfig {
     /// Core hovering mechanics.
     pub floating: FloatingConfig,
@@ -1087,6 +1092,8 @@ impl ControllerConfig {
 /// Then the system applies extra upward force and temporarily raises the riding height.
 #[derive(Component, Reflect, Debug, Clone, Copy)]
 #[reflect(Component)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "serde", serde(default))]
 pub struct StairConfig {
     /// Maximum step height the character can automatically climb.
     /// Steps higher than this will not be climbed.

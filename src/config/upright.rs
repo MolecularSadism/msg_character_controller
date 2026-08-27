@@ -4,6 +4,8 @@ use bevy::prelude::*;
 
 /// Configuration for rotation stabilization.
 #[derive(Reflect, Debug, Clone, Copy)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "serde", serde(default))]
 pub struct UprightTorqueConfig {
     /// Whether to apply torque to keep the character upright.
     pub enabled: bool,
