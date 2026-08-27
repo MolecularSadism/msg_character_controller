@@ -32,6 +32,8 @@ The controller systems run in `FixedUpdate` and accumulate forces into `Constant
 | `MovementIntent` | Input abstraction: walk, fly, jump_pressed |
 | `StairConfig` | Optional stair stepping configuration |
 | `CollisionData` | Stores raycast hit info (distance, normal, point, entity) |
+| `FlightFrame` | Orthonormal `up`/`right` basis flying intent is expressed in (`src/flight.rs`) |
+| `FlightOrientation` | Optional per-actor `{frame, confidence}` a host writes each tick to fly by a sampled up; actors without it keep the fixed-up path |
 
 ### Physics Backend Trait
 
@@ -62,7 +64,7 @@ Systems run in `FixedUpdate` in six ordered phases via `CharacterControllerSet`:
 | `floating: FloatingConfig` | `float_height`, `grounding_distance`, `surface_detection_distance`, `grounding_strength` | Core hovering mechanics |
 | `spring: SpringConfig` | `strength`, `damping`, `max_force`, `max_velocity`, `jump_filter_duration` | Spring-damper system |
 | `walking: WalkingConfig` | `max_speed`, `acceleration`, `friction`, `air_control`, `air_friction`, `wall_clinging`, `wall_clinging_dampening`, `wall_clinging_dampen_upward`, `max_slope_angle`, `uphill_gravity_multiplier` | Ground movement, wall clinging, slopes |
-| `flying: FlyingConfig` | `max_speed`, `vertical_speed_ratio`, `acceleration`, `vertical_acceleration_ratio`, `gravity_compensation` | Aerial propulsion |
+| `flying: FlyingConfig` | `max_speed`, `vertical_speed_ratio`, `acceleration`, `vertical_acceleration_ratio`, `gravity_compensation`, `damping` | Aerial propulsion; `thrust()`/`converged_axes()` drive `FlightOrientation` actors (per-axis accel to cap, isotropic as gravity confidence falls) |
 | `jumping: JumpingConfig` | `speed`, `coyote_time`, `buffer_time`, `fall_gravity`, `cancel_window`, `fall_gravity_duration`, `recently_jumped_duration`, `max_ascent_duration`, `upward_velocity_compensation` | Core jump mechanics |
 | `wall_jumping: WallJumpingConfig` | `enabled`, `angle`, `velocity_compensation`, `retain_height`, `movement_block_duration` | Wall jump specifics |
 | `upright: UprightTorqueConfig` | `enabled`, `strength`, `damping`, `target_angle`, `max_torque`, `max_angular_velocity` | Rotation stabilization |
@@ -77,6 +79,7 @@ Top-level builder methods remain for convenience (e.g., `config.with_float_heigh
 | `src/lib.rs` | Plugin definition, system set ordering, system registration |
 | `src/config/mod.rs` | `CharacterController`, `ControllerConfig`, `StairConfig`, `JumpType` |
 | `src/config/*.rs` | Config substruct definitions (`floating.rs`, `spring.rs`, `walking.rs`, etc.) |
+| `src/flight.rs` | `FlightFrame`, `FlightOrientation` — gravity-independent flight basis |
 | `src/intent.rs` | `MovementIntent`, `JumpRequest` |
 | `src/systems.rs` | All controller systems (spring, gravity, movement, jump, etc.) |
 | `src/backend/traits.rs` | `CharacterPhysicsBackend` trait |

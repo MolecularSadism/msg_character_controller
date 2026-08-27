@@ -63,8 +63,8 @@
 //!
 //! ```toml
 //! # Avian2D is the default backend
-//! msg_character_controller = "0.3"
-//! avian2d = "0.5"
+//! msg_character_controller = "0.5"
+//! avian2d = "0.6"
 //! ```
 //!
 //! ## Architecture
@@ -440,6 +440,7 @@ impl<B: backend::CharacterPhysicsBackend> Plugin for CharacterControllerPlugin<B
         app.register_type::<config::ControllerConfig>();
         app.register_type::<config::StairConfig>();
         app.register_type::<config::JumpType>();
+        app.register_type::<flight::FlightFrame>();
         app.register_type::<flight::FlightOrientation>();
         app.register_type::<intent::MovementIntent>();
         app.register_type::<intent::JumpRequest>();
