@@ -20,8 +20,8 @@ An advanced 2D **floating rigidbody character controller** for the [Bevy](https:
 
 ```toml
 [dependencies]
-msg_character_controller = { git = "https://github.com/MolecularSadism/msg_character_controller", tag = "v0.3.0" }
-avian2d = "0.5"
+msg_character_controller = { git = "https://github.com/MolecularSadism/msg_character_controller", tag = "v0.5.0" }
+avian2d = "0.6"
 ```
 
 ## Quick Start
@@ -123,6 +123,7 @@ cargo run --example spherical_planet --features examples
 
 | `msg_character_controller` | Bevy | `avian2d` | `rapier2d` |
 |----------------------------|------|-----------|------------|
+| 0.5                        | 0.18 | 0.6       | -          |
 | 0.3                        | 0.18 | 0.5       | -          |
 | 0.2                        | 0.17 | 0.4       | 0.32       |
 | 0.1                        | 0.16 | -         | 0.31       |
