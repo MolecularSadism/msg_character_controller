@@ -21,9 +21,9 @@ The character controller uses Avian2D's component-based collision detection via 
 
 The controller systems run in `FixedUpdate` and accumulate forces into `ConstantForce` and `ConstantTorque` components, which Avian processes in its physics schedule.
 
-Avian offers no marker component for switching a caster off — the only lever is the `enabled` field on `ShapeCaster`/`RayCaster` (`enable()`/`disable()`), and a disabled caster reports no hits rather than stale ones. Avian runs every *enabled* caster each physics step whatever the parent body is doing, so a character nothing reads keeps paying for a shape cast per caster per step unless that flag is written. `CasterDisabled` is the lever, named: a sparse-set marker on the character that the caster-update systems read every Preparation step, writing `enabled = false` and holding it there until the marker is removed.
+Avian offers no marker for switching a caster off — the only lever is the `enabled` field on `ShapeCaster`/`RayCaster`, and a disabled caster reports no hits rather than stale ones. Avian runs every *enabled* caster each step whatever the parent body does, so the flag must be written, not filtered.
 
-`RigidBodyDisabled` implies the same hold, so the rule the systems write is `enabled = !(caster_disabled || body_disabled)`. Avian is not simulating a disabled body and nothing consumes what its casters find, so a host that disables a body never has to remember `CasterDisabled` — which keeps the crate's single "this character is off" authority intact (every controller system filters `Without<RigidBodyDisabled>`). Reach for `CasterDisabled` in the case that authority cannot express: a character whose body still simulates but whose ground, wall and ceiling contacts nothing reads — one moved by script or cutscene, or driven by transform with its body left live.
+`CasterDisabled` is that lever: a sparse-set marker on the character; the caster-update systems write `enabled = !(caster_disabled || body_disabled)` each Preparation step. `RigidBodyDisabled` implies the hold, so hosts that disable a body need not remember it. Use `CasterDisabled` for a body that still simulates but whose contacts nothing reads — a scripted or transform-driven character.
 
 ## Architecture
 
