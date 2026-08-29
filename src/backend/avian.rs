@@ -6,6 +6,7 @@
 use avian2d::prelude::*;
 use bevy::prelude::*;
 
+use crate::CasterDisabled;
 use crate::backend::CharacterPhysicsBackend;
 use crate::collision::CollisionData;
 use crate::config::{CharacterController, ControllerConfig};
@@ -49,6 +50,13 @@ pub struct CasterOfCharacter(pub Entity);
 #[derive(Component, Debug, Clone)]
 #[relationship_target(relationship = CasterOfCharacter)]
 pub struct CharacterCasters(Vec<Entity>); // Private field - managed by Bevy
+
+/// The two flags that hold a character's casts off, looked up on the character by every
+/// caster-update system.
+///
+/// [`CasterDisabled`] is the host's explicit lever; [`RigidBodyDisabled`] implies the same hold,
+/// because Avian is not simulating that body and nothing consumes what its casts would find.
+type CasterHold = (Has<RigidBodyDisabled>, Has<CasterDisabled>);
 
 /// Marker component to track that casters have been spawned for this character.
 #[derive(Component, Debug, Clone, Copy)]
@@ -627,21 +635,34 @@ pub fn spawn_stair_casters(
 ///
 /// This system runs in the Preparation phase, before Avian updates `ShapeHits`.
 /// The caster direction is set in local space since casters are children of the actor.
+///
+/// The cast is held off while the character carries [`CasterDisabled`] — the host's explicit
+/// lever — or [`RigidBodyDisabled`], since Avian is not simulating that body and nothing consumes
+/// what the cast would find. Either way Avian runs every *enabled* caster each physics step
+/// whatever the parent body is doing, so the hold has to be written to the caster rather than
+/// filtered in this system. Reading both as query data leaves a character missing its controller
+/// components on the untouched path it always took.
 fn update_ground_caster_direction(
     mut q_casters: Query<(&CasterOfCharacter, &mut ShapeCaster), With<GroundCaster>>,
-    q_controllers: Query<
-        (
-            &CharacterController,
-            &ControllerConfig,
-            Option<&CollisionLayers>,
-        ),
-        Without<RigidBodyDisabled>,
-    >,
+    q_controllers: Query<(
+        &CharacterController,
+        &ControllerConfig,
+        Option<&CollisionLayers>,
+        CasterHold,
+    )>,
 ) {
     for (caster_parent, mut shape_caster) in &mut q_casters {
-        let Ok((controller, config, collision_layers)) = q_controllers.get(caster_parent.0) else {
+        let Ok((controller, config, collision_layers, (body_disabled, caster_disabled))) =
+            q_controllers.get(caster_parent.0)
+        else {
             continue;
         };
+
+        let casts_held = body_disabled || caster_disabled;
+        shape_caster.enabled = !casts_held;
+        if casts_held {
+            continue;
+        }
 
         // Direction in local space (down relative to actor)
         // The caster inherits the actor's transform, so local NEG_Y works correctly
@@ -662,29 +683,35 @@ fn update_ground_caster_direction(
 ///
 /// This system runs in the Preparation phase, before Avian updates `ShapeHits`.
 /// The caster direction is set in local space since casters are children of the actor.
+/// A caster is enabled exactly when its character's body is — see
+/// [`update_ground_caster_direction`].
 fn update_wall_caster_directions(
     mut q_left_casters: Query<(&CasterOfCharacter, &mut ShapeCaster), With<LeftWallCaster>>,
     mut q_right_casters: Query<
         (&CasterOfCharacter, &mut ShapeCaster),
         (With<RightWallCaster>, Without<LeftWallCaster>),
     >,
-    q_controllers: Query<
-        (
-            &CharacterController,
-            &ControllerConfig,
-            Option<&CollisionLayers>,
-            Option<&Collider>,
-        ),
-        Without<RigidBodyDisabled>,
-    >,
+    q_controllers: Query<(
+        &CharacterController,
+        &ControllerConfig,
+        Option<&CollisionLayers>,
+        Option<&Collider>,
+        CasterHold,
+    )>,
 ) {
     // Update left wall casters
     for (caster_parent, mut shape_caster) in &mut q_left_casters {
-        let Ok((_controller, config, collision_layers, collider)) =
+        let Ok((_controller, config, collision_layers, collider, (body_disabled, caster_disabled))) =
             q_controllers.get(caster_parent.0)
         else {
             continue;
         };
+
+        let casts_held = body_disabled || caster_disabled;
+        shape_caster.enabled = !casts_held;
+        if casts_held {
+            continue;
+        }
 
         // Direction in local space (left relative to actor)
         // The caster inherits the actor's transform, so local NEG_X works correctly
@@ -702,11 +729,17 @@ fn update_wall_caster_directions(
 
     // Update right wall casters
     for (caster_parent, mut shape_caster) in &mut q_right_casters {
-        let Ok((_controller, config, collision_layers, collider)) =
+        let Ok((_controller, config, collision_layers, collider, (body_disabled, caster_disabled))) =
             q_controllers.get(caster_parent.0)
         else {
             continue;
         };
+
+        let casts_held = body_disabled || caster_disabled;
+        shape_caster.enabled = !casts_held;
+        if casts_held {
+            continue;
+        }
 
         // Direction in local space (right relative to actor)
         // The caster inherits the actor's transform, so local X works correctly
@@ -727,21 +760,29 @@ fn update_wall_caster_directions(
 ///
 /// This system runs in the Preparation phase, before Avian updates `ShapeHits`.
 /// The caster direction is set in local space since casters are children of the actor.
+/// A caster is enabled exactly when its character's body is — see
+/// [`update_ground_caster_direction`].
 fn update_ceiling_caster_direction(
     mut q_casters: Query<(&CasterOfCharacter, &mut ShapeCaster), With<CeilingCaster>>,
-    q_controllers: Query<
-        (
-            &CharacterController,
-            &ControllerConfig,
-            Option<&CollisionLayers>,
-        ),
-        Without<RigidBodyDisabled>,
-    >,
+    q_controllers: Query<(
+        &CharacterController,
+        &ControllerConfig,
+        Option<&CollisionLayers>,
+        CasterHold,
+    )>,
 ) {
     for (caster_parent, mut shape_caster) in &mut q_casters {
-        let Ok((controller, config, collision_layers)) = q_controllers.get(caster_parent.0) else {
+        let Ok((controller, config, collision_layers, (body_disabled, caster_disabled))) =
+            q_controllers.get(caster_parent.0)
+        else {
             continue;
         };
+
+        let casts_held = body_disabled || caster_disabled;
+        shape_caster.enabled = !casts_held;
+        if casts_held {
+            continue;
+        }
 
         // Direction in local space (up relative to actor)
         // The caster inherits the actor's transform, so local Y works correctly
@@ -761,31 +802,42 @@ fn update_ceiling_caster_direction(
 /// Update stair caster configuration based on movement intent.
 ///
 /// This system runs in the Preparation phase, before Avian updates `ShapeHits`.
-/// Stair casters are only enabled when the character is walking.
+/// Stair casters are only enabled when the character is walking, and — like the always-on
+/// casters — go off under [`CasterDisabled`] or [`RigidBodyDisabled`], so a character switched
+/// off mid-stride does not keep casting for stairs it cannot climb.
 fn update_stair_casters(
     mut q_stair_casters: Query<(&CasterOfCharacter, &mut ShapeCaster), With<StairCaster>>,
     mut q_ground_casters: Query<
         (&CasterOfCharacter, &mut ShapeCaster),
         (With<CurrentGroundCaster>, Without<StairCaster>),
     >,
-    q_controllers: Query<
-        (
-            &CharacterController,
-            &ControllerConfig,
-            Option<&MovementIntent>,
-            Option<&CollisionLayers>,
-            Option<&Collider>,
-        ),
-        Without<RigidBodyDisabled>,
-    >,
+    q_controllers: Query<(
+        &CharacterController,
+        &ControllerConfig,
+        Option<&MovementIntent>,
+        Option<&CollisionLayers>,
+        Option<&Collider>,
+        CasterHold,
+    )>,
 ) {
     // Update stair casters
     for (caster_parent, mut shape_caster) in &mut q_stair_casters {
-        let Ok((controller, config, movement_intent, collision_layers, collider)) =
-            q_controllers.get(caster_parent.0)
+        let Ok((
+            controller,
+            config,
+            movement_intent,
+            collision_layers,
+            collider,
+            (body_disabled, caster_disabled),
+        )) = q_controllers.get(caster_parent.0)
         else {
             continue;
         };
+
+        if body_disabled || caster_disabled {
+            shape_caster.enabled = false;
+            continue;
+        }
 
         // Check if stair stepping is enabled and we have movement intent
         let stair_config = match &controller.stair_config {
@@ -854,11 +906,22 @@ fn update_stair_casters(
 
     // Update current ground casters
     for (caster_parent, mut shape_caster) in &mut q_ground_casters {
-        let Ok((controller, config, movement_intent, collision_layers, _)) =
-            q_controllers.get(caster_parent.0)
+        let Ok((
+            controller,
+            config,
+            movement_intent,
+            collision_layers,
+            _,
+            (body_disabled, caster_disabled),
+        )) = q_controllers.get(caster_parent.0)
         else {
             continue;
         };
+
+        if body_disabled || caster_disabled {
+            shape_caster.enabled = false;
+            continue;
+        }
 
         // Check if stair stepping is enabled
         let stair_config = match &controller.stair_config {

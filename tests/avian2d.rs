@@ -2115,3 +2115,202 @@ mod flight_orientation {
         );
     }
 }
+
+// ==================== Disabled-Body Caster Tests ====================
+// A character whose body carries `RigidBodyDisabled` is not simulated, so its
+// detection casters have no reader. Avian runs every *enabled* caster each
+// physics step regardless of the parent body's state, so the caster-update
+// systems switch them off while the body is disabled and back on when it returns.
+
+mod caster_switching {
+    use super::*;
+
+    /// A caster that is on whenever the character is simulated. The stair pair is spawned
+    /// disabled and switches on only while the character walks, so it says nothing about whether
+    /// disabling the body took effect and is filtered out of these assertions.
+    type AlwaysOn = (Without<StairCaster>, Without<CurrentGroundCaster>);
+
+    /// The `enabled` flag of each always-on caster belonging to `character`.
+    fn caster_states(app: &mut App, character: Entity) -> Vec<bool> {
+        let mut q = app
+            .world_mut()
+            .query_filtered::<(&CasterOfCharacter, &ShapeCaster), AlwaysOn>();
+        q.iter(app.world())
+            .filter(|(rel, _)| rel.0 == character)
+            .map(|(_, caster)| caster.enabled)
+            .collect()
+    }
+
+    /// Total hits reported across `character`'s always-on casters this step.
+    fn caster_hits(app: &mut App, character: Entity) -> usize {
+        let mut q = app
+            .world_mut()
+            .query_filtered::<(&CasterOfCharacter, &ShapeHits), AlwaysOn>();
+        q.iter(app.world())
+            .filter(|(rel, _)| rel.0 == character)
+            .map(|(_, hits)| hits.iter().count())
+            .sum()
+    }
+
+    #[test]
+    fn disabling_a_body_switches_off_its_casters() {
+        let mut app = create_test_app();
+        spawn_ground(&mut app, Vec2::new(0.0, 0.0), Vec2::new(200.0, 10.0));
+        let character = spawn_character(&mut app, Vec2::new(0.0, 20.0));
+
+        run_frames(&mut app, 5);
+        let live = caster_states(&mut app, character);
+        assert!(
+            !live.is_empty() && live.iter().all(|enabled| *enabled),
+            "a simulated character's casters must all be enabled: {live:?}"
+        );
+        assert!(
+            caster_hits(&mut app, character) > 0,
+            "the ground under the character should be reported while its body is enabled"
+        );
+
+        app.world_mut()
+            .entity_mut(character)
+            .insert(RigidBodyDisabled);
+        run_frames(&mut app, 2);
+
+        let disabled = caster_states(&mut app, character);
+        assert!(
+            disabled.iter().all(|enabled| !*enabled),
+            "disabling the body must switch every caster off: {disabled:?}"
+        );
+        assert_eq!(
+            caster_hits(&mut app, character),
+            0,
+            "a switched-off caster reports no hits, so nothing casts for a disabled body"
+        );
+    }
+
+    #[test]
+    fn re_enabling_a_body_switches_its_casters_back_on() {
+        let mut app = create_test_app();
+        spawn_ground(&mut app, Vec2::new(0.0, 0.0), Vec2::new(200.0, 10.0));
+        let character = spawn_character(&mut app, Vec2::new(0.0, 20.0));
+
+        app.world_mut()
+            .entity_mut(character)
+            .insert(RigidBodyDisabled);
+        run_frames(&mut app, 5);
+        assert!(
+            caster_states(&mut app, character)
+                .iter()
+                .all(|enabled| !*enabled),
+            "precondition: a disabled body's casters are off"
+        );
+
+        app.world_mut()
+            .entity_mut(character)
+            .remove::<RigidBodyDisabled>();
+        run_frames(&mut app, 2);
+
+        let re_enabled = caster_states(&mut app, character);
+        assert!(
+            !re_enabled.is_empty() && re_enabled.iter().all(|enabled| *enabled),
+            "re-enabling the body must switch every caster back on: {re_enabled:?}"
+        );
+        assert!(
+            caster_hits(&mut app, character) > 0,
+            "the ground must be detected again once the body is simulated"
+        );
+    }
+
+    #[test]
+    fn caster_disabled_switches_off_the_casters_of_a_simulated_body() {
+        let mut app = create_test_app();
+        spawn_ground(&mut app, Vec2::new(0.0, 0.0), Vec2::new(200.0, 10.0));
+        let character = spawn_character(&mut app, Vec2::new(0.0, 20.0));
+
+        run_frames(&mut app, 5);
+        assert!(
+            caster_hits(&mut app, character) > 0,
+            "precondition: the ground under the character is reported"
+        );
+
+        app.world_mut().entity_mut(character).insert(CasterDisabled);
+        run_frames(&mut app, 2);
+
+        let held = caster_states(&mut app, character);
+        assert!(
+            !held.is_empty() && held.iter().all(|enabled| !*enabled),
+            "CasterDisabled must switch every caster off: {held:?}"
+        );
+        assert_eq!(
+            caster_hits(&mut app, character),
+            0,
+            "a switched-off caster reports no hits, so nothing casts while the hold is on"
+        );
+
+        app.world_mut()
+            .entity_mut(character)
+            .remove::<CasterDisabled>();
+        run_frames(&mut app, 2);
+
+        let released = caster_states(&mut app, character);
+        assert!(
+            released.iter().all(|enabled| *enabled),
+            "removing CasterDisabled must switch every caster back on: {released:?}"
+        );
+        assert!(
+            caster_hits(&mut app, character) > 0,
+            "the ground must be detected again once the hold is released"
+        );
+    }
+
+    /// The lever that distinguishes `CasterDisabled` from `RigidBodyDisabled`: the body keeps
+    /// simulating. A held character still falls under gravity, which is the whole reason the hold
+    /// is a component of its own rather than something derived from the body's state.
+    #[test]
+    fn caster_disabled_leaves_the_body_simulating() {
+        let mut app = create_test_app();
+        let character = spawn_character(&mut app, Vec2::new(0.0, 400.0));
+
+        app.world_mut().entity_mut(character).insert(CasterDisabled);
+        run_frames(&mut app, 10);
+
+        let velocity = app.world().get::<LinearVelocity>(character).unwrap();
+        assert!(
+            velocity.0.y < -1.0,
+            "a character held by CasterDisabled must keep falling, got {velocity:?}"
+        );
+    }
+
+    #[test]
+    fn disabling_a_body_mid_stride_switches_off_the_stair_casters() {
+        let mut app = create_test_app();
+        spawn_ground(&mut app, Vec2::new(0.0, 0.0), Vec2::new(200.0, 10.0));
+        let character = spawn_character_for_auto_spawn_test(&mut app, Vec2::new(0.0, 20.0));
+
+        // Stair casters are enabled only while walking, so give the character intent.
+        app.world_mut()
+            .get_mut::<MovementIntent>(character)
+            .unwrap()
+            .set_walk(1.0);
+        run_frames(&mut app, 5);
+
+        let mut q = app
+            .world_mut()
+            .query_filtered::<&ShapeCaster, With<StairCaster>>();
+        assert!(
+            q.iter(app.world()).any(|caster| caster.enabled),
+            "precondition: a walking character has its stair caster enabled"
+        );
+
+        app.world_mut()
+            .entity_mut(character)
+            .insert(RigidBodyDisabled);
+        run_frames(&mut app, 2);
+
+        let mut q = app
+            .world_mut()
+            .query_filtered::<&ShapeCaster, With<StairCaster>>();
+        assert!(
+            q.iter(app.world()).all(|caster| !caster.enabled),
+            "a character disabled mid-stride must not keep casting for stairs"
+        );
+    }
+}

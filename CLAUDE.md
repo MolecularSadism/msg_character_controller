@@ -21,6 +21,10 @@ The character controller uses Avian2D's component-based collision detection via 
 
 The controller systems run in `FixedUpdate` and accumulate forces into `ConstantForce` and `ConstantTorque` components, which Avian processes in its physics schedule.
 
+Avian offers no marker for switching a caster off — the only lever is the `enabled` field on `ShapeCaster`/`RayCaster`, and a disabled caster reports no hits rather than stale ones. Avian runs every *enabled* caster each step whatever the parent body does, so the flag must be written, not filtered.
+
+`CasterDisabled` is that lever: a sparse-set marker on the character; the caster-update systems write `enabled = !(caster_disabled || body_disabled)` each Preparation step. `RigidBodyDisabled` implies the hold, so hosts that disable a body need not remember it. Use `CasterDisabled` for a body that still simulates but whose contacts nothing reads — a scripted or transform-driven character.
+
 ## Architecture
 
 ### Core Components

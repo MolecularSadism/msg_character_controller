@@ -20,7 +20,7 @@ An advanced 2D **floating rigidbody character controller** for the [Bevy](https:
 
 ```toml
 [dependencies]
-msg_character_controller = { git = "https://github.com/MolecularSadism/msg_character_controller", tag = "v0.5.0" }
+msg_character_controller = { git = "https://github.com/MolecularSadism/msg_character_controller", tag = "v0.6.0" }
 avian2d = "0.6"
 ```
 
@@ -71,6 +71,7 @@ fn handle_input(
 | `CharacterController` | Central hub for state: collision data, timers, gravity. Auto-inserts required physics components. |
 | `ControllerConfig` | Tunable parameters: float height, speeds, jump settings |
 | `MovementIntent` | Input abstraction: walk, fly, jump_pressed |
+| `CasterDisabled` | Holds the character's shape casts off while its body keeps simulating |
 
 ## Configuration
 
