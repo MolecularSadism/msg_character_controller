@@ -145,6 +145,26 @@ use bevy::prelude::*;
 #[cfg(feature = "avian2d")]
 pub(crate) use avian2d::prelude::RigidBodyDisabled;
 
+/// Hold a character's shape casters off while leaving its body simulating.
+///
+/// Avian offers no marker for switching a caster off — the only lever is the `enabled` field on
+/// `ShapeCaster`, and Avian runs every *enabled* caster each physics step whatever the parent body
+/// is doing. This component is that lever, named: insert it and the caster-update systems write
+/// `enabled = false` and hold it there; remove it and they resume.
+///
+/// A disabled body already implies this — nothing consumes what a non-simulated character's casts
+/// find, so [`RigidBodyDisabled`] switches the casters off on its own and a host that disables a
+/// body need not remember this component. Reach for it in the other case: a character that still
+/// simulates but whose ground, wall and ceiling contacts nothing reads — an actor moved by script
+/// or cutscene, or one a host drives by transform while keeping its body live.
+///
+/// Sparse-set storage: a character crosses this boundary rarely, and the marker sits on the
+/// character archetype, which is wide.
+#[derive(Component, Reflect, Debug, Clone, Copy, Default)]
+#[reflect(Component)]
+#[component(storage = "SparseSet")]
+pub struct CasterDisabled;
+
 pub mod backend;
 pub mod collision;
 pub mod config;
@@ -302,6 +322,7 @@ pub mod prelude {
     //! }
     //! ```
 
+    pub use crate::CasterDisabled;
     pub use crate::CharacterControllerActive;
     pub use crate::CharacterControllerPlugin;
     pub use crate::CharacterControllerSet;
@@ -436,6 +457,7 @@ impl<B: backend::CharacterPhysicsBackend> CharacterControllerPlugin<B> {
 impl<B: backend::CharacterPhysicsBackend> Plugin for CharacterControllerPlugin<B> {
     fn build(&self, app: &mut App) {
         // Register core types
+        app.register_type::<CasterDisabled>();
         app.register_type::<config::CharacterController>();
         app.register_type::<config::ControllerConfig>();
         app.register_type::<config::StairConfig>();

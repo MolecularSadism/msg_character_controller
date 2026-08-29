@@ -2122,7 +2122,7 @@ mod flight_orientation {
 // physics step regardless of the parent body's state, so the caster-update
 // systems switch them off while the body is disabled and back on when it returns.
 
-mod disabled_body_casters {
+mod caster_switching {
     use super::*;
 
     /// A caster that is on whenever the character is simulated. The stair pair is spawned
@@ -2216,6 +2216,66 @@ mod disabled_body_casters {
         assert!(
             caster_hits(&mut app, character) > 0,
             "the ground must be detected again once the body is simulated"
+        );
+    }
+
+    #[test]
+    fn caster_disabled_switches_off_the_casters_of_a_simulated_body() {
+        let mut app = create_test_app();
+        spawn_ground(&mut app, Vec2::new(0.0, 0.0), Vec2::new(200.0, 10.0));
+        let character = spawn_character(&mut app, Vec2::new(0.0, 20.0));
+
+        run_frames(&mut app, 5);
+        assert!(
+            caster_hits(&mut app, character) > 0,
+            "precondition: the ground under the character is reported"
+        );
+
+        app.world_mut().entity_mut(character).insert(CasterDisabled);
+        run_frames(&mut app, 2);
+
+        let held = caster_states(&mut app, character);
+        assert!(
+            !held.is_empty() && held.iter().all(|enabled| !*enabled),
+            "CasterDisabled must switch every caster off: {held:?}"
+        );
+        assert_eq!(
+            caster_hits(&mut app, character),
+            0,
+            "a switched-off caster reports no hits, so nothing casts while the hold is on"
+        );
+
+        app.world_mut()
+            .entity_mut(character)
+            .remove::<CasterDisabled>();
+        run_frames(&mut app, 2);
+
+        let released = caster_states(&mut app, character);
+        assert!(
+            released.iter().all(|enabled| *enabled),
+            "removing CasterDisabled must switch every caster back on: {released:?}"
+        );
+        assert!(
+            caster_hits(&mut app, character) > 0,
+            "the ground must be detected again once the hold is released"
+        );
+    }
+
+    /// The lever that distinguishes `CasterDisabled` from `RigidBodyDisabled`: the body keeps
+    /// simulating. A held character still falls under gravity, which is the whole reason the hold
+    /// is a component of its own rather than something derived from the body's state.
+    #[test]
+    fn caster_disabled_leaves_the_body_simulating() {
+        let mut app = create_test_app();
+        let character = spawn_character(&mut app, Vec2::new(0.0, 400.0));
+
+        app.world_mut().entity_mut(character).insert(CasterDisabled);
+        run_frames(&mut app, 10);
+
+        let velocity = app.world().get::<LinearVelocity>(character).unwrap();
+        assert!(
+            velocity.0.y < -1.0,
+            "a character held by CasterDisabled must keep falling, got {velocity:?}"
         );
     }
 
