@@ -2117,11 +2117,118 @@ mod flight_orientation {
 }
 
 // ==================== Disabled-Body Caster Tests ====================
+/// External pushes survive the controller's damping and friction: both
+/// saturate at the actor's own speed caps.
+mod external_pushes {
+    use super::*;
+
+    /// A zero-g flyer with fly mode active and no intent, damped by `damping`.
+    fn spawn_idle_flyer(app: &mut App, damping: f32) -> Entity {
+        let mut config = ControllerConfig::default();
+        config.flying.damping = damping;
+        let character = spawn_character_with_config(app, Vec2::new(0.0, 500.0), config);
+        app.world_mut()
+            .get_mut::<CharacterController>(character)
+            .unwrap()
+            .set_gravity_force(Vec2::ZERO);
+        app.world_mut()
+            .get_mut::<MovementIntent>(character)
+            .unwrap()
+            .set_fly_active(true);
+        character
+    }
+
+    fn push(app: &mut App, character: Entity, velocity: Vec2) {
+        app.world_mut()
+            .get_mut::<LinearVelocity>(character)
+            .unwrap()
+            .0 = velocity;
+    }
+
+    fn speed(app: &App, character: Entity) -> f32 {
+        app.world()
+            .get::<LinearVelocity>(character)
+            .unwrap()
+            .0
+            .length()
+    }
+
+    /// Heavy flight damping must not cancel a push far beyond the speed cap:
+    /// unsaturated, damping 12 would shed most of 2000 u/s within five frames.
+    #[test]
+    fn heavily_damped_flyer_keeps_a_push() {
+        for oriented in [false, true] {
+            let mut app = create_test_app();
+            let character = spawn_idle_flyer(&mut app, 12.0);
+            if oriented {
+                app.world_mut()
+                    .entity_mut(character)
+                    .insert(FlightOrientation::default());
+            }
+            push(&mut app, character, Vec2::new(2000.0, 0.0));
+
+            run_frames(&mut app, 5);
+
+            let remaining = speed(&app, character);
+            assert!(
+                remaining > 1200.0,
+                "oriented={oriented}: push was cancelled, {remaining} u/s left of 2000"
+            );
+            assert!(
+                remaining < 2000.0,
+                "oriented={oriented}: damping must still brake, {remaining} u/s left"
+            );
+        }
+    }
+
+    /// Below the cap the brake still decays velocity like linear damping.
+    #[test]
+    fn flight_damping_still_stops_the_actor_below_its_cap() {
+        let mut app = create_test_app();
+        let character = spawn_idle_flyer(&mut app, 12.0);
+        push(&mut app, character, Vec2::new(60.0, 0.0));
+
+        run_frames(&mut app, 5);
+
+        let remaining = speed(&app, character);
+        assert!(
+            remaining < 30.0,
+            "below-cap velocity should decay, {remaining} u/s left of 60"
+        );
+    }
+
+    /// Ground friction must not cancel a push far beyond walking max speed.
+    #[test]
+    fn grounded_walker_keeps_a_push() {
+        let mut app = create_test_app();
+        spawn_ground(&mut app, Vec2::ZERO, Vec2::new(5000.0, 5.0));
+        let character = spawn_character(&mut app, Vec2::new(0.0, 20.0));
+        run_for_duration(&mut app, 1.0);
+        {
+            let controller = app.world().get::<CharacterController>(character).unwrap();
+            let config = app.world().get::<ControllerConfig>(character).unwrap();
+            assert!(controller.is_grounded(config), "walker must settle first");
+        }
+
+        let config = *app.world().get::<ControllerConfig>(character).unwrap();
+        push(&mut app, character, Vec2::new(3000.0, 0.0));
+        run_frames(&mut app, 5);
+
+        let horizontal = app.world().get::<LinearVelocity>(character).unwrap().0.x;
+        // Unsaturated friction alone would leave 1000 * (1 - friction)^steps.
+        let uncapped = 3000.0 * (1.0 - config.walking.friction).powi(5);
+        assert!(
+            horizontal > uncapped + 50.0,
+            "friction cancelled the push: {horizontal} u/s left, uncapped would leave {uncapped}"
+        );
+        assert!(horizontal < 3000.0, "friction must still slow the walker");
+    }
+}
+
 // A character whose body carries `RigidBodyDisabled` is not simulated, so its
 // detection casters have no reader. Avian runs every *enabled* caster each
 // physics step regardless of the parent body's state, so the caster-update
 // systems switch them off while the body is disabled and back on when it returns.
-
 mod caster_switching {
     use super::*;
 

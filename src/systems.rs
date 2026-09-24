@@ -24,8 +24,9 @@ use bevy::prelude::*;
 
 use crate::RigidBodyDisabled;
 use crate::backend::CharacterPhysicsBackend;
+use crate::config::saturate;
 use crate::config::{CharacterController, ControllerConfig};
-use crate::flight::FlightOrientation;
+use crate::flight::{FlightFrame, FlightOrientation};
 use crate::intent::MovementIntent;
 
 // ============================================================================
@@ -689,13 +690,15 @@ pub fn apply_wall_clinging_dampening<B: CharacterPhysicsBackend>(world: &mut Wor
         // Calculate dampening factor
         let dampening_factor = config.walking.wall_clinging_dampening;
 
-        // Apply dampening based on movement direction along wall
+        // Apply dampening based on movement direction along wall, saturated at
+        // walking max speed so an external push along the wall is not cancelled
         if down_velocity > 0.0 {
             // Moving downward along wall - always dampen
             // dampening of 1.0 = fully counteract, 0.0 = no effect
             // We apply a portion of the counteracting impulse each frame
             // to create smooth dampening rather than instant stop
-            let velocity_reduction = down_velocity * dampening_factor;
+            let velocity_reduction =
+                saturate(down_velocity, config.walking.max_speed) * dampening_factor;
             let dampening_impulse = -wall_down * velocity_reduction * mass;
 
             B::apply_impulse(world, entity, dampening_impulse);
@@ -703,7 +706,8 @@ pub fn apply_wall_clinging_dampening<B: CharacterPhysicsBackend>(world: &mut Wor
             // Moving upward along wall - only dampen if enabled
             // This creates a stickier wall cling effect
             let up_velocity = -down_velocity; // Make positive for calculation
-            let velocity_reduction = up_velocity * dampening_factor;
+            let velocity_reduction =
+                saturate(up_velocity, config.walking.max_speed) * dampening_factor;
             let dampening_impulse = wall_down * velocity_reduction * mass;
 
             B::apply_impulse(world, entity, dampening_impulse);
@@ -816,12 +820,16 @@ pub fn apply_walk<B: CharacterPhysicsBackend>(world: &mut World) {
             let walking_forward = intent.is_walking()
                 && (current_slope_speed.abs() <= 0.001
                     || effective_walk.signum() == current_slope_speed.signum());
-            let friction_factor = if walking_forward {
-                1.0
+            let friction = if walking_forward {
+                0.0
             } else {
-                1.0 - config.walking.friction
+                config.walking.friction
             };
-            let new_slope_speed = (current_slope_speed + change) * friction_factor;
+            let new_slope_speed = apply_friction(
+                current_slope_speed + change,
+                friction,
+                config.walking.max_speed,
+            );
             let slope_velocity_delta = new_slope_speed - current_slope_speed;
 
             // Apply impulse along slope tangent: I = m * dv
@@ -854,12 +862,16 @@ pub fn apply_walk<B: CharacterPhysicsBackend>(world: &mut World) {
                 // Only disable air friction when walking forward (same direction as current velocity)
                 let walking_forward = current_horizontal.abs() <= 0.001
                     || effective_walk.signum() == current_horizontal.signum();
-                let friction_factor = if walking_forward {
-                    1.0
+                let friction = if walking_forward {
+                    0.0
                 } else {
-                    1.0 - config.walking.air_friction
+                    config.walking.air_friction
                 };
-                let new_horizontal = (current_horizontal + change) * friction_factor;
+                let new_horizontal = apply_friction(
+                    current_horizontal + change,
+                    friction,
+                    config.walking.max_speed,
+                );
                 let horizontal_delta = new_horizontal - current_horizontal;
 
                 // Apply impulse along right axis: I = m * dv
@@ -872,8 +884,11 @@ pub fn apply_walk<B: CharacterPhysicsBackend>(world: &mut World) {
                 // Not walking and not in flight - apply air friction to slow down
                 // horizontal movement. Skipped while flying so flight damping
                 // (driven through the physics backend) is the only velocity decay.
-                let friction_factor = 1.0 - config.walking.air_friction;
-                let new_horizontal = current_horizontal * friction_factor;
+                let new_horizontal = apply_friction(
+                    current_horizontal,
+                    config.walking.air_friction,
+                    config.walking.max_speed,
+                );
                 let horizontal_delta = new_horizontal - current_horizontal;
 
                 // Apply impulse along right axis: I = m * dv
@@ -882,6 +897,16 @@ pub fn apply_walk<B: CharacterPhysicsBackend>(world: &mut World) {
             }
         }
     }
+}
+
+/// `speed` after one step of per-step `friction` (a fraction in `0.0..=1.0`),
+/// saturated at `max_speed`.
+///
+/// Up to `max_speed` this is `speed * (1 - friction)`; beyond it the loss stays
+/// at the at-cap value, so speed an external push added is not scrubbed off
+/// faster than the actor's own top speed would be.
+fn apply_friction(speed: f32, friction: f32, max_speed: f32) -> f32 {
+    speed - friction * saturate(speed, max_speed)
 }
 
 /// Apply flying propulsion (vertical and horizontal) based on intent.
@@ -927,24 +952,27 @@ pub fn apply_fly<B: CharacterPhysicsBackend>(world: &mut World) {
     let dt = B::get_fixed_timestep(world);
 
     for (entity, config, intent, controller, orientation) in entities {
-        // Drive the physics backend's linear damping component based on flight
-        // state. While `fly_active`, the configured flight damping decays
-        // velocity through the physics integrator (no manual velocity math).
-        // Once flight is released, damping is zeroed so it doesn't bleed into
-        // walking / falling / projectile-like motion.
-        let target_damping = if intent.is_fly_active() {
-            config.flying.damping
-        } else {
-            0.0
-        };
-        B::set_linear_damping(world, entity, target_damping);
-
         let is_grounded = controller.is_grounded(&config);
         let current_velocity = B::get_velocity(world, entity);
         let mass = B::get_mass(world, entity);
         if mass <= 0.0 {
             // Skip if mass is invalid (entity may be despawned or not yet initialized)
             continue;
+        }
+
+        // Flight damping, saturated at the speed caps so it never brakes
+        // harder than the actor's own top speed is damped by.
+        if intent.is_fly_active() {
+            let (frame, confidence) = match orientation {
+                Some(orientation) => (orientation.frame, orientation.confidence),
+                None => (
+                    Dir2::new(controller.ideal_up())
+                        .map_or(FlightFrame::UNORIENTED, FlightFrame::new),
+                    1.0,
+                ),
+            };
+            let brake = config.flying.brake(frame, current_velocity, confidence, dt);
+            B::apply_impulse(world, entity, brake * dt * mass);
         }
 
         // === FRAME-AWARE FLYING (host-supplied orientation) ===
@@ -1052,15 +1080,19 @@ pub fn apply_fly<B: CharacterPhysicsBackend>(world: &mut World) {
             // Only disable friction when flying forward (same direction as current velocity)
             let flying_forward = current_horizontal.abs() <= 0.001
                 || intent.effective_fly_horizontal().signum() == current_horizontal.signum();
-            let friction_factor = if flying_forward {
-                1.0
+            let friction = if flying_forward {
+                0.0
             } else if is_grounded {
-                1.0 - config.walking.friction
+                config.walking.friction
             } else {
-                1.0 - config.walking.air_friction
+                config.walking.air_friction
             };
 
-            let new_horizontal = (current_horizontal + change) * friction_factor;
+            let new_horizontal = apply_friction(
+                current_horizontal + change,
+                friction,
+                config.flying.max_speed,
+            );
             let horizontal_delta = new_horizontal - current_horizontal;
 
             // Apply impulse along right axis: I = m * dv

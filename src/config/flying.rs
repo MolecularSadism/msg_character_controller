@@ -24,11 +24,12 @@ pub struct FlyingConfig {
     /// Gravity compensation ratio when flying upward (0.0-1.0+).
     pub gravity_compensation: f32,
 
-    /// Linear damping applied via the physics backend while fly mode is active.
+    /// Velocity damping coefficient (1/second) applied while fly mode is active.
     ///
-    /// Drives the backend's linear damping component (e.g. Avian's `LinearDamping`)
-    /// instead of manually decaying velocity, so it composes cleanly with impulses
-    /// and external forces.
+    /// Saturates at each axis' speed cap: below the cap it decays velocity like
+    /// linear damping, above it the braking stays at the at-cap value, so
+    /// external pushes carry the actor instead of being cancelled (see
+    /// [`Self::brake`]).
     pub damping: f32,
 }
 
@@ -146,6 +147,40 @@ impl FlyingConfig {
             axis_thrust(intent.y, speed.y, vertical_acceleration, vertical_max_speed),
         ))
     }
+
+    /// The world-space damping acceleration for `velocity` over one step of
+    /// `dt` seconds, in `frame`.
+    ///
+    /// Each axis decays like implicit linear damping (`v / (1 + damping * dt)`
+    /// per step) up to its (confidence-converged) speed cap, and saturates
+    /// there: speed beyond the cap is only ever braked at the at-cap rate. The
+    /// actor can shed no more speed than its own top speed is damped by, so an
+    /// external push keeps its excess.
+    #[must_use]
+    pub fn brake(
+        &self,
+        frame: FlightFrame,
+        velocity: Vec2,
+        gravity_confidence: f32,
+        dt: f32,
+    ) -> Vec2 {
+        if self.damping <= 0.0 || dt <= 0.0 {
+            return Vec2::ZERO;
+        }
+        let axes = self.converged_axes(gravity_confidence);
+        let rate = self.damping / (1.0 + self.damping * dt);
+        let speed = frame.project(velocity);
+        frame.to_world(Vec2::new(
+            -rate * saturate(speed.x, axes.horizontal_max_speed),
+            -rate * saturate(speed.y, axes.vertical_max_speed),
+        ))
+    }
+}
+
+/// `value` clamped to `[-limit, limit]`; a non-positive limit yields zero.
+pub(crate) fn saturate(value: f32, limit: f32) -> f32 {
+    let limit = limit.max(0.0);
+    value.clamp(-limit, limit)
 }
 
 /// The intent magnitude below which an axis is treated as at rest, matching
@@ -325,6 +360,52 @@ mod tests {
         assert!(
             (boost - gravity_length * config.gravity_compensation * 0.5).abs() < 1.0e-3,
             "the boost must scale with confidence, got {boost}"
+        );
+    }
+
+    #[test]
+    fn brake_matches_linear_damping_below_the_cap() {
+        let frame = FlightFrame::new(Dir2::Y);
+        let config = FlyingConfig {
+            damping: 12.0,
+            ..anisotropic_config()
+        };
+        let dt = 1.0 / 60.0;
+        let velocity = Vec2::new(30.0, -20.0);
+
+        let damped = velocity + config.brake(frame, velocity, 1.0, dt) * dt;
+        let expected = velocity / (1.0 + config.damping * dt);
+        assert!(
+            damped.abs_diff_eq(expected, 1.0e-4),
+            "expected {expected:?}, got {damped:?}"
+        );
+    }
+
+    #[test]
+    fn brake_saturates_at_each_axis_cap() {
+        let frame = FlightFrame::new(Dir2::Y);
+        let config = FlyingConfig {
+            damping: 12.0,
+            ..anisotropic_config()
+        };
+        let dt = 1.0 / 60.0;
+        let axes = config.converged_axes(1.0);
+        let at_cap = Vec2::new(axes.horizontal_max_speed, -axes.vertical_max_speed);
+
+        // Ten times the cap is braked no harder than the cap itself.
+        assert_eq!(
+            config.brake(frame, at_cap * 10.0, 1.0, dt),
+            config.brake(frame, at_cap, 1.0, dt)
+        );
+    }
+
+    #[test]
+    fn brake_is_inert_without_damping() {
+        let frame = FlightFrame::new(Dir2::Y);
+        let config = anisotropic_config();
+        assert_eq!(
+            config.brake(frame, Vec2::new(500.0, 500.0), 1.0, 1.0 / 60.0),
+            Vec2::ZERO
         );
     }
 }

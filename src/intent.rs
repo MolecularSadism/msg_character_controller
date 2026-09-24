@@ -82,8 +82,8 @@ pub struct MovementIntent {
     /// state (FSM, ability toggle, etc.).
     ///
     /// While `true`:
-    /// - `apply_fly` drives [`FlyingConfig::damping`] through the physics
-    ///   backend's linear damping component.
+    /// - `apply_fly` brakes by [`FlyingConfig::damping`], saturated at the
+    ///   speed caps (see [`FlyingConfig::brake`]).
     /// - `apply_walk` skips the airborne walking friction so the flight
     ///   damping is the only velocity decay in effect.
     pub fly_active: bool,
