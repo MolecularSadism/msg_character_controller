@@ -7,8 +7,8 @@
 
 use approx::assert_relative_eq;
 use avian2d::prelude::*;
-use bevy::app::FixedMain;
 use bevy::prelude::*;
+use bevy::time::TimeUpdateStrategy;
 use msg_character_controller::backend::avian::{
     Avian2dBackend, CasterOfCharacter, CastersSpawned, CeilingCaster, CurrentGroundCaster,
     GroundCaster, LeftWallCaster, RightWallCaster, StairCaster,
@@ -32,6 +32,9 @@ fn create_test_app() -> App {
     app.add_plugins(PhysicsPlugins::default().with_length_unit(PIXELS_PER_METER));
     app.add_plugins(CharacterControllerPlugin::<Avian2dBackend>::default());
     app.insert_resource(Time::<Fixed>::from_hz(FIXED_UPDATE_HZ));
+    // Advance the clock by exactly one fixed timestep per update, independent of wall-clock
+    // time, so every `app.update()` runs exactly one `FixedMain` step.
+    app.insert_resource(TimeUpdateStrategy::FixedTimesteps(1));
 
     app.finish();
     app.cleanup();
@@ -253,20 +256,11 @@ fn spawn_character_for_auto_spawn_test(app: &mut App, position: Vec2) -> Entity 
 }
 
 /// Advance time by one fixed timestep and run one update.
-/// This is necessary for `FixedUpdate` schedule to run.
+///
+/// `TimeUpdateStrategy::FixedTimesteps(1)` makes each update run exactly one
+/// `FixedMain` step with the fixed delta, so results do not depend on wall-clock time.
 fn tick(app: &mut App) {
-    let timestep = std::time::Duration::from_secs_f64(1.0 / FIXED_UPDATE_HZ);
-
-    // Advance virtual time
-    app.world_mut()
-        .resource_mut::<Time<Virtual>>()
-        .advance_by(timestep);
-
-    // Run the main update which includes FixedMain schedule
     app.update();
-
-    // Also manually run FixedMain to ensure FixedUpdate runs
-    app.world_mut().run_schedule(FixedMain);
 }
 
 /// Run the app for the specified number of frames.
@@ -1593,22 +1587,36 @@ mod stair_detection {
     // Cast from (7, 17) downward 11 units → hits stair top (y=8) at distance=9.
     //
     // CurrentGroundCaster (origin=0) hits ground at (0, 0) distance=14.
-    // step_height = stair_top(8) - ground_top(0) = 8.
-    // Conditions: 8 ≥ min_step_depth(8), 8 ≤ max_climb_height(11), normal=(0,1) > 0.7 → DETECTED.
+    //
+    // The stair cast's max_distance is max_climb_height + float_height - min_step_depth
+    // = 11 + 6 - 8 = 9, so from (7, 17) it reaches down to y=8 = min_step_depth exactly.
+    // The default 8-unit stair therefore sits on the edge of the cast and Avian reports
+    // no hit. The detection tests use DETECTABLE_STAIR_HEIGHT instead, which lies strictly
+    // inside [min_step_depth(8), max_climb_height(11)]:
+    //   hit distance = 17 - 9.5 = 7.5 < 9, step_height = 9.5, normal=(0,1) > 0.7 → DETECTED.
+    //
+    // A detected step starts the climb (active_stair_height + climb force), which lifts
+    // the character until the step leaves the cast, so detection is transient. The
+    // detection tests therefore check every walking frame, not only the last one.
 
     const GROUND_Y: f32 = 0.0;
     const STAIR_HEIGHT: f32 = 8.0;
+    const DETECTABLE_STAIR_HEIGHT: f32 = 9.5;
     const CHARACTER_START_Y: f32 = 20.0;
 
     fn setup_stair_scene(app: &mut App) -> Entity {
+        setup_stair_scene_with_height(app, STAIR_HEIGHT)
+    }
+
+    fn setup_stair_scene_with_height(app: &mut App, stair_height: f32) -> Entity {
         // Flat ground beneath character (wide, so CurrentGroundCaster always hits it)
         spawn_ground(app, Vec2::new(0.0, GROUND_Y - 5.0), Vec2::new(200.0, 5.0));
         // Stair platform to the right — x=[6,14] is outside GroundCaster ±5.5 range,
         // so the ground caster sees flat ground while the stair caster hits the step.
         spawn_ground(
             app,
-            Vec2::new(10.0, STAIR_HEIGHT / 2.0 - 0.5),
-            Vec2::new(4.0, STAIR_HEIGHT / 2.0 + 0.5),
+            Vec2::new(10.0, stair_height / 2.0 - 0.5),
+            Vec2::new(4.0, stair_height / 2.0 + 0.5),
         );
         spawn_character(&mut *app, Vec2::new(0.0, CHARACTER_START_Y))
     }
@@ -1672,7 +1680,7 @@ mod stair_detection {
     #[test]
     fn stair_detected_when_walking_toward_step() {
         let mut app = create_test_app();
-        let character = setup_stair_scene(&mut app);
+        let character = setup_stair_scene_with_height(&mut app, DETECTABLE_STAIR_HEIGHT);
 
         // Settle
         run_for_duration(&mut app, 2.0);
@@ -1683,24 +1691,28 @@ mod stair_detection {
             .unwrap()
             .set_walk(1.0);
 
-        // Need ≥2 walking frames: frame 1 enables+positions caster, physics runs, frame 2 reads ShapeHits
-        run_frames(&mut app, 5);
+        // The caster is enabled and positioned in Preparation, Avian fills ShapeHits, and
+        // detection reads them. Detection then starts the climb, so record the first frame
+        // that reports a step.
+        let mut detected_height = None;
+        for _ in 0..5 {
+            run_frames(&mut app, 1);
+            let controller = app.world().get::<CharacterController>(character).unwrap();
+            if controller.step_detected {
+                detected_height = Some(controller.step_height);
+                break;
+            }
+        }
 
-        let controller = app.world().get::<CharacterController>(character).unwrap();
+        let step_height = detected_height
+            .expect("step_detected must be true when stair caster hits a step while walking");
         assert!(
-            controller.step_detected,
-            "step_detected must be true when stair caster hits a step (step_height={})",
-            controller.step_height
+            step_height >= 8.0,
+            "step_height must be >= min_step_depth; got {step_height}"
         );
         assert!(
-            controller.step_height >= 8.0,
-            "step_height must be >= min_step_depth; got {}",
-            controller.step_height
-        );
-        assert!(
-            controller.step_height <= 11.0,
-            "step_height must be ≤ max_climb_height; got {}",
-            controller.step_height
+            step_height <= 11.0,
+            "step_height must be ≤ max_climb_height; got {step_height}"
         );
     }
 
@@ -1749,7 +1761,7 @@ mod stair_detection {
         // Verify the ShapeHits component exists and has data when the caster is enabled
         // and pointing at a surface — this proves the Avian component pipeline works.
         let mut app = create_test_app();
-        let character = setup_stair_scene(&mut app);
+        let character = setup_stair_scene_with_height(&mut app, DETECTABLE_STAIR_HEIGHT);
 
         run_for_duration(&mut app, 2.0);
 
@@ -1758,18 +1770,23 @@ mod stair_detection {
             .unwrap()
             .set_walk(1.0);
 
-        // Frame 1: caster enabled+positioned → physics runs → ShapeHits populated
-        // Frame 2+: avian_stair_detection reads results
-        run_frames(&mut app, 5);
-
-        // Directly inspect the ShapeHits component on the StairCaster entity
+        // Frame 1: caster enabled+positioned → physics runs → ShapeHits populated.
+        // The resulting climb lifts the character off the step, so inspect every frame.
         let mut q = app
             .world_mut()
             .query::<(&CasterOfCharacter, &ShapeHits, &StairCaster)>();
-        let has_hit = q
-            .iter(app.world())
-            .filter(|(rel, _, _)| rel.0 == character)
-            .any(|(_, hits, _)| !hits.is_empty());
+        let mut has_hit = false;
+        for _ in 0..5 {
+            run_frames(&mut app, 1);
+            // Directly inspect the ShapeHits component on the StairCaster entity
+            has_hit = q
+                .iter(app.world())
+                .filter(|(rel, _, _)| rel.0 == character)
+                .any(|(_, hits, _)| !hits.is_empty());
+            if has_hit {
+                break;
+            }
+        }
 
         assert!(
             has_hit,
