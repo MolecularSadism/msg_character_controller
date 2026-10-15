@@ -82,7 +82,7 @@ pub struct MovementIntent {
     /// state (FSM, ability toggle, etc.).
     ///
     /// While `true`:
-    /// - `apply_fly` drives [`FlyingConfig::damping`] through the physics
+    /// - `apply_fly` drives [`FlyingConfig::damping`](crate::config::FlyingConfig::damping) through the physics
     ///   backend's linear damping component.
     /// - `apply_walk` skips the airborne walking friction so the flight
     ///   damping is the only velocity decay in effect.
@@ -290,7 +290,7 @@ impl MovementIntent {
     /// Mark the entity as actively flying (or not).
     ///
     /// Call this each frame from the consumer (e.g. mirroring a flight FSM)
-    /// so the controller can apply [`FlyingConfig::damping`] and suppress
+    /// so the controller can apply [`FlyingConfig::damping`](crate::config::FlyingConfig::damping) and suppress
     /// airborne walking friction while in flight.
     pub fn set_fly_active(&mut self, active: bool) {
         self.fly_active = active;
