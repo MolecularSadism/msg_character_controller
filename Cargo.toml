@@ -38,6 +38,10 @@ bevy = { version = "0.18", features = [
     "png",
 ] }
 
+[lints.rust]
+# `bevy_lint` sets `cfg(bevy_lint)` when it checks the crate.
+unexpected_cfgs = { level = "warn", check-cfg = ["cfg(bevy_lint)"] }
+
 [features]
 default = ["avian2d"]
 # Derive `Serialize`/`Deserialize` on the public config tree, so a game can
