@@ -48,10 +48,14 @@ serde = ["dep:serde"]
 # Physics backend: avian2d (Avian physics engine, formerly XPBD)
 # Usage: CharacterControllerPlugin::<Avian2dBackend>::default()
 avian2d = ["dep:avian2d"]
+# Opt into Avian's multi-threaded solver (`bevy/multi_threaded`,
+# `parry2d/parallel`). Off unless a consumer enables it.
+parallel = ["avian2d?/parallel"]
 
 [dependencies.avian2d]
 version = "0.6.1"
-features = ["2d"]
+default-features = false
+features = ["2d", "f32", "parry-f32"]
 optional = true
 
 # Examples:
