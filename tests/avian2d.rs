@@ -1769,7 +1769,7 @@ mod stair_detection {
         let has_hit = q
             .iter(app.world())
             .filter(|(rel, _, _)| rel.0 == character)
-            .any(|(_, hits, _)| hits.first().is_some());
+            .any(|(_, hits, _)| !hits.is_empty());
 
         assert!(
             has_hit,
@@ -1797,7 +1797,7 @@ mod stair_detection {
         let has_hit = q
             .iter(app.world())
             .filter(|(rel, _, _)| rel.0 == character)
-            .any(|(_, hits, _)| hits.first().is_some());
+            .any(|(_, hits, _)| !hits.is_empty());
 
         assert!(
             has_hit,
