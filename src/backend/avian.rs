@@ -46,7 +46,7 @@ pub struct CasterOfCharacter(pub Entity);
 /// Relationship target: Character has multiple casters.
 ///
 /// This goes on the character entity and tracks all its casters.
-/// Bevy manages the Vec<Entity> automatically.
+/// Bevy manages the `Vec<Entity>` automatically.
 #[derive(Component, Debug, Clone)]
 #[relationship_target(relationship = CasterOfCharacter)]
 pub struct CharacterCasters(Vec<Entity>); // Private field - managed by Bevy

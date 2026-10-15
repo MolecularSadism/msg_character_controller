@@ -766,7 +766,7 @@ impl CharacterController {
 ///
 /// All raycast lengths are DERIVED from float_height and other settings.
 /// No hardcoded magic numbers.
-#[derive(Component, Reflect, Debug, Clone, Copy)]
+#[derive(Component, Reflect, Debug, Clone, Copy, Default)]
 #[reflect(Component)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "serde", serde(default))]
@@ -787,21 +787,6 @@ pub struct ControllerConfig {
     pub upright: UprightTorqueConfig,
     /// ShapeCaster dimensions.
     pub sensors: SensorConfig,
-}
-
-impl Default for ControllerConfig {
-    fn default() -> Self {
-        Self {
-            floating: FloatingConfig::default(),
-            spring: SpringConfig::default(),
-            walking: WalkingConfig::default(),
-            flying: FlyingConfig::default(),
-            jumping: JumpingConfig::default(),
-            wall_jumping: WallJumpingConfig::default(),
-            upright: UprightTorqueConfig::default(),
-            sensors: SensorConfig::default(),
-        }
-    }
 }
 
 impl ControllerConfig {

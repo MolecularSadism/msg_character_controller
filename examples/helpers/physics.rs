@@ -86,16 +86,14 @@ pub fn spawn_static_box(
     let mesh = meshes.add(create_rectangle_mesh(half_size.x, half_size.y));
     let material = materials.add(ColorMaterial::from_color(color));
 
-    let entity = commands
-        .spawn((
-            Transform::from_translation(position.extend(0.0)),
-            GlobalTransform::default(),
-            RigidBody::Static,
-            Collider::rectangle(half_size.x * 2.0, half_size.y * 2.0),
-            Mesh2d(mesh),
-            MeshMaterial2d(material),
-        ))
-        .id();
+    commands.spawn((
+        Transform::from_translation(position.extend(0.0)),
+        GlobalTransform::default(),
+        RigidBody::Static,
+        Collider::rectangle(half_size.x * 2.0, half_size.y * 2.0),
+        Mesh2d(mesh),
+        MeshMaterial2d(material),
+    ));
 }
 
 /// Spawns a static rectangular collider with rotation.

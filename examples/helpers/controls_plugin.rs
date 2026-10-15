@@ -25,7 +25,7 @@ pub struct Player;
 ///
 /// # Usage
 ///
-/// ```rust,ignore
+/// ```text
 /// use helpers::{ControlsPlugin, Player};
 ///
 /// fn main() {

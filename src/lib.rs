@@ -137,6 +137,9 @@
 //! // These can be spawned as a bundle with physics components
 //! ```
 
+// Let `bevy_lint` lints be toggled in attributes; `bevy_lint` always runs on nightly.
+#![cfg_attr(bevy_lint, feature(register_tool), register_tool(bevy))]
+
 use bevy::prelude::*;
 
 // Re-export the physics backend's disabled-body marker under a common name.
@@ -284,6 +287,8 @@ impl Default for CharacterControllerActive {
 /// Systems within the same set can run in parallel if they don't depend on each other.
 /// Use `.chain()` for groups that need sequential execution within a set.
 #[derive(SystemSet, Debug, Clone, Copy, PartialEq, Eq, Hash)]
+// Renaming to `CharacterControllerSystems` would break the public API.
+#[cfg_attr(bevy_lint, allow(bevy::unconventional_naming))]
 pub enum CharacterControllerSet {
     /// Phase 1: Clear forces from previous frame.
     Preparation,
