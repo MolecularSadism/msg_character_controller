@@ -1,6 +1,6 @@
 [package]
 name = "msg_character_controller"
-version = "0.6.0"
+version = "0.7.0"
 edition = "2024"
 rust-version = "1.85"
 authors = ["ffmulks <63452434+ffmulks@users.noreply.github.com>"]
@@ -48,10 +48,14 @@ serde = ["dep:serde"]
 # Physics backend: avian2d (Avian physics engine, formerly XPBD)
 # Usage: CharacterControllerPlugin::<Avian2dBackend>::default()
 avian2d = ["dep:avian2d"]
+# Opt into Avian's multi-threaded solver (`bevy/multi_threaded`,
+# `parry2d/parallel`). Off unless a consumer enables it.
+parallel = ["avian2d?/parallel"]
 
 [dependencies.avian2d]
 version = "0.6.1"
-features = ["2d"]
+default-features = false
+features = ["2d", "f32", "parry-f32"]
 optional = true
 
 # Examples:
