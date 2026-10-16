@@ -106,7 +106,7 @@ impl From<Dir2> for FlightFrame {
 /// spherical or multi-body gravity field, say) and **write it each physics
 /// tick** from that sample, before the controller consumes it: schedule the
 /// sampling system in `FixedUpdate`
-/// `.before(`[`CharacterControllerSet::IntentApplication`](crate::CharacterControllerSet::IntentApplication)`)`,
+/// `.before(`[`CharacterControllerPhaseSystems::IntentApplication`](crate::CharacterControllerPhaseSystems::IntentApplication)`)`,
 /// the set [`apply_fly`](crate::systems::apply_fly) reads the component in.
 /// The two fields are only sound together: a sampled up with its sampled
 /// confidence, or — where the field has never resolved an up at all —

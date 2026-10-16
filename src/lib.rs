@@ -78,7 +78,7 @@
 //!
 //! ## System Order
 //!
-//! Systems run in clearly defined phases using [`CharacterControllerSet`]:
+//! Systems run in clearly defined phases using [`CharacterControllerPhaseSystems`]:
 //!
 //! 1. **Preparation** - Clear forces from previous frame
 //! 2. **Sensors** - Collect ground/wall/ceiling data (run in parallel)
@@ -186,7 +186,7 @@ pub mod systems;
 /// systems at once. By default, systems run only when [`CharacterControllerActive`]
 /// is enabled.
 ///
-/// All [`CharacterControllerSet`] phases are members of this set.
+/// All [`CharacterControllerPhaseSystems`] phases are members of this set.
 ///
 /// # Pausing the Controller
 ///
@@ -287,9 +287,7 @@ impl Default for CharacterControllerActive {
 /// Systems within the same set can run in parallel if they don't depend on each other.
 /// Use `.chain()` for groups that need sequential execution within a set.
 #[derive(SystemSet, Debug, Clone, Copy, PartialEq, Eq, Hash)]
-// Renaming to `CharacterControllerSystems` would break the public API.
-#[cfg_attr(bevy_lint, allow(bevy::unconventional_naming))]
-pub enum CharacterControllerSet {
+pub enum CharacterControllerPhaseSystems {
     /// Phase 1: Clear forces from previous frame.
     Preparation,
     /// Phase 2: Collect sensor data (ground, wall, ceiling detection).
@@ -305,6 +303,10 @@ pub enum CharacterControllerSet {
     /// Phase 6: Apply accumulated forces to physics engine.
     FinalApplication,
 }
+
+/// Former name of [`CharacterControllerPhaseSystems`].
+#[deprecated(since = "0.8.0", note = "renamed to `CharacterControllerPhaseSystems`")]
+pub type CharacterControllerSet = CharacterControllerPhaseSystems;
 
 pub mod prelude {
     //! Convenient re-exports for common usage.
@@ -329,8 +331,8 @@ pub mod prelude {
 
     pub use crate::CasterDisabled;
     pub use crate::CharacterControllerActive;
+    pub use crate::CharacterControllerPhaseSystems;
     pub use crate::CharacterControllerPlugin;
-    pub use crate::CharacterControllerSet;
     pub use crate::CharacterControllerSystems;
     pub use crate::backend::CharacterPhysicsBackend;
     pub use crate::collision::CollisionData;
@@ -495,12 +497,12 @@ impl<B: backend::CharacterPhysicsBackend> Plugin for CharacterControllerPlugin<B
         app.configure_sets(
             FixedUpdate,
             (
-                CharacterControllerSet::Preparation,
-                CharacterControllerSet::Sensors,
-                CharacterControllerSet::IntentEvaluation,
-                CharacterControllerSet::ForceAccumulation,
-                CharacterControllerSet::IntentApplication,
-                CharacterControllerSet::FinalApplication,
+                CharacterControllerPhaseSystems::Preparation,
+                CharacterControllerPhaseSystems::Sensors,
+                CharacterControllerPhaseSystems::IntentEvaluation,
+                CharacterControllerPhaseSystems::ForceAccumulation,
+                CharacterControllerPhaseSystems::IntentApplication,
+                CharacterControllerPhaseSystems::FinalApplication,
             )
                 .chain()
                 .in_set(CharacterControllerSystems),
@@ -517,7 +519,7 @@ impl<B: backend::CharacterPhysicsBackend> Plugin for CharacterControllerPlugin<B
                 systems::expire_jump_requests,
             )
                 .chain()
-                .in_set(CharacterControllerSet::Preparation),
+                .in_set(CharacterControllerPhaseSystems::Preparation),
         );
 
         // Phase 3: Intent Evaluation
@@ -532,7 +534,7 @@ impl<B: backend::CharacterPhysicsBackend> Plugin for CharacterControllerPlugin<B
                 systems::evaluate_intent::<B>,
             )
                 .chain()
-                .in_set(CharacterControllerSet::IntentEvaluation),
+                .in_set(CharacterControllerPhaseSystems::IntentEvaluation),
         );
 
         // Phase 4: Force Accumulation
@@ -546,21 +548,22 @@ impl<B: backend::CharacterPhysicsBackend> Plugin for CharacterControllerPlugin<B
                 systems::accumulate_spring_force::<B>,
             )
                 .chain()
-                .in_set(CharacterControllerSet::ForceAccumulation),
+                .in_set(CharacterControllerPhaseSystems::ForceAccumulation),
         );
 
         // Only register generic gravity if backend doesn't provide custom implementation
         if !B::provides_custom_gravity() {
             app.add_systems(
                 FixedUpdate,
-                systems::accumulate_gravity::<B>.in_set(CharacterControllerSet::ForceAccumulation),
+                systems::accumulate_gravity::<B>
+                    .in_set(CharacterControllerPhaseSystems::ForceAccumulation),
             );
         }
 
         app.add_systems(
             FixedUpdate,
             systems::accumulate_upright_torque::<B>
-                .in_set(CharacterControllerSet::ForceAccumulation),
+                .in_set(CharacterControllerPhaseSystems::ForceAccumulation),
         );
 
         // Phase 5: Intent Application
@@ -576,7 +579,7 @@ impl<B: backend::CharacterPhysicsBackend> Plugin for CharacterControllerPlugin<B
                 FixedUpdate,
                 (systems::apply_walk::<B>, systems::apply_jump::<B>)
                     .chain()
-                    .in_set(CharacterControllerSet::IntentApplication),
+                    .in_set(CharacterControllerPhaseSystems::IntentApplication),
             );
         } else {
             app.add_systems(
@@ -587,7 +590,7 @@ impl<B: backend::CharacterPhysicsBackend> Plugin for CharacterControllerPlugin<B
                     systems::apply_jump::<B>,
                 )
                     .chain()
-                    .in_set(CharacterControllerSet::IntentApplication),
+                    .in_set(CharacterControllerPhaseSystems::IntentApplication),
             );
         }
         app.add_systems(
@@ -596,7 +599,7 @@ impl<B: backend::CharacterPhysicsBackend> Plugin for CharacterControllerPlugin<B
                 systems::apply_fly::<B>,
                 systems::apply_wall_clinging_dampening::<B>,
             )
-                .in_set(CharacterControllerSet::IntentApplication),
+                .in_set(CharacterControllerPhaseSystems::IntentApplication),
         );
     }
 }

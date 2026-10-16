@@ -187,7 +187,7 @@ fn setup(
     commands.spawn((
         Text::new("A/D: Move | W: Jump | Space: Propel Up | S: Propel Down"),
         TextFont {
-            font_size: 20.0,
+            font_size: FontSize::Px(20.0),
             ..default()
         },
         TextColor(Color::WHITE),
@@ -204,7 +204,7 @@ fn setup(
     commands.spawn((
         Text::new("Walking on a spherical planet with radial gravity"),
         TextFont {
-            font_size: 18.0,
+            font_size: FontSize::Px(18.0),
             ..default()
         },
         TextColor(Color::srgb(0.7, 0.7, 0.7)),

@@ -182,7 +182,7 @@ fn setup(
     commands.spawn((
         Text::new("A/D: Move | W: Jump | Space: Propel Up | S: Propel Down"),
         TextFont {
-            font_size: 18.0,
+            font_size: FontSize::Px(18.0),
             ..default()
         },
         TextColor(Color::WHITE),
@@ -201,7 +201,7 @@ fn setup(
             "16 px/meter | Gravity: {GRAVITY_STRENGTH:.2} px/s² (9.81 m/s²)"
         )),
         TextFont {
-            font_size: 16.0,
+            font_size: FontSize::Px(16.0),
             ..default()
         },
         TextColor(Color::srgb(0.7, 0.7, 0.7)),
@@ -218,7 +218,7 @@ fn setup(
     commands.spawn((
         Text::new("Hold Space to propel upward (with gravity compensation)"),
         TextFont {
-            font_size: 16.0,
+            font_size: FontSize::Px(16.0),
             ..default()
         },
         TextColor(Color::srgb(0.6, 0.6, 0.8)),

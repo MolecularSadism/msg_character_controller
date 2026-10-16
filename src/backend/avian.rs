@@ -247,7 +247,7 @@ pub struct Avian2dBackendPlugin;
 
 impl Plugin for Avian2dBackendPlugin {
     fn build(&self, app: &mut App) {
-        use crate::CharacterControllerSet;
+        use crate::CharacterControllerPhaseSystems;
 
         // Register the reactive force message
         app.add_message::<ReactiveForceApplied>();
@@ -267,7 +267,7 @@ impl Plugin for Avian2dBackendPlugin {
                 update_stair_casters,
             )
                 .chain()
-                .in_set(CharacterControllerSet::Preparation),
+                .in_set(CharacterControllerPhaseSystems::Preparation),
         );
 
         // Phase 3: Sensors - Read ShapeHits from caster components
@@ -287,25 +287,25 @@ impl Plugin for Avian2dBackendPlugin {
                 ),
             )
                 .chain()
-                .in_set(CharacterControllerSet::Sensors),
+                .in_set(CharacterControllerPhaseSystems::Sensors),
         );
 
         // Phase 4: Force Accumulation - Avian-specific gravity using Forces component
         app.add_systems(
             FixedUpdate,
-            avian_accumulate_gravity.in_set(CharacterControllerSet::ForceAccumulation),
+            avian_accumulate_gravity.in_set(CharacterControllerPhaseSystems::ForceAccumulation),
         );
 
         // Phase 5: Intent Application - Avian-specific fall gravity using Forces component
         app.add_systems(
             FixedUpdate,
-            avian_apply_fall_gravity.in_set(CharacterControllerSet::IntentApplication),
+            avian_apply_fall_gravity.in_set(CharacterControllerPhaseSystems::IntentApplication),
         );
 
         // Phase 6: Final Application - Apply accumulated forces to physics
         app.add_systems(
             FixedUpdate,
-            apply_controller_forces.in_set(CharacterControllerSet::FinalApplication),
+            apply_controller_forces.in_set(CharacterControllerPhaseSystems::FinalApplication),
         );
     }
 }
@@ -329,10 +329,10 @@ fn spawn_detection_casters(
         spawn_ceiling_caster(&mut commands, entity, config);
 
         // Spawn stair casters if enabled
-        if let Some(stair_config) = &controller.stair_config {
-            if stair_config.enabled {
-                spawn_stair_casters(&mut commands, entity, controller);
-            }
+        if let Some(stair_config) = &controller.stair_config
+            && stair_config.enabled
+        {
+            spawn_stair_casters(&mut commands, entity, controller);
         }
 
         // Mark this entity as having casters spawned
@@ -667,7 +667,7 @@ fn update_ground_caster_direction(
         // Direction in local space (down relative to actor)
         // The caster inherits the actor's transform, so local NEG_Y works correctly
         shape_caster.direction = Dir2::NEG_Y;
-        shape_caster.shape_rotation = 0.0;
+        shape_caster.shape_rotation = Rot2::IDENTITY;
 
         // Update max_distance to cover riding_height + grounding_distance + buffer
         let riding_height = controller.riding_height(config);
@@ -716,7 +716,7 @@ fn update_wall_caster_directions(
         // Direction in local space (left relative to actor)
         // The caster inherits the actor's transform, so local NEG_X works correctly
         shape_caster.direction = Dir2::NEG_X;
-        shape_caster.shape_rotation = 0.0;
+        shape_caster.shape_rotation = Rot2::IDENTITY;
 
         // Update max_distance: surface_detection_distance + radius + buffer
         let radius = collider.map_or(0.0, get_collider_radius);
@@ -744,7 +744,7 @@ fn update_wall_caster_directions(
         // Direction in local space (right relative to actor)
         // The caster inherits the actor's transform, so local X works correctly
         shape_caster.direction = Dir2::X;
-        shape_caster.shape_rotation = 0.0;
+        shape_caster.shape_rotation = Rot2::IDENTITY;
 
         // Update max_distance: surface_detection_distance + radius + buffer
         let radius = collider.map_or(0.0, get_collider_radius);
@@ -787,7 +787,7 @@ fn update_ceiling_caster_direction(
         // Direction in local space (up relative to actor)
         // The caster inherits the actor's transform, so local Y works correctly
         shape_caster.direction = Dir2::Y;
-        shape_caster.shape_rotation = 0.0;
+        shape_caster.shape_rotation = Rot2::IDENTITY;
 
         // Update max_distance: surface_detection_distance + capsule_half_height + buffer
         shape_caster.max_distance =
@@ -886,7 +886,7 @@ fn update_stair_casters(
             // Direction in local space (down relative to actor)
             // The caster inherits the actor's transform, so local NEG_Y works correctly
             shape_caster.direction = Dir2::NEG_Y;
-            shape_caster.shape_rotation = 0.0;
+            shape_caster.shape_rotation = Rot2::IDENTITY;
 
             // float_height extends reach to ground level; min_step_depth shortens it so
             // steps shallower than that threshold are never detected in the first place
@@ -947,7 +947,7 @@ fn update_stair_casters(
             // Direction in local space (down relative to actor)
             // The caster inherits the actor's transform, so local NEG_Y works correctly
             shape_caster.direction = Dir2::NEG_Y;
-            shape_caster.shape_rotation = 0.0;
+            shape_caster.shape_rotation = Rot2::IDENTITY;
 
             // Update max_distance to cover max_climb_height + float_height + tolerance + buffer
             shape_caster.max_distance =
@@ -1173,12 +1173,12 @@ fn avian_stair_detection(
                 continue;
             }
 
-            if shape_caster.enabled {
-                if let Some(hits) = shape_hits {
-                    stair_hit = hits.first();
-                    stair_transform = Some(transform);
-                    stair_origin = shape_caster.origin;
-                }
+            if shape_caster.enabled
+                && let Some(hits) = shape_hits
+            {
+                stair_hit = hits.first();
+                stair_transform = Some(transform);
+                stair_origin = shape_caster.origin;
             }
             break;
         }
@@ -1192,12 +1192,12 @@ fn avian_stair_detection(
                 continue;
             }
 
-            if shape_caster.enabled {
-                if let Some(hits) = shape_hits {
-                    ground_hit = hits.first();
-                    ground_transform = Some(transform);
-                    ground_origin = shape_caster.origin;
-                }
+            if shape_caster.enabled
+                && let Some(hits) = shape_hits
+            {
+                ground_hit = hits.first();
+                ground_transform = Some(transform);
+                ground_origin = shape_caster.origin;
             }
             break;
         }
@@ -1430,18 +1430,18 @@ pub fn apply_controller_forces(
         }
 
         // Apply ground reaction force to dynamic ground bodies
-        if let Some((ground_entity, reaction_force)) = controller.take_ground_reaction() {
-            if let Ok((mut ground_force, rigid_body)) = ground_forces.get_mut(ground_entity) {
-                // Only apply reaction force to dynamic bodies
-                if *rigid_body == RigidBody::Dynamic {
-                    ground_force.0 += reaction_force;
+        if let Some((ground_entity, reaction_force)) = controller.take_ground_reaction()
+            && let Ok((mut ground_force, rigid_body)) = ground_forces.get_mut(ground_entity)
+        {
+            // Only apply reaction force to dynamic bodies
+            if *rigid_body == RigidBody::Dynamic {
+                ground_force.0 += reaction_force;
 
-                    // Fire message so the force can be cleared next frame
-                    reactive_messages.write(ReactiveForceApplied {
-                        entity: ground_entity,
-                        force: reaction_force,
-                    });
-                }
+                // Fire message so the force can be cleared next frame
+                reactive_messages.write(ReactiveForceApplied {
+                    entity: ground_entity,
+                    force: reaction_force,
+                });
             }
         }
     }
@@ -1456,8 +1456,8 @@ mod tests {
         let mut app = App::new();
         app.add_plugins(MinimalPlugins);
         app.add_plugins(bevy::transform::TransformPlugin);
-        // Insert SceneSpawner resource required by Avian's ColliderHierarchyPlugin
-        app.insert_resource(bevy::scene::SceneSpawner::default());
+        // Insert WorldInstanceSpawner resource required by Avian's ColliderHierarchyPlugin
+        app.insert_resource(bevy::world_serialization::WorldInstanceSpawner::default());
         app.add_plugins(PhysicsPlugins::default());
         app.insert_resource(Time::<Fixed>::from_hz(60.0));
         app.finish();
@@ -1511,7 +1511,7 @@ mod tests {
         let mut app = App::new();
         app.add_plugins(MinimalPlugins);
         app.add_plugins(bevy::transform::TransformPlugin);
-        app.insert_resource(bevy::scene::SceneSpawner::default());
+        app.insert_resource(bevy::world_serialization::WorldInstanceSpawner::default());
         app.add_plugins(PhysicsPlugins::default());
         app.add_plugins(CharacterControllerPlugin::<Avian2dBackend>::default());
         app.insert_resource(Time::<Fixed>::from_hz(60.0));

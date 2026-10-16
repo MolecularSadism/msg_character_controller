@@ -153,8 +153,7 @@ pub fn spawn_static_slope(
     let mesh = meshes.add(create_triangle_mesh(vertices));
     let material = materials.add(ColorMaterial::from_color(color));
 
-    let collider =
-        Collider::convex_hull(vertices.to_vec()).expect("Failed to create slope collider");
+    let collider = Collider::convex_hull(vertices).expect("Failed to create slope collider");
     commands.spawn((
         Transform::from_translation(position.extend(0.0)),
         GlobalTransform::default(),
@@ -178,8 +177,7 @@ pub fn spawn_static_slope_rotated(
     let mesh = meshes.add(create_triangle_mesh(vertices));
     let material = materials.add(ColorMaterial::from_color(color));
 
-    let collider =
-        Collider::convex_hull(vertices.to_vec()).expect("Failed to create slope collider");
+    let collider = Collider::convex_hull(vertices).expect("Failed to create slope collider");
     commands.spawn((
         Transform::from_translation(position.extend(0.0)).with_rotation(rotation),
         GlobalTransform::default(),

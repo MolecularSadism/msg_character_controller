@@ -50,7 +50,7 @@ The Avian2D implementation is in `src/backend/avian.rs` behind the `avian2d` fea
 
 ### System Phases
 
-Systems run in `FixedUpdate` in six ordered phases via `CharacterControllerSet`:
+Systems run in `FixedUpdate` in six ordered phases via `CharacterControllerPhaseSystems`:
 
 1. **Preparation** - Process jump state (edge detection), tick timers, remove expired jump requests
 2. **Sensors** - Ground/wall/ceiling detection via ShapeCaster components (runs in Avian backend plugin)
