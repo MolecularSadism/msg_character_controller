@@ -95,7 +95,7 @@ fn setup(
     commands.spawn((
         Text::new("FLOAT TEST\nSpawning character 200 units above platform...\n"),
         TextFont {
-            font_size: 20.0,
+            font_size: FontSize::Px(20.0),
             ..default()
         },
         TextColor(Color::WHITE),

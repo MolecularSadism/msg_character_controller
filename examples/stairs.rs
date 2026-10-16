@@ -131,7 +131,7 @@ fn setup(
     commands.spawn((
         Text::new("A/D: Move | W: Jump | Space: Propel Up | S: Propel Down"),
         TextFont {
-            font_size: 20.0,
+            font_size: FontSize::Px(20.0),
             ..default()
         },
         TextColor(Color::WHITE),

@@ -4,9 +4,10 @@
 //! Inputs are fixed constants so runs are deterministic and comparable.
 
 use bevy::math::{Dir2, Vec2};
-use criterion::{Criterion, black_box, criterion_group, criterion_main};
+use criterion::{Criterion, criterion_group, criterion_main};
 use msg_character_controller::config::FlyingConfig;
 use msg_character_controller::flight::FlightFrame;
+use std::hint::black_box;
 
 fn thrust(c: &mut Criterion) {
     let config = FlyingConfig {

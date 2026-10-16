@@ -25,8 +25,8 @@ fn create_test_app() -> App {
 
     app.add_plugins(MinimalPlugins);
     app.add_plugins(TransformPlugin);
-    // Insert SceneSpawner resource to satisfy Avian's ColliderHierarchyPlugin
-    app.insert_resource(bevy::scene::SceneSpawner::default());
+    // Insert WorldInstanceSpawner resource to satisfy Avian's ColliderHierarchyPlugin
+    app.insert_resource(bevy::world_serialization::WorldInstanceSpawner::default());
     // Use Avian's default schedule (FixedPostUpdate)
     // Character controller runs in FixedUpdate, physics runs in FixedPostUpdate
     app.add_plugins(PhysicsPlugins::default().with_length_unit(PIXELS_PER_METER));

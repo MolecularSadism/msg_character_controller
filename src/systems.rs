@@ -85,10 +85,10 @@ pub fn tick_jump_request_timers(time: Res<Time>, mut query: Query<&mut MovementI
 /// systems don't need to check buffer validity.
 pub fn expire_jump_requests(mut query: Query<&mut MovementIntent, Simulated>) {
     for mut intent in &mut query {
-        if let Some(ref jump) = intent.jump_request {
-            if !jump.is_valid() {
-                intent.jump_request = None;
-            }
+        if let Some(ref jump) = intent.jump_request
+            && !jump.is_valid()
+        {
+            intent.jump_request = None;
         }
     }
 }
@@ -380,13 +380,13 @@ pub fn accumulate_spring_force<B: CharacterPhysicsBackend>(world: &mut World) {
 
         // If applying an upward force (pushing player up), set up ground reaction force
         // for dynamic ground bodies (Newton's 3rd law - equal and opposite reaction)
-        if final_spring_force > 0.0 {
-            if let Some(ground_entity) = floor.entity {
-                // Store the reaction force (opposite direction) to apply to the ground
-                let reaction_force = -force; // Opposite of the force applied to player
-                if let Some(mut ctrl) = world.get_mut::<CharacterController>(entity) {
-                    ctrl.set_ground_reaction(ground_entity, reaction_force);
-                }
+        if final_spring_force > 0.0
+            && let Some(ground_entity) = floor.entity
+        {
+            // Store the reaction force (opposite direction) to apply to the ground
+            let reaction_force = -force; // Opposite of the force applied to player
+            if let Some(mut ctrl) = world.get_mut::<CharacterController>(entity) {
+                ctrl.set_ground_reaction(ground_entity, reaction_force);
             }
         }
     }
@@ -558,10 +558,11 @@ pub fn apply_fall_gravity<B: CharacterPhysicsBackend>(world: &mut World) {
             && (!jump_pressed || vertical_velocity < 0.0 || max_ascent_expired);
 
         // Trigger fall gravity if conditions are met
-        if should_trigger && !controller.fall_gravity_active() {
-            if let Some(mut ctrl) = world.get_mut::<CharacterController>(entity) {
-                ctrl.trigger_fall_gravity(config.jumping.fall_gravity_duration);
-            }
+        if should_trigger
+            && !controller.fall_gravity_active()
+            && let Some(mut ctrl) = world.get_mut::<CharacterController>(entity)
+        {
+            ctrl.trigger_fall_gravity(config.jumping.fall_gravity_duration);
         }
 
         // Apply fall gravity if the timer is active
@@ -979,10 +980,11 @@ pub fn apply_fly<B: CharacterPhysicsBackend>(world: &mut World) {
 
             // Record upward propulsion when actively thrusting up, so the
             // spring filter treats flight like the fixed-up path does.
-            if framed_intent.y > 0.0 && thrust.dot(frame.up()) > 0.0 {
-                if let Some(mut controller) = world.get_mut::<CharacterController>(entity) {
-                    controller.record_upward_propulsion(config.spring.jump_filter_duration);
-                }
+            if framed_intent.y > 0.0
+                && thrust.dot(frame.up()) > 0.0
+                && let Some(mut controller) = world.get_mut::<CharacterController>(entity)
+            {
+                controller.record_upward_propulsion(config.spring.jump_filter_duration);
             }
             continue;
         }
@@ -1028,10 +1030,11 @@ pub fn apply_fly<B: CharacterPhysicsBackend>(world: &mut World) {
                 B::apply_impulse(world, entity, fly_impulse);
 
                 // Record upward propulsion when actively flying up
-                if fly_direction > 0.0 && change > 0.0 {
-                    if let Some(mut controller) = world.get_mut::<CharacterController>(entity) {
-                        controller.record_upward_propulsion(config.spring.jump_filter_duration);
-                    }
+                if fly_direction > 0.0
+                    && change > 0.0
+                    && let Some(mut controller) = world.get_mut::<CharacterController>(entity)
+                {
+                    controller.record_upward_propulsion(config.spring.jump_filter_duration);
                 }
             }
         }
