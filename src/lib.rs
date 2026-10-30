@@ -336,7 +336,9 @@ pub mod prelude {
     pub use crate::CharacterControllerSystems;
     pub use crate::backend::CharacterPhysicsBackend;
     pub use crate::collision::CollisionData;
-    pub use crate::config::{CharacterController, ControllerConfig, JumpType, StairConfig};
+    pub use crate::config::{
+        CharacterController, ControllerConfig, FloorSupport, JumpType, StairConfig,
+    };
     pub use crate::flight::{FlightFrame, FlightOrientation};
     pub use crate::intent::{JumpRequest, MovementIntent};
 

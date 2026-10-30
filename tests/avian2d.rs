@@ -516,6 +516,58 @@ mod float_height {
             "Spring force should affect velocity or external force"
         );
     }
+
+    /// A grounded character feels no gravity of its own, so the spring carries what presses on
+    /// it: here a slab resting on its head.
+    #[test]
+    fn floor_support_carries_a_load_on_the_character() {
+        let mut app = create_test_app();
+        let ground = spawn_ground(&mut app, Vec2::new(0.0, 0.0), Vec2::new(100.0, 5.0));
+        let character = spawn_character(&mut app, Vec2::new(0.0, 25.0));
+        run_for_duration(&mut app, 2.0);
+        let head = app
+            .world()
+            .get::<Transform>(character)
+            .unwrap()
+            .translation
+            .y
+            + app
+                .world()
+                .get::<CharacterController>(character)
+                .unwrap()
+                .capsule_half_height();
+        let slab = app
+            .world_mut()
+            .spawn((
+                Transform::from_xyz(0.0, head + 2.0, 0.0),
+                RigidBody::Dynamic,
+                Collider::rectangle(12.0, 4.0),
+                LockedAxes::ROTATION_LOCKED,
+            ))
+            .id();
+        run_for_duration(&mut app, 3.0);
+
+        let gravity = app.world().resource::<Gravity>().0;
+        let load = gravity.length() * app.world().get::<ComputedMass>(slab).unwrap().value();
+        let controller = app.world().get::<CharacterController>(character).unwrap();
+        let support = controller
+            .floor_support()
+            .expect("a loaded character is held up by its spring");
+        assert_eq!(support.floor, Some(ground));
+        assert!(
+            (support.force.dot(*controller.up) - load).abs() < 0.25 * load,
+            "support {support:?} should carry the load {load}"
+        );
+    }
+
+    #[test]
+    fn an_airborne_character_has_no_floor_support() {
+        let mut app = create_test_app();
+        let character = spawn_character(&mut app, Vec2::new(0.0, 30.0));
+        run_frames(&mut app, 5);
+        let controller = app.world().get::<CharacterController>(character).unwrap();
+        assert_eq!(controller.floor_support(), None);
+    }
 }
 
 // ==================== Wall Detection Tests ====================

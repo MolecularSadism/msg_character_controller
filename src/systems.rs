@@ -23,7 +23,7 @@ use std::time::Duration;
 use bevy::prelude::*;
 
 use crate::backend::CharacterPhysicsBackend;
-use crate::config::{CharacterController, ControllerConfig};
+use crate::config::{CharacterController, ControllerConfig, FloorSupport};
 use crate::flight::FlightOrientation;
 use crate::intent::MovementIntent;
 
@@ -377,6 +377,15 @@ pub fn accumulate_spring_force<B: CharacterPhysicsBackend>(world: &mut World) {
         // Apply force along up direction
         let force = up * final_spring_force;
         B::apply_force(world, entity, force);
+
+        if final_spring_force > 0.0
+            && let Some(mut ctrl) = world.get_mut::<CharacterController>(entity)
+        {
+            ctrl.floor_support = Some(FloorSupport {
+                force,
+                floor: floor.entity,
+            });
+        }
 
         // If applying an upward force (pushing player up), set up ground reaction force
         // for dynamic ground bodies (Newton's 3rd law - equal and opposite reaction)

@@ -222,6 +222,10 @@ pub struct CharacterController {
     /// This is the opposite of the spring force applied to the character.
     #[reflect(ignore)]
     pub(crate) ground_reaction_force: Vec2,
+    /// Upward spring force the last spring pass held the character up with, and the floor
+    /// it pushed against. Kept until the next spring pass.
+    #[reflect(ignore)]
+    pub(crate) floor_support: Option<FloorSupport>,
 
     // === Stair Configuration ===
     /// Configuration for stair stepping behavior.
@@ -285,6 +289,7 @@ impl Default for CharacterController {
             // Ground reaction force (for dynamic ground interaction)
             ground_reaction_entity: None,
             ground_reaction_force: Vec2::ZERO,
+            floor_support: None,
             // Stair configuration (enabled by default)
             stair_config: Some(StairConfig::default()),
         }
@@ -745,11 +750,19 @@ impl CharacterController {
         self.ground_reaction_force = force;
     }
 
-    /// Clear the ground reaction force.
+    /// Clear the ground reaction force and the floor support.
     /// Called at the start of each frame.
     pub(crate) fn clear_ground_reaction(&mut self) {
         self.ground_reaction_entity = None;
         self.ground_reaction_force = Vec2::ZERO;
+        self.floor_support = None;
+    }
+
+    /// The upward spring force holding the character off its floor on the last spring pass,
+    /// or `None` when the spring did not push up. Unlike the ground reaction, it is read-only
+    /// and survives force application, so a host can read it after the physics step.
+    pub fn floor_support(&self) -> Option<FloorSupport> {
+        self.floor_support
     }
 
     /// Take the ground reaction force info for application.
@@ -760,6 +773,15 @@ impl CharacterController {
         self.ground_reaction_force = Vec2::ZERO;
         Some((entity, force))
     }
+}
+
+/// The spring force a floating character pushes off its floor with: what its legs carry.
+#[derive(Reflect, Debug, Clone, Copy, PartialEq)]
+pub struct FloorSupport {
+    /// Force applied to the character, along its up axis.
+    pub force: Vec2,
+    /// The floor entity the ground caster hit, if it reported one.
+    pub floor: Option<Entity>,
 }
 
 /// Configuration parameters for the character controller.
