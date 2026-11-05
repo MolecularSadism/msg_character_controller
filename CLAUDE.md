@@ -67,7 +67,7 @@ Systems run in `FixedUpdate` in six ordered phases via `CharacterControllerPhase
 |-----------|--------|---------|
 | `floating: FloatingConfig` | `float_height`, `grounding_distance`, `surface_detection_distance`, `grounding_strength` | Core hovering mechanics |
 | `spring: SpringConfig` | `strength`, `damping`, `max_force`, `max_velocity`, `jump_filter_duration` | Spring-damper system |
-| `walking: WalkingConfig` | `max_speed`, `acceleration`, `friction`, `air_control`, `air_friction`, `wall_clinging`, `wall_clinging_dampening`, `wall_clinging_dampen_upward`, `max_slope_angle`, `uphill_gravity_multiplier` | Ground movement, wall clinging, slopes |
+| `walking: WalkingConfig` | `max_speed`, `acceleration`, `friction`, `air_control`, `air_friction`, `wall_clinging`, `wall_clinging_dampening`, `wall_clinging_dampen_upward`, `max_slope_angle`, `uphill_gravity_multiplier`, `max_force`, `intent_force_scaling` | Ground movement, wall clinging, slopes, walking force cap and intent scaling |
 | `flying: FlyingConfig` | `max_speed`, `vertical_speed_ratio`, `acceleration`, `vertical_acceleration_ratio`, `gravity_compensation`, `damping` | Aerial propulsion; `thrust()`/`converged_axes()` drive `FlightOrientation` actors (per-axis accel to cap, isotropic as gravity confidence falls) |
 | `jumping: JumpingConfig` | `speed`, `coyote_time`, `buffer_time`, `fall_gravity`, `cancel_window`, `fall_gravity_duration`, `recently_jumped_duration`, `max_ascent_duration`, `upward_velocity_compensation` | Core jump mechanics |
 | `wall_jumping: WallJumpingConfig` | `enabled`, `angle`, `velocity_compensation`, `retain_height`, `movement_block_duration` | Wall jump specifics |
