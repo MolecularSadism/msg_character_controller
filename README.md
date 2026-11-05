@@ -11,6 +11,7 @@ An advanced 2D **floating rigidbody character controller** for the [Bevy](https:
 - **Floating rigidbody** - Hovers above ground using a spring-damper system rather than resting directly on surfaces
 - **Physics backend** - Uses [Avian2D](https://github.com/Jondolf/avian) physics engine (formerly XPBD)
 - **Movement system** - Walking with slope handling, flying/jetpack propulsion
+- **Walking force** - Optional mass-based force cap, and a drive that scales with partial walk intent
 - **Jumping** - With coyote time, input buffering, and variable height (hold to jump higher)
 - **Wall mechanics** - Wall jumping and wall clinging with configurable dampening
 - **Stair stepping** - Automatic step climbing with shapecast detection
@@ -20,7 +21,7 @@ An advanced 2D **floating rigidbody character controller** for the [Bevy](https:
 
 ```toml
 [dependencies]
-msg_character_controller = { git = "https://github.com/MolecularSadism/msg_character_controller", tag = "v0.8.0" }
+msg_character_controller = { git = "https://github.com/MolecularSadism/msg_character_controller", tag = "v0.9.0" }
 avian2d = { git = "https://github.com/avianphysics/avian", rev = "b620b67121def1a88a9eb272763aa24e7d594ccc" }
 ```
 
@@ -124,6 +125,7 @@ cargo run --example spherical_planet --features examples
 
 | `msg_character_controller` | Bevy | `avian2d` | `rapier2d` |
 |----------------------------|------|-----------|------------|
+| 0.9                        | 0.19 | git main (`b620b67`) | -  |
 | 0.8                        | 0.19 | git main (`b620b67`) | -  |
 | 0.5                        | 0.18 | 0.6       | -          |
 | 0.3                        | 0.18 | 0.5       | -          |
