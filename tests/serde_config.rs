@@ -16,6 +16,8 @@ fn controller_config_round_trips_through_ron() {
     original.spring.max_velocity = None;
     original.walking.max_speed = 88.0;
     original.walking.wall_clinging = true;
+    original.walking.max_force = Some(60000.0);
+    original.walking.intent_force_scaling = 0.75;
     original.flying.max_speed = 210.0;
     original.flying.vertical_acceleration_ratio = 8.0;
     original.jumping.coyote_time = 0.21;
@@ -33,6 +35,8 @@ fn controller_config_round_trips_through_ron() {
     assert_eq!(parsed.spring.max_velocity, None);
     assert_eq!(parsed.walking.max_speed, 88.0);
     assert!(parsed.walking.wall_clinging);
+    assert_eq!(parsed.walking.max_force, Some(60000.0));
+    assert_eq!(parsed.walking.intent_force_scaling, 0.75);
     assert_eq!(parsed.flying.max_speed, 210.0);
     assert_eq!(parsed.flying.vertical_acceleration_ratio, 8.0);
     assert_eq!(parsed.jumping.coyote_time, 0.21);

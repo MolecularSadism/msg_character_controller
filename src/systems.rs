@@ -779,10 +779,11 @@ pub fn apply_walk<B: CharacterPhysicsBackend>(world: &mut World) {
         } else {
             effective_walk * config.walking.max_speed
         };
+        let base_accel = config.walking.acceleration_for(mass);
         let walk_accel = if is_grounded {
-            config.walking.acceleration
+            base_accel
         } else {
-            config.walking.acceleration * config.walking.air_control
+            base_accel * config.walking.air_control
         };
 
         if is_grounded && controller.ground_detected() {
@@ -819,7 +820,11 @@ pub fn apply_walk<B: CharacterPhysicsBackend>(world: &mut World) {
 
             // Calculate velocity change toward target, clamped by max acceleration
             let velocity_diff = desired_walk_speed - current_slope_speed;
-            let max_change = walk_accel * dt;
+            let max_change = walk_accel
+                * config
+                    .walking
+                    .intent_drive_factor(effective_walk, velocity_diff)
+                * dt;
             let change = velocity_diff.clamp(-max_change, max_change);
 
             // Only disable friction when walking forward (same direction as current velocity)
@@ -858,7 +863,11 @@ pub fn apply_walk<B: CharacterPhysicsBackend>(world: &mut World) {
                 // Apply air control when actively walking
                 // Calculate velocity change toward target, clamped by max acceleration
                 let velocity_diff = desired_walk_speed - current_horizontal;
-                let max_change = walk_accel * dt;
+                let max_change = walk_accel
+                    * config
+                        .walking
+                        .intent_drive_factor(effective_walk, velocity_diff)
+                    * dt;
                 let change = velocity_diff.clamp(-max_change, max_change);
 
                 // Only disable air friction when walking forward (same direction as current velocity)
