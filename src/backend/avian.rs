@@ -12,34 +12,41 @@ use crate::collision::CollisionData;
 use crate::config::{CharacterController, ControllerConfig};
 
 /// Marker component for ground detection `ShapeCaster`.
-#[derive(Component, Debug, Clone, Copy)]
+#[derive(Component, Reflect, Debug, Clone, Copy)]
+#[reflect(Component)]
 pub struct GroundCaster;
 
 /// Marker component for left wall detection `ShapeCaster`.
-#[derive(Component, Debug, Clone, Copy)]
+#[derive(Component, Reflect, Debug, Clone, Copy)]
+#[reflect(Component)]
 pub struct LeftWallCaster;
 
 /// Marker component for right wall detection `ShapeCaster`.
-#[derive(Component, Debug, Clone, Copy)]
+#[derive(Component, Reflect, Debug, Clone, Copy)]
+#[reflect(Component)]
 pub struct RightWallCaster;
 
 /// Marker component for ceiling detection `ShapeCaster`.
-#[derive(Component, Debug, Clone, Copy)]
+#[derive(Component, Reflect, Debug, Clone, Copy)]
+#[reflect(Component)]
 pub struct CeilingCaster;
 
 /// Marker component for stair detection `ShapeCaster` (forward-down cast).
-#[derive(Component, Debug, Clone, Copy)]
+#[derive(Component, Reflect, Debug, Clone, Copy)]
+#[reflect(Component)]
 pub struct StairCaster;
 
 /// Marker component for current ground detection `ShapeCaster` (for step height calculation).
-#[derive(Component, Debug, Clone, Copy)]
+#[derive(Component, Reflect, Debug, Clone, Copy)]
+#[reflect(Component)]
 pub struct CurrentGroundCaster;
 
 /// Relationship: Caster belongs to a character.
 ///
 /// This goes on caster entities and points to the character they belong to.
 /// Used to look up the character's controller and config.
-#[derive(Component, Debug, Clone, Copy)]
+#[derive(Component, Reflect, Debug, Clone, Copy)]
+#[reflect(Component)]
 #[relationship(relationship_target = CharacterCasters)]
 pub struct CasterOfCharacter(pub Entity);
 
@@ -47,7 +54,8 @@ pub struct CasterOfCharacter(pub Entity);
 ///
 /// This goes on the character entity and tracks all its casters.
 /// Bevy manages the `Vec<Entity>` automatically.
-#[derive(Component, Debug, Clone)]
+#[derive(Component, Reflect, Debug, Clone)]
+#[reflect(Component)]
 #[relationship_target(relationship = CasterOfCharacter)]
 pub struct CharacterCasters(Vec<Entity>); // Private field - managed by Bevy
 
@@ -59,7 +67,8 @@ pub struct CharacterCasters(Vec<Entity>); // Private field - managed by Bevy
 type CasterHold = (Has<RigidBodyDisabled>, Has<CasterDisabled>);
 
 /// Marker component to track that casters have been spawned for this character.
-#[derive(Component, Debug, Clone, Copy)]
+#[derive(Component, Reflect, Debug, Clone, Copy)]
+#[reflect(Component)]
 pub struct CastersSpawned;
 
 /// Message fired when a reactive force (Newton's 3rd law) is applied to an entity.
@@ -67,7 +76,8 @@ pub struct CastersSpawned;
 /// This message is used to track forces applied to ground entities so they can be
 /// properly cleared in the next frame. Without this, forces would accumulate
 /// indefinitely on entities that characters stand on.
-#[derive(Message, Debug, Clone)]
+#[derive(Message, Reflect, Debug, Clone)]
+#[reflect(Message)]
 pub struct ReactiveForceApplied {
     /// The entity that received the reactive force.
     pub entity: Entity,
@@ -249,8 +259,17 @@ impl Plugin for Avian2dBackendPlugin {
     fn build(&self, app: &mut App) {
         use crate::CharacterControllerPhaseSystems;
 
-        // Register the reactive force message
         app.add_message::<ReactiveForceApplied>();
+        app.register_type::<ReactiveForceApplied>();
+        app.register_type::<GroundCaster>();
+        app.register_type::<LeftWallCaster>();
+        app.register_type::<RightWallCaster>();
+        app.register_type::<CeilingCaster>();
+        app.register_type::<StairCaster>();
+        app.register_type::<CurrentGroundCaster>();
+        app.register_type::<CasterOfCharacter>();
+        app.register_type::<CharacterCasters>();
+        app.register_type::<CastersSpawned>();
 
         // Phase 1: Preparation - Clear forces and update caster components
         // First clear forces, then spawn casters for new controllers,
