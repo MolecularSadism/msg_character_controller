@@ -2383,3 +2383,44 @@ mod caster_switching {
         );
     }
 }
+
+mod reflection {
+    use super::*;
+    use bevy::ecs::reflect::{ReflectComponent, ReflectMessage};
+    use msg_character_controller::backend::avian::{
+        CasterOfCharacter, CastersSpawned, CeilingCaster, CharacterCasters, CurrentGroundCaster,
+        GroundCaster, LeftWallCaster, ReactiveForceApplied, RightWallCaster, StairCaster,
+    };
+
+    fn assert_reflected_component<T: Component + Reflect>(registry: &bevy::reflect::TypeRegistry) {
+        let registration = registry
+            .get(std::any::TypeId::of::<T>())
+            .unwrap_or_else(|| panic!("{} is not registered", std::any::type_name::<T>()));
+        assert!(
+            registration.data::<ReflectComponent>().is_some(),
+            "{} lacks ReflectComponent",
+            std::any::type_name::<T>()
+        );
+    }
+
+    #[test]
+    fn backend_types_are_registered_with_reflect_data() {
+        let app = create_test_app();
+        let registry = app.world().resource::<AppTypeRegistry>().read();
+
+        assert_reflected_component::<GroundCaster>(&registry);
+        assert_reflected_component::<LeftWallCaster>(&registry);
+        assert_reflected_component::<RightWallCaster>(&registry);
+        assert_reflected_component::<CeilingCaster>(&registry);
+        assert_reflected_component::<StairCaster>(&registry);
+        assert_reflected_component::<CurrentGroundCaster>(&registry);
+        assert_reflected_component::<CasterOfCharacter>(&registry);
+        assert_reflected_component::<CharacterCasters>(&registry);
+        assert_reflected_component::<CastersSpawned>(&registry);
+
+        let message = registry
+            .get(std::any::TypeId::of::<ReactiveForceApplied>())
+            .expect("ReactiveForceApplied is not registered");
+        assert!(message.data::<ReflectMessage>().is_some());
+    }
+}

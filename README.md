@@ -21,7 +21,7 @@ An advanced 2D **floating rigidbody character controller** for the [Bevy](https:
 
 ```toml
 [dependencies]
-msg_character_controller = { git = "https://github.com/MolecularSadism/msg_character_controller", tag = "v0.9.0" }
+msg_character_controller = { git = "https://github.com/MolecularSadism/msg_character_controller", tag = "v0.9.1" }
 avian2d = { git = "https://github.com/avianphysics/avian", rev = "b620b67121def1a88a9eb272763aa24e7d594ccc" }
 ```
 
