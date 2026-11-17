@@ -2424,3 +2424,75 @@ mod reflection {
         assert!(message.data::<ReflectMessage>().is_some());
     }
 }
+
+// ==================== Backend Cast Contract ====================
+// `Avian2dBackend` answers sensors through persistent `ShapeCaster`s, but it
+// also implements the one-shot `cast_shape` the trait requires. Both must see
+// the same floor.
+
+mod backend_cast_contract {
+    use super::*;
+    use msg_character_controller::sensors::{CharacterSensors, SensorKind, ShapeCastQuery};
+
+    #[test]
+    fn immediate_cast_matches_persistent_ground_caster() {
+        let mut app = create_test_app();
+        let ground = spawn_ground(&mut app, Vec2::new(0.0, 0.0), Vec2::new(100.0, 5.0));
+        let character = spawn_character_for_auto_spawn_test(&mut app, Vec2::new(0.0, 20.0));
+        run_for_duration(&mut app, 2.0);
+
+        let world = app.world();
+        let sensors = world.get::<CharacterSensors>(character).unwrap();
+        let persistent = sensors
+            .reading(SensorKind::Ground)
+            .and_then(|reading| reading.hit)
+            .expect("persistent ground caster hit the floor");
+        assert_eq!(persistent.entity, ground);
+
+        let cast = sensors.cast(SensorKind::Ground);
+        let immediate = Avian2dBackend::cast_shape(
+            world,
+            &ShapeCastQuery {
+                shape: cast.shape,
+                origin: Avian2dBackend::get_position(world, character) + cast.origin,
+                direction: cast.direction,
+                max_distance: cast.max_distance,
+                filter: cast.filter,
+            },
+        )
+        .expect("immediate cast hit the floor");
+
+        assert_eq!(immediate.entity, ground);
+        assert_relative_eq!(immediate.distance, persistent.distance, epsilon = 0.05);
+        assert_relative_eq!(immediate.normal.y, persistent.normal.y, epsilon = 1e-3);
+    }
+
+    #[test]
+    fn immediate_cast_never_hits_the_excluded_character() {
+        let mut app = create_test_app();
+        let character = spawn_character_for_auto_spawn_test(&mut app, Vec2::new(0.0, 20.0));
+        run_frames(&mut app, 5);
+
+        let world = app.world();
+        let cast = *world
+            .get::<CharacterSensors>(character)
+            .unwrap()
+            .cast(SensorKind::Ground);
+        // Start above the character and sweep down through it.
+        let query = ShapeCastQuery {
+            shape: cast.shape,
+            origin: Vec2::new(0.0, 60.0),
+            direction: Dir2::NEG_Y,
+            max_distance: 100.0,
+            filter: cast.filter,
+        };
+        assert_eq!(cast.filter.exclude, character);
+        assert!(Avian2dBackend::cast_shape(world, &query).is_none());
+
+        // Control: without the exclusion the same sweep hits the character.
+        let mut unfiltered = query;
+        unfiltered.filter.exclude = Entity::PLACEHOLDER;
+        let hit = Avian2dBackend::cast_shape(world, &unfiltered).expect("character is hit");
+        assert_eq!(hit.entity, character);
+    }
+}
