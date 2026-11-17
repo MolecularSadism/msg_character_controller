@@ -93,3 +93,8 @@ path = "examples/stairs.rs"
 name = "flight"
 path = "benches/flight.rs"
 harness = false
+
+[[bench]]
+name = "sensors"
+path = "benches/sensors.rs"
+harness = false
