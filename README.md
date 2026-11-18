@@ -73,6 +73,28 @@ fn handle_input(
 | `ControllerConfig` | Tunable parameters: float height, speeds, jump settings |
 | `MovementIntent` | Input abstraction: walk, fly, jump_pressed |
 | `CasterDisabled` | Holds the character's shape casts off while its body keeps simulating |
+| `CharacterSensors` | Per-character sensor cast requests and the backend's readings (inserted automatically) |
+
+## Physics Backends
+
+The controller talks to physics only through the `CharacterPhysicsBackend`
+trait, so a backend can live outside this crate. Ground, wall, ceiling and
+stair detection is backend-neutral (`msg_character_controller::sensors`): the
+controller decides what to cast and what a hit means, and the backend only
+sweeps shapes. A backend implements, besides the body accessors (velocity,
+forces, mass, rotation, position, ...):
+
+- `cast_shape(world, &ShapeCastQuery) -> Option<SensorHit>`: sweep a segment
+  from a world-space origin along a direction, keep colliders whose
+  memberships share a bit with the mask, skip the casting character, return
+  the nearest hit (entity, distance, surface normal).
+- optionally `get_collider_radius`, `get_collider_bottom_offset`,
+  `get_collision_groups`, `is_body_disabled`, `is_rotation_locked`.
+
+By default the controller calls `cast_shape` for every enabled cast each fixed
+step (`SensorCastMode::Immediate`). The bundled `Avian2dBackend` instead keeps
+persistent `ShapeCaster` child entities that Avian runs in parallel during its
+physics step (`SensorCastMode::Persistent`).
 
 ## Configuration
 

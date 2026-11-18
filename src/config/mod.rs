@@ -76,7 +76,7 @@ pub enum JumpType {
 /// forces are "isolated" and don't accumulate across frames.
 #[derive(Component, Reflect, Debug, Clone)]
 #[reflect(Component)]
-#[require(MovementIntent, Transform)]
+#[require(MovementIntent, Transform, crate::sensors::CharacterSensors)]
 #[cfg_attr(
     feature = "avian2d",
     require(AvianRigidBody, ConstantForce, ConstantTorque, AvianLockedAxes)

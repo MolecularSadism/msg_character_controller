@@ -6,28 +6,31 @@
 
 use bevy::prelude::*;
 
+use crate::sensors::{SensorCastMode, SensorHit, ShapeCastQuery};
+
 /// Trait for physics backend implementations.
 ///
 /// Implement this trait to integrate a physics engine with the character
 /// controller. The backend handles physics operations like force application
-/// and velocity manipulation.
+/// and velocity manipulation, and answers the controller's sensor casts.
+/// Everything else, including how casts are aimed and how hits become floor,
+/// wall, ceiling and step state, is backend-neutral (see [`crate::sensors`]),
+/// so a backend can live outside this crate.
 ///
-/// # Example
+/// All methods take the [`World`] and run from exclusive systems on the main
+/// thread, so a backend may keep a `!Send` physics world as a non-send
+/// resource.
 ///
-/// For an example implementation, see the `rapier` module's `Rapier2dBackend`
-/// which implements this trait for Bevy `Rapier2D`.
+/// # Sensor casts
 ///
-/// ```rust
-/// use bevy::prelude::*;
-/// use msg_character_controller::prelude::*;
+/// The minimum a backend provides for detection is [`Self::cast_shape`]. With
+/// the default [`SensorCastMode::Immediate`] the controller calls it for every
+/// enabled cast once per fixed step. A backend that keeps persistent casters
+/// in its engine (Avian) returns [`SensorCastMode::Persistent`] and fills
+/// readings itself; see [`crate::sensors`] for that data flow.
 ///
-/// // The trait is implemented by physics backends like Rapier2dBackend
-/// #[cfg(feature = "rapier2d")]
-/// fn example_usage() {
-///     // Access backend methods statically
-///     // In practice, these are called by the controller systems
-/// }
-/// ```
+/// [`Avian2dBackend`](crate::backend::Avian2dBackend) is the in-crate
+/// implementation; the `fake_backend` integration test is an engine-free one.
 pub trait CharacterPhysicsBackend: 'static + Send + Sync {
     /// The velocity component type used by this backend.
     type VelocityComponent: Component;
@@ -88,13 +91,17 @@ pub trait CharacterPhysicsBackend: 'static + Send + Sync {
 
     /// Get the collision groups for an entity (memberships, filters).
     /// Returns None if the entity doesn't have collision groups.
+    ///
+    /// The sensor casts use `filters` as their mask unless
+    /// `config.sensors.collision_mask` overrides it; with neither, every bit.
     fn get_collision_groups(_world: &World, _entity: Entity) -> Option<(u32, u32)> {
         // Default implementation returns None
         None
     }
 
     /// Get the collider bottom offset for an entity.
-    /// This is the distance from the collider center to its bottom.
+    /// This is the distance from the collider center to its bottom
+    /// (capsule: half segment length + radius; circle: radius; box: half height).
     fn get_collider_bottom_offset(_world: &World, _entity: Entity) -> f32 {
         // Default implementation returns 0
         0.0
@@ -127,6 +134,57 @@ pub trait CharacterPhysicsBackend: 'static + Send + Sync {
     fn is_rotation_locked(_world: &World, _entity: Entity) -> bool {
         false
     }
+
+    /// Get the side radius of an entity's collider: the distance from its
+    /// center to its left or right side (capsule or circle: radius; box: half
+    /// width). Sizes the wall and stair casts.
+    ///
+    /// Default implementation returns 0.
+    fn get_collider_radius(_world: &World, _entity: Entity) -> f32 {
+        0.0
+    }
+
+    /// Whether the entity's body is disabled (not simulated).
+    ///
+    /// A disabled character's sensor casts are held off and its contact state
+    /// is left untouched, as with [`CasterDisabled`](crate::CasterDisabled).
+    ///
+    /// Default implementation returns false.
+    fn is_body_disabled(_world: &World, _entity: Entity) -> bool {
+        false
+    }
+
+    /// How this backend answers the controller's sensor casts.
+    ///
+    /// Default: [`SensorCastMode::Immediate`], the controller calls
+    /// [`Self::cast_shape`].
+    #[must_use]
+    fn sensor_cast_mode() -> SensorCastMode {
+        SensorCastMode::Immediate
+    }
+
+    /// Sweep a shape through the world and return the nearest hit.
+    ///
+    /// Contract:
+    /// - Sweep `query.shape` (offsets from `query.origin`, world orientation)
+    ///   from `query.origin` along `query.direction` for at most
+    ///   `query.max_distance`.
+    /// - Only colliders whose collision-group memberships share a bit with
+    ///   `query.filter.mask` count.
+    /// - Never report a collider of `query.filter.exclude` (the casting
+    ///   character). Engines without per-entity query exclusion post-filter
+    ///   their hits.
+    /// - Of the remaining hits return the one with the smallest distance.
+    ///   `distance` is how far the shape travelled (`fraction * max_distance`),
+    ///   0 if it starts overlapping; `normal` is the outward surface normal of
+    ///   the hit collider in world space; `entity` is the hit collider's entity.
+    /// - Whether sensor (non-solid) colliders are reported is the backend's
+    ///   choice. Avian reports them, as it always has; a new backend should
+    ///   decide deliberately and document it.
+    ///
+    /// Called from an exclusive system on the main thread. Not called for
+    /// [`SensorCastMode::Persistent`] backends.
+    fn cast_shape(world: &World, query: &ShapeCastQuery) -> Option<SensorHit>;
 
     /// Indicates whether this backend provides custom gravity systems.
     ///

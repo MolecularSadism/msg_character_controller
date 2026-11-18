@@ -17,13 +17,15 @@
 
 ## Avian2D Physics Integration
 
-The character controller uses Avian2D's component-based collision detection via `ShapeCaster` and `ShapeHits` components. Ground, wall, and ceiling detection use child entities with shape casters that are automatically spawned and configured.
+Detection is backend-neutral (`src/sensors.rs`): each step the controller writes six cast requests per character into `CharacterSensors` (ground, left/right wall, ceiling, stair, stair-ground), a backend fills in readings, and `detect_surroundings` turns them into floor/wall/ceiling/step state. A backend either answers each cast through `CharacterPhysicsBackend::cast_shape` (`SensorCastMode::Immediate`, the default) or keeps persistent casters of its own (`SensorCastMode::Persistent`).
+
+The Avian backend is persistent: it spawns `ShapeCaster` child entities per character (marker components `GroundCaster` etc.), copies the requests onto them in `SensorSystems::Submit`, and reads their `ShapeHits` back in `SensorSystems::Cast`. Its `cast_shape` also works (one-shot `SpatialQuery`) and is tested against the persistent casters.
 
 The controller systems run in `FixedUpdate` and accumulate forces into `ConstantForce` and `ConstantTorque` components, which Avian processes in its physics schedule.
 
 Avian offers no marker for switching a caster off — the only lever is the `enabled` field on `ShapeCaster`/`RayCaster`, and a disabled caster reports no hits rather than stale ones. Avian runs every *enabled* caster each step whatever the parent body does, so the flag must be written, not filtered.
 
-`CasterDisabled` is that lever: a sparse-set marker on the character; the caster-update systems write `enabled = !(caster_disabled || body_disabled)` each Preparation step. `RigidBodyDisabled` implies the hold, so hosts that disable a body need not remember it. Use `CasterDisabled` for a body that still simulates but whose contacts nothing reads — a scripted or transform-driven character.
+`CasterDisabled` is that lever: a sparse-set marker on the character; the request system marks every cast `enabled = !(caster_disabled || body_disabled)` each Preparation step (body disabled = `CharacterPhysicsBackend::is_body_disabled`, Avian: `RigidBodyDisabled`), and the Avian backend copies the flag onto its `ShapeCaster`s. `RigidBodyDisabled` implies the hold, so hosts that disable a body need not remember it. Use `CasterDisabled` for a body that still simulates but whose contacts nothing reads — a scripted or transform-driven character.
 
 ## Architecture
 
@@ -36,6 +38,7 @@ Avian offers no marker for switching a caster off — the only lever is the `ena
 | `MovementIntent` | Input abstraction: walk, fly, jump_pressed |
 | `StairConfig` | Optional stair stepping configuration |
 | `CollisionData` | Stores raycast hit info (distance, normal, point, entity) |
+| `CharacterSensors` | Required by `CharacterController`: per-kind `SensorCast` requests and `SensorReading`s (`src/sensors.rs`) |
 | `FlightFrame` | Orthonormal `up`/`right` basis flying intent is expressed in (`src/flight.rs`) |
 | `FlightOrientation` | Optional per-actor `{frame, confidence}` a host writes each tick to fly by a sampled up; actors without it keep the fixed-up path |
 
@@ -45,6 +48,9 @@ Avian offers no marker for switching a caster off — the only lever is the `ena
 - `get_velocity`, `set_velocity`, `apply_impulse`, `apply_force`
 - `get_mass`, `get_principal_inertia`
 - `get_rotation`, `get_angular_velocity`, `apply_torque`
+- `cast_shape` (required), `sensor_cast_mode`, `get_collider_radius`, `get_collider_bottom_offset`, `get_collision_groups`, `is_body_disabled`, `is_rotation_locked`
+
+All methods take `&World`/`&mut World` and run from exclusive systems on the main thread, so a backend may hold a `!Send` physics world. `tests/fake_backend.rs` is an engine-free implementation.
 
 The Avian2D implementation is in `src/backend/avian.rs` behind the `avian2d` feature (default).
 
@@ -53,7 +59,7 @@ The Avian2D implementation is in `src/backend/avian.rs` behind the `avian2d` fea
 Systems run in `FixedUpdate` in six ordered phases via `CharacterControllerPhaseSystems`:
 
 1. **Preparation** - Process jump state (edge detection), tick timers, remove expired jump requests
-2. **Sensors** - Ground/wall/ceiling detection via ShapeCaster components (runs in Avian backend plugin)
+2. **Sensors** - Backend fills sensor readings (`SensorSystems::Cast`), then backend-neutral ground/wall/ceiling/stair detection (`SensorSystems::Detect`); requests are written in Preparation (`SensorSystems::Request`, then `Submit`)
 3. **IntentEvaluation** - Update timers, determine jump type, evaluate intent flags
 4. **ForceAccumulation** - Accumulate spring force, stair climb force, gravity, upright torque
 5. **IntentApplication** - Apply fall gravity, jump impulse, walk impulse, fly impulse, wall clinging
@@ -87,7 +93,8 @@ Top-level builder methods remain for convenience (e.g., `config.with_float_heigh
 | `src/intent.rs` | `MovementIntent`, `JumpRequest` |
 | `src/systems.rs` | All controller systems (spring, gravity, movement, jump, etc.) |
 | `src/backend/traits.rs` | `CharacterPhysicsBackend` trait |
-| `src/backend/avian.rs` | Avian2D backend implementation, sensor systems |
+| `src/sensors.rs` | Backend-neutral sensor requests, immediate casts, detection |
+| `src/backend/avian.rs` | Avian2D backend implementation, persistent `ShapeCaster` sync/readback |
 | `src/collision.rs` | `CollisionData` struct |
 
 ## Building & Running
@@ -106,7 +113,7 @@ cargo doc --open
 
 ## Testing
 
-Integration tests are in `tests/avian2d.rs`. Tests use a minimal Bevy app with Avian2D physics:
+Integration tests are in `tests/avian2d.rs`; `tests/fake_backend.rs` runs the detection on a scripted, engine-free backend (also with `--no-default-features`). `benches/sensors.rs` times a full step with 64/512 Avian characters. Tests use a minimal Bevy app with Avian2D physics:
 
 ```rust
 fn create_test_app() -> App {

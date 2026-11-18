@@ -47,3 +47,26 @@ To draw a conclusion from a comparison, capture the baseline and the
 comparison back to back in one sitting, and treat anything under roughly
 1.5x as inconclusive. Comparing these absolute numbers against a different
 machine is meaningless.
+
+## `sensors` bench: backend-neutral sensor pipeline
+
+Captured 2026-11-17 on branch `feat/backend-neutral-sensors`, rustc 1.97.0, same
+kind of shared container. `before` is `main` at `fab735d` with only the bench
+added; `after` is the branch. The two binaries ran back to back, alternating,
+twice. Mean of a full `app.update()` (one fixed step, Avian included):
+
+| Round | Characters | before | after | criterion change |
+|---|---:|---:|---:|---|
+| 1 | 64 | 2.160 ms | 1.965 ms | −2.3 % (p = 0.19, no change) |
+| 1 | 512 | 7.983 ms | 7.438 ms | −6.8 % (p = 0.00) |
+| 2 | 64 | 1.838 ms | 2.054 ms | +12.7 % (p = 0.00) |
+| 2 | 512 | 7.360 ms | 7.393 ms | +0.4 % (p = 0.77, no change) |
+
+The sign flips between rounds; read it as no measurable difference. The Avian
+backend still runs its casts on persistent `ShapeCaster`s inside the physics
+step; what changed is that requests and detection run in exclusive systems.
+
+```sh
+cargo bench --bench sensors -- --save-baseline base
+cargo bench --bench sensors -- --baseline base
+```
